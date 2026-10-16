@@ -92,8 +92,8 @@ function measureTargets(frameHtml) {
 
 /* ------------------------------------------------------------ inventory ---- */
 
-test('every Section J screen is rendered, in both themes and every state', () => {
-  assert.equal(manifest.screens, 18, `expected 18 screens in the Section J inventory, found ${manifest.screens}`);
+test('every screen in the inventory is rendered, in both themes and every state', () => {
+  assert.equal(manifest.screens, 18, `expected 18 screens in the screen inventory, found ${manifest.screens}`);
   const ids = new Set(manifest.frames.map((f) => f.id));
   for (let i = 1; i <= 18; i++) {
     assert.ok(ids.has(`J${i}`), `J${i} is missing from the rendered frames`);

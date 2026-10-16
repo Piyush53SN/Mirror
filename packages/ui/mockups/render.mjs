@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * mockups/render.mjs — render every Section J screen to static HTML.
+ * mockups/render.mjs — render every screen in the inventory to static HTML.
  *
  * The pages are produced by rendering the *real* design-system components (the
  * same code the app will use) through the DOM binding in rn-dom.tsx, with the
@@ -144,7 +144,7 @@ for (const spec of SCREENS) {
 
 /* gallery */
 const gallery = page({
-  title: 'Section J — all screens',
+  title: 'All screens — Mirror mockups',
   subtitle: 'Generated from packages/ui/screens. Dark is the default theme; light is the same tokens.',
   body: `<div class="gallery">
     ${rendered

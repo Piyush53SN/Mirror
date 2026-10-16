@@ -1,5 +1,9 @@
 /**
- * Section J — the screen inventory, as components.
+ * The screen inventory — every screen Mirror ships, as components.
+ *
+ * The user brief references a "Section J" screen list; no such section exists in
+ * the repository, so this inventory is a derivation from the brief and the
+ * roadmap. It is meant to be reviewed: see the P-UI-2 report.
  *
  * One file, because a screen's job here is to *compose* the design system and
  * declare what it needs; anything longer than that belongs in a primitive or a
@@ -1283,7 +1287,7 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
 /* -------------------------------------------------------------- manifest ---- */
 
 export type ScreenSpec = {
-  /** Section J identifier. */
+  /** Stable inventory id (J1..J18) — used by tests and the mockup manifest. */
   id: string;
   slug: string;
   title: string;
