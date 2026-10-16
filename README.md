@@ -8,14 +8,54 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** pre-code. The repository currently contains the P-UI-0 design
-> analysis (the gate before any UI code) and the tooling that produced it.
-> Phases P-UI-1 onward are listed in the project brief; the app scaffolding arrives
-> with P0.
+> **Build status:** design system in progress, no app code yet. P-UI-0 (image
+> analysis → design brief) is approved; P-UI-1 (image-derived tokens + prototype)
+> is delivered here for review. The app scaffolding — React Native, storage,
+> collectors — arrives with P0/P1.
 
 ---
 
-## Current phase — P-UI-0: Image analysis → design brief
+## Current phase — P-UI-1: image-derived tokens + phone prototype
+
+Everything visual is generated from the same reference image as the P-UI-0 brief,
+by one zero-dependency script. Dark is the default theme and is **derived** from
+the image, not inverted from the light theme (a naive inversion crushes the
+mirrored top cluster into the sRGB dead zone; measured and rejected — see the
+generator's `darkDerivation`).
+
+| artifact | what it is |
+| --- | --- |
+| [`prototype/index.html`](prototype/index.html) | **the prototype** — one file, 390 × 844 phone frame, onboarding → permission primer → dashboard, swipeable hero, sheets, Private/Public boundary |
+| [`packages/ui/tokens/image-tokens.json`](packages/ui/tokens/image-tokens.json) | every token with its measured provenance, both themes, the contrast audit, and the logged adjustments |
+| `packages/ui/tokens/index.ts` · `tokens.css` | typed `as const` export and CSS custom properties (dark under `:root`, light under `[data-theme="light"]`) |
+| [`docs/design/contrast-audit.md`](docs/design/contrast-audit.md) | 14 audited pairs with floors/AA/AAA and the 4 adjustments the floor forced |
+| [`scripts/generate-tokens.mjs`](scripts/generate-tokens.mjs) | the generator: PNG decode, OKLab/OKLCh, WCAG contrast, deterministic k-means, CSS injection |
+
+### Run it
+
+```bash
+npm run tokens        # regenerate tokens + inject them into the prototype
+npm test              # 42 checks: token contract + prototype behaviour
+npm run check:prototype   # the same checks in a real browser (needs puppeteer/playwright)
+open prototype/index.html # no server, no build step, no network
+```
+
+### What the gate actually asserts
+
+- **48dp**: every `[data-tap]` element inside the phone is measured on the rendered
+  tree and must be ≥ 48 × 48 — in the test suite *and* by the prototype's own
+  "Run checks" panel, so the shipped verifier and CI cannot disagree.
+- **Contrast**: 14 pairs per theme, checked with WCAG relative luminance; the
+  generator throws rather than emitting a failing palette, and every automatic
+  adjustment (4 of them) is logged with its before/after ratio.
+- **Offline**: the prototype makes zero network requests, stores nothing, and
+  loads no third-party analytics — asserted mechanically, not by review.
+- **Blur budget**: at most 3 live-blurred layers on mobile. The prototype spends
+  2 (tab bar, sheet) and pre-composites everything else.
+
+---
+
+## P-UI-0 (approved) — image analysis → design brief
 
 The attached design reference is the single source of truth for the visual
 identity ("Frosted Horizon"): its layout language, materials and mood are measured
@@ -59,8 +99,8 @@ python3 scripts/design/font-match.py --fonts-dir /tmp/ttf
 
 | phase | scope |
 | --- | --- |
-| **P-UI-0** | image analysis → design brief ✅ *(this phase, awaiting approval)* |
-| P-UI-1 | image-derived tokens + single-file HTML phone-frame prototype (light/dark) |
+| **P-UI-0** | image analysis → design brief ✅ approved |
+| **P-UI-1** | image-derived tokens + single-file HTML phone-frame prototype (dark default, light toggle) ✅ *(this phase, awaiting approval)* |
 | P-UI-2 | React Native design system in `/packages/ui` + mockups of every screen |
 | P0 | monorepo scaffold, CI, EAS build profiles, event schema, connectors & preference schemas, synthetic data, canary harness, store-readiness draft |
 | P1 | encrypted local storage, Android usage collector, ingestion pipeline, importers, embeddings |

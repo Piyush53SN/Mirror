@@ -1,0 +1,29 @@
+{
+  "name": "mirror",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mirror — privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "services/*"
+  ],
+  "scripts": {
+    "tokens": "node scripts/generate-tokens.mjs",
+    "test": "npm run test:tokens && npm run test:prototype",
+    "test:tokens": "node --test tests/tokens.test.mjs",
+    "test:prototype": "node --test tests/prototype.test.mjs",
+    "check:prototype": "node scripts/check-prototype.mjs",
+    "verify": "npm run tokens && npm test && npm run check:prototype"
+  },
+  "keywords": [
+    "privacy",
+    "digital-wellbeing",
+    "local-first"
+  ],
+  "license": "UNLICENSED"
+}
