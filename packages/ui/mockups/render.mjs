@@ -94,28 +94,48 @@ ${subtitle ? `<p data-review-chrome style="padding:0 32px 32px;color:#9D9D9D;fon
 // Bundled + imported through the shared seam, so the tests render exactly what
 // this script renders.
 const mod = await buildRenderer({ force: true });
-const { htmlFor, specFor, personaFor, SCREENS, PERSONAS, createTheme } = mod;
+const { htmlFor, personaFor, SCREENS, PERSONAS, createTheme } = mod;
 
 mkdirSync(OUT, { recursive: true });
 
 const rendered = [];
+/** dark/default frame markup per slug, reused by the gallery so it needs no iframes. */
+const galleryFrame = new Map();
+
+/**
+ * The persona a frame is rendered with.
+ *
+ * A "default" frame uses the persona that can actually show the screen. An
+ * "empty" frame is the interesting one: it uses a persona that *lacks* a tier the
+ * screen needs, so the frame shows the real degraded view rather than a
+ * duplicate of the default one. Screens with no requirements fall back.
+ */
+function personaForFrame(spec, state) {
+  const capable = personaFor(spec);
+  if (state !== 'empty' || spec.requires.length === 0) return { persona: capable, degraded: false };
+  const lacking = [...PERSONAS]
+    .sort((a, b) => a.tiers.length - b.tiers.length)
+    .find((p) => spec.requires.some((tier) => !p.tiers.includes(tier)));
+  return lacking ? { persona: lacking, degraded: true } : { persona: capable, degraded: false };
+}
+
 for (const spec of SCREENS) {
   if (onlyScreen && spec.slug !== onlyScreen) continue;
-  const states = spec.states;
-  const persona = personaFor(spec);
-
   const frames = [];
-  for (const state of states) {
+  for (const state of spec.states) {
+    const { persona, degraded } = personaForFrame(spec, state);
     for (const theme of ['dark', 'light']) {
       const themeObj = createTheme(theme);
       const html = htmlFor({ spec, persona, state, theme: themeObj, element: mod.renderScreen(spec, persona, themeObj, state) });
-      const label = `${state} · ${theme} · ${persona.name}`;
+      const label = `${state} · ${theme} · ${persona.name}${degraded ? ' (lacking a required tier)' : ''}`;
+      const frame = `<div class="frame"${theme === 'light' ? ' data-theme="light"' : ''} data-screen="${spec.slug}" data-state="${state}" data-mock-theme="${theme}">${html}</div>`;
+      if (state === 'default' && theme === 'dark') galleryFrame.set(spec.slug, frame);
       frames.push(`
         <div class="cell">
           <h3>${spec.id} ${escapeHtml(spec.title)} — ${escapeHtml(label)}</h3>
-          <div class="frame"${theme === 'light' ? ' data-theme="light"' : ''} data-screen="${spec.slug}" data-state="${state}" data-mock-theme="${theme}">${html}</div>
+          ${frame}
         </div>`);
-      rendered.push({ id: spec.id, slug: spec.slug, title: spec.title, phase: spec.phase, state, theme, persona: persona.id, requires: spec.requires, rule: spec.rule, bytes: html.length });
+      rendered.push({ id: spec.id, slug: spec.slug, title: spec.title, phase: spec.phase, state, theme, persona: persona.id, degraded, requires: spec.requires, rule: spec.rule, bytes: html.length });
     }
   }
 
@@ -127,13 +147,16 @@ for (const spec of SCREENS) {
       <div class="meta" data-review-chrome>
         <h1>${spec.id} · ${escapeHtml(spec.title)}</h1>
         <p>${escapeHtml(spec.rule)}</p>
-        <p><span class="tag">needs ${spec.requires.length ? spec.requires.join('/') : 'no data'}</span><span class="tag">${spec.phase}</span><span class="tag">persona ${escapeHtml(persona.name)}</span></p>
+        <p><span class="tag">needs ${spec.requires.length ? spec.requires.join('/') : 'no data'}</span><span class="tag">${spec.phase}</span></p>
         <h2>What this file is</h2>
         <p>Rendered by <code>packages/ui/mockups/render.mjs</code> from the real components in
         <code>packages/ui/screens</code> through the DOM binding, with the generated token CSS inlined.
         It is not a drawing of the screen.</p>
+        <h2>What to check</h2>
+        <p>An "empty" frame is rendered for a persona that lacks a tier this screen needs, so it shows
+        the real degraded state: what Mirror says when it cannot measure something.</p>
         <h2>Reproduce</h2>
-        <p><code>npm run tokens &amp;&amp; npm --workspace @mirror/ui run mockups</code></p>
+        <p><code>npm run tokens &amp;&amp; npm run mockups</code></p>
         <p><a href="./index.html">All screens</a></p>
       </div>
     </div>`,
@@ -145,7 +168,7 @@ for (const spec of SCREENS) {
 /* gallery */
 const gallery = page({
   title: 'All screens — Mirror mockups',
-  subtitle: 'Generated from packages/ui/screens. Dark is the default theme; light is the same tokens.',
+  subtitle: 'Generated from packages/ui/screens. Dark is the default theme; light uses the same tokens. Every card links to that screen in both states and both themes.',
   body: `<div class="gallery">
     ${rendered
       .filter((r) => r.state === 'default' && r.theme === 'dark')
@@ -153,8 +176,8 @@ const gallery = page({
         (r) => `<div class="cell">
           <h3>${r.id} · ${escapeHtml(r.title)}</h3>
           <p>${escapeHtml(r.rule)}</p>
-          <p><span class="tag">tier ${r.requires.length ? r.requires.join('/') : 'none'}</span><span class="tag">${r.phase}</span><a href="./${r.slug}.html">open states →</a></p>
-          <iframe src="./${r.slug}.html" style="width:470px;height:920px;border:0" title="${escapeHtml(r.title)}"></iframe>
+          <p><span class="tag">tier ${r.requires.length ? r.requires.join('/') : 'none'}</span><span class="tag">${r.phase}</span><a href="./${r.slug}.html">all states →</a></p>
+          ${galleryFrame.get(r.slug) ?? ''}
         </div>`,
       )
       .join('')}

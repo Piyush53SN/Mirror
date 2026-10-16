@@ -180,13 +180,16 @@
       <div class="meta" data-review-chrome>
         <h1>J16 · Privacy centre</h1>
         <p>Retention, deletion, receipt and capability matrix — all checkable in-app.</p>
-        <p><span class="tag">needs no data</span><span class="tag">P5</span><span class="tag">persona Ananya</span></p>
+        <p><span class="tag">needs no data</span><span class="tag">P5</span></p>
         <h2>What this file is</h2>
         <p>Rendered by <code>packages/ui/mockups/render.mjs</code> from the real components in
         <code>packages/ui/screens</code> through the DOM binding, with the generated token CSS inlined.
         It is not a drawing of the screen.</p>
+        <h2>What to check</h2>
+        <p>An "empty" frame is rendered for a persona that lacks a tier this screen needs, so it shows
+        the real degraded state: what Mirror says when it cannot measure something.</p>
         <h2>Reproduce</h2>
-        <p><code>npm run tokens &amp;&amp; npm --workspace @mirror/ui run mockups</code></p>
+        <p><code>npm run tokens &amp;&amp; npm run mockups</code></p>
         <p><a href="./index.html">All screens</a></p>
       </div>
     </div>

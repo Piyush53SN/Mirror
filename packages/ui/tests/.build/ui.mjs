@@ -3274,7 +3274,21 @@ function PublicProfileScreen({ theme, persona, state = "default" }) {
             /* @__PURE__ */ jsx7(TierBadge, { tier: t.tier[0] ?? "D", ghost: true, theme }),
             /* @__PURE__ */ jsx7(Text2, { role: "body", theme, children: t.name }),
             /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: t.depth > 60 ? "deep interest" : "exploring" })
-          ] }, t.name)) : /* @__PURE__ */ jsx7(EmptyState, { theme, title: "Nothing is public", body: "A public profile starts empty. Topics are published one at a time, and each one shows what exactly would be shared." })
+          ] }, t.name)) : persona.topics.length === 0 ? (
+            // "Nothing published" and "nothing you *could* publish" are different
+            // states: without topic data there is no choice to make yet, and the
+            // screen has to say which of the two the user is in.
+            /* @__PURE__ */ jsx7(
+              DegradedNotice,
+              {
+                theme,
+                needs: ["A", "B", "C"],
+                available: persona.tiers,
+                feature: "Publishing a topic",
+                actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Connect a source" })
+              }
+            )
+          ) : /* @__PURE__ */ jsx7(EmptyState, { theme, title: "Nothing is public", body: "A public profile starts empty. Topics are published one at a time, and each one shows what exactly would be shared." })
         ] }),
         /* @__PURE__ */ jsxs5(Card, { theme, children: [
           /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Never shared, under any setting" }),
@@ -3333,7 +3347,22 @@ function MatchesScreen({ theme, persona, state = "default" }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they use their phone." })
+        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they use their phone." }),
+        persona.topics.length === 0 ? (
+          // Off is not the same as ready-to-turn-on. Without topic data there is
+          // nothing to match on, and turning the switch on would produce an empty
+          // list the user could read as "no one is interested".
+          /* @__PURE__ */ jsx7(
+            DegradedNotice,
+            {
+              theme,
+              needs: ["A", "B", "C"],
+              available: persona.tiers,
+              feature: "Matching once you turn it on",
+              actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Connect a source" })
+            }
+          )
+        ) : null
       ] })
     }
   );

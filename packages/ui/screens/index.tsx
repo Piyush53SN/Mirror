@@ -1209,6 +1209,17 @@ export function PublicProfileScreen({ theme, persona, state = 'default' }: Scree
                 </Text>
               </View>
             ))
+          ) : persona.topics.length === 0 ? (
+            // "Nothing published" and "nothing you *could* publish" are different
+            // states: without topic data there is no choice to make yet, and the
+            // screen has to say which of the two the user is in.
+            <DegradedNotice
+              theme={theme}
+              needs={['A', 'B', 'C']}
+              available={persona.tiers}
+              feature="Publishing a topic"
+              actions={<Pill theme={theme} variant="quiet">Connect a source</Pill>}
+            />
           ) : (
             <EmptyState theme={theme} title="Nothing is public" body="A public profile starts empty. Topics are published one at a time, and each one shows what exactly would be shared." />
           )}
@@ -1279,6 +1290,18 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
           Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they
           use their phone.
         </Callout>
+        {persona.topics.length === 0 ? (
+          // Off is not the same as ready-to-turn-on. Without topic data there is
+          // nothing to match on, and turning the switch on would produce an empty
+          // list the user could read as "no one is interested".
+          <DegradedNotice
+            theme={theme}
+            needs={['A', 'B', 'C']}
+            available={persona.tiers}
+            feature="Matching once you turn it on"
+            actions={<Pill theme={theme} variant="quiet">Connect a source</Pill>}
+          />
+        ) : null}
       </View>
     </Screen>
   );

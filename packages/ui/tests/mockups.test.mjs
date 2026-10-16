@@ -216,6 +216,32 @@ test('screens that need tiers A/B/C show an honest empty state for a tier-D user
   }
 });
 
+test('every required-tier screen is shown degraded for a user who lacks the tier', () => {
+  // The manifest drives this: the renderer picks a persona that lacks a required
+  // tier for each "empty" frame, so the artifact a reviewer sees really is the
+  // degraded view rather than a second copy of the default one.
+  const needsTiers = manifest.frames.filter((f) => f.requires.length > 0 && f.state === 'empty');
+  assert.ok(needsTiers.length > 0, 'expected screens that declare required tiers');
+  for (const frame of needsTiers) {
+    if (!frame.degraded) continue; // no persona lacks this tier; the screen's own empty state applies
+    const html = read(`${frame.slug}.html`);
+    const block = html.slice(html.indexOf(`data-state="empty" data-mock-theme="${frame.theme}"`));
+    assert.ok(
+      /is unavailable/.test(block),
+      `${frame.slug} (${frame.persona}) must say the feature is unavailable, not approximate it`,
+    );
+    assert.ok(
+      /Import an export|Grant usage access|Connect a source|not on this device/.test(block),
+      `${frame.slug} must name how the user could change the situation, or say plainly that they cannot`,
+    );
+  }
+  const demanded = manifest.frames.filter((f) => f.requires.some((t) => t !== 'D') && f.state === 'empty');
+  assert.ok(
+    demanded.every((f) => f.degraded),
+    'a screen needing A/B/C must have at least one frame rendered for a persona that lacks them',
+  );
+});
+
 test('social screens ship the off state, not a teaser', async () => {
   const { buildRenderer } = await import('../mockups/render-lib.mjs');
   const mod = await buildRenderer();
