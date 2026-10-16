@@ -18,5 +18,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["react", "react-native"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "screens/**/*.ts", "screens/**/*.tsx", "tokens/index.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "screens/**/*.ts", "screens/**/*.tsx", "mockups/**/*.tsx", "tokens/index.ts"]
 }

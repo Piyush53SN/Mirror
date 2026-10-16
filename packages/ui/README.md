@@ -7,9 +7,9 @@ hand-edited).
 
 ```bash
 npm run mockups      # render the gallery → packages/ui/mockups/gallery/index.html
-npm run typecheck    # tsc --noEmit, strict
-npm run test:ui      # 25 component tests
-npm run test:mockups # 13 tests over the rendered HTML
+npm run typecheck    # tsc --noEmit, strict (src, screens and the DOM binding)
+npm run test:ui      # 29 component tests
+npm run test:mockups # 15 tests over the rendered HTML
 ```
 
 ## Layout
@@ -27,7 +27,11 @@ packages/ui
 │   ├── format.ts      duration/percent/byte/date formatting (Intl, no dependency)
 │   ├── primitives/    text.tsx · controls.tsx · containers.tsx
 │   └── patterns.tsx   PermissionPrimer, WhySheet, CapabilityMatrix, PrivacyReceipt, …
-├── screens/index.tsx  J1–J18 screens + the inventory that documents each one
+├── screens/
+│   ├── index.tsx      all 28 Section J items + SECTION_J + SCREENS (the inventory)
+│   ├── personas.ts    the three demo personas and the data every screen renders
+│   ├── kit.tsx        shared pieces: NothingYet, ScoreBlock, Definition
+│   └── render.tsx     render helpers (item → tree, sheet over parent)
 ├── mockups/           rn-dom.tsx (react-native → DOM), entry.tsx, render.mjs, out/
 └── tests/             ui.test.mjs (components), mockups.test.mjs (rendered HTML)
 ```
@@ -69,10 +73,22 @@ object, and it is the only sanctioned way to build a theme in app code.
 1. Add the component to `screens/index.tsx`, take `ScreenProps`
    (`{ theme, persona, state }`) and render `DegradedNotice` when the persona
    lacks a required tier.
-2. Register it in `SCREENS` with its id, slug, phase, required tiers, available
-   states and **the rule it obeys** — the rule is what reviewers check.
-3. Run `npm run mockups && npm test`. The new screen must render in every state ×
-   theme with at least one 48dp target per frame.
+2. Add the item to `SECTION_J` (the brief's list, in its order) and to `SCREENS`
+   with its id, slug, `kind` (`screen` | `sheet` | `state` | `widget`), parent where
+   it is not a full screen, phase, required tiers, available states and **the rule
+   it obeys** — the rule is what reviewers check.
+3. Run `npm run mockups && npm test`. The item must render in every state × theme
+   with at least one 48dp target per frame, and a sheet must render over its
+   parent rather than as a page of its own.
+
+### Sheets, states and widgets
+
+`kind` is not decoration. `renderScreen()` renders a sheet or a state *over* its
+parent screen and the mockup renderer marks that parent in the frame
+(`data-mock-parent`), because the Why drawer is not a page — rendering it as one
+would be a drawing of the product rather than the product. Widgets are their own
+surface: they render standalone and the inventory only records which screen they
+belong to.
 
 ## Mockups
 

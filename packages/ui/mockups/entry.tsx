@@ -21,8 +21,9 @@ import {
   type Persona,
   type ScreenSpec,
   type ScreenState,
-  type RenderedScreen,
+  type RenderedItem,
 } from '../screens/render.js';
+import { SECTION_J, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index.js';
 import type { MirrorTheme, ThemeName } from '../src/tokens.js';
 
 export {
@@ -35,11 +36,24 @@ export {
   renderToStaticMarkup,
   createTheme,
   SCREENS,
+  SECTION_J,
+  TAB_ITEMS,
   PERSONAS,
+  screensByKind,
+  screensByPhase,
+  specBySlug,
 };
-export type { Persona, ScreenSpec, ScreenState, RenderedScreen, MirrorTheme, ThemeName };
+export type { Persona, ScreenSpec, ScreenState, RenderedItem, MirrorTheme, ThemeName };
 
-/** Convenience for the renderer: one screen → static HTML. */
-export function htmlFor(screen: RenderedScreen): string {
-  return renderToStaticMarkup(screen.element);
+/**
+ * Convenience for the renderer: one inventory item → static HTML. Accepts either
+ * a `RenderedItem` (spec + element) or a bare React element, because both are
+ * natural at a call site and silently rendering `undefined` is not.
+ */
+export function htmlFor(input: RenderedItem | React.ReactElement): string {
+  const element = (input as RenderedItem)?.element ?? (input as React.ReactElement);
+  if (!element || typeof element !== 'object') {
+    throw new Error('htmlFor() needs a React element or a RenderedItem from renderScreen()/renderMatrix()');
+  }
+  return renderToStaticMarkup(element);
 }

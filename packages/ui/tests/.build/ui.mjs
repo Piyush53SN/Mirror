@@ -2389,7 +2389,8 @@ function FactList({ items, theme }) {
 
 // packages/ui/screens/index.tsx
 import * as React2 from "react";
-import { Fragment, jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+
+// packages/ui/screens/personas.ts
 var baseConnected = [
   { label: "Per-app foreground time, launches, timestamps", tier: "D", connected: true, note: "Android Usage access. Automatic after one grant." },
   { label: "App category", tier: "D", connected: true, note: "Coarse label from the operating system." },
@@ -2422,7 +2423,47 @@ var PERSONAS = [
       { label: "Evening-heavy use", value: "64% after 8 pm", evidence: "Foreground time by hour, tier D, 14 days." },
       { label: "Frequent switching", value: "38 app switches/hour", evidence: "Launch timestamps, tier D." }
     ],
-    askable: ["How much of my week was intentional?", "When do I switch apps most?"]
+    askable: ["How much of my week was intentional?", "When do I switch apps most?"],
+    depthBands: [
+      { label: "under 8 s", share: 0.31, note: "opens that were abandoned before anything could be read" },
+      { label: "8 s \u2013 1 min", share: 0.38, note: "checks, replies, glancing" },
+      { label: "1 \u2013 5 min", share: 0.22, note: "reading and watching" },
+      { label: "5 \u2013 20 min", share: 0.08, note: "longer sittings" },
+      { label: "over 20 min", share: 0.01, note: "rare, and mostly one app" }
+    ],
+    curiosity: { deepHours: 5.1, habitHours: 8.4, switchesPerHour: 38, note: "Habit is the larger half. That is the whole finding, and no nudge was sent about it." },
+    iqs: {
+      value: 41,
+      band: "usage-only band",
+      parts: [
+        { label: "Session length mix", points: 14, max: 30, tier: "D", detail: "31% of opens end under 8 seconds." },
+        { label: "Deliberate share", points: 12, max: 25, tier: "D", detail: "From your own labels, not from content." },
+        { label: "Switching pressure", points: 8, max: 20, tier: "D", detail: "38 switches per hour, evening-weighted." },
+        { label: "Late-night share", points: 7, max: 15, tier: "D", detail: "36% after 11pm." },
+        { label: "Topic depth", points: 0, max: 10, tier: "A", detail: "Not measured: needs topic data." }
+      ],
+      caveat: "The band is capped at 75 while topic depth is unmeasured. A score without its parts would be a horoscope."
+    },
+    arcs: [],
+    paths: [],
+    rabbit: { sessions: 9, minutes: 118, lateNightShare: 0.38, example: "Short-video sessions that restarted 5 times inside 20 minutes." },
+    goals: [
+      { label: "Short video under 60 min/day", progress: 0.62, target: "60 min/day", note: "Set by you in week 38. Never shown as a streak." },
+      { label: "Phone-free first hour", progress: 0.45, target: "5 days/week", note: "Counted from launch timestamps, tier D." }
+    ],
+    networkLog: [],
+    intents: [
+      { label: "Short video", ask: true, note: "Ask after 10 minutes in-app." },
+      { label: "Social feed", ask: true, note: "Ask after 5 minutes." },
+      { label: "Messaging", ask: false, note: "Never ask: it is a tool, not a habit." }
+    ],
+    chat: null,
+    update: { current: "0.1.0", available: "0.2.0", notes: "Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.", bytes: 84e5 },
+    whyParts: [
+      { label: "Yesterday, before 8pm", points: 52, note: "from foreground time", tier: "D" },
+      { label: "Evening block", points: 41, note: "after 8pm, 3 sessions", tier: "D" },
+      { label: "Late-night block", points: 33, note: "after 11pm, 1 session", tier: "D" }
+    ]
   },
   {
     id: "rehan",
@@ -2452,7 +2493,80 @@ var PERSONAS = [
       { label: "Deliberate starter", value: "3 of 4 topics began from a search", evidence: "First-seen events, tier C search terms and tier B history." },
       { label: "Shallow tail", value: "22% of short-video sessions end under 8s", evidence: "Session length distribution, tier C." }
     ],
-    askable: ["Which topic grew the most this month?", "How deep was my film photography reading?"]
+    askable: ["Which topic grew the most this month?", "How deep was my film photography reading?"],
+    depthBands: [
+      { label: "under 8 s", share: 0.19, note: "mostly feed opens" },
+      { label: "8 s \u2013 1 min", share: 0.29, note: "checks and skims" },
+      { label: "1 \u2013 5 min", share: 0.31, note: "reading, watching" },
+      { label: "5 \u2013 20 min", share: 0.16, note: "sittings with a subject" },
+      { label: "over 20 min", share: 0.05, note: "long reads and lectures" }
+    ],
+    curiosity: { deepHours: 9.8, habitHours: 5.2, switchesPerHour: 21, note: "Curiosity is ahead, and the shallow tail is concentrated in one app." },
+    iqs: {
+      value: 67,
+      band: "measured band",
+      parts: [
+        { label: "Session length mix", points: 22, max: 30, tier: "D", detail: "Only 19% of opens end under 8 seconds." },
+        { label: "Deliberate share", points: 18, max: 25, tier: "D", detail: "From your labels." },
+        { label: "Switching pressure", points: 13, max: 20, tier: "D", detail: "21 switches per hour." },
+        { label: "Late-night share", points: 6, max: 15, tier: "D", detail: "23% after 11pm." },
+        { label: "Topic depth", points: 8, max: 10, tier: "C", detail: "Three topics above depth 40, two still growing." }
+      ],
+      caveat: "Computed only from parts that exist. The topic part uses tier B/C data and names which."
+    },
+    arcs: [
+      { topic: "Film photography", stage: "practising", weeks: [8, 14, 21, 33, 44, 58, 71, 78], next: "Darkroom printing \u2014 three sources followed, none opened yet.", sourceTier: "B+C" },
+      { topic: "Rust programming", stage: "learning", weeks: [3, 9, 18, 27, 38, 47, 58, 64], next: "Ownership chapter, revisited twice.", sourceTier: "C" },
+      { topic: "Urban gardening", stage: "stalled", weeks: [22, 30, 39, 44, 41, 39, 40, 41], next: "No new sources since week 44.", sourceTier: "B" }
+    ],
+    paths: [
+      {
+        topic: "Film photography",
+        steps: [
+          { step: 'Search: "how to meter for black and white"', tier: "C", when: "6 weeks ago" },
+          { step: "Article: zone system explained", tier: "C", when: "6 weeks ago" },
+          { step: "Video: developing at home, 24 min watched to 92%", tier: "C", when: "5 weeks ago" },
+          { step: "Saved: developer chemistry list", tier: "A", when: "2 weeks ago" }
+        ]
+      },
+      {
+        topic: "Rust programming",
+        steps: [
+          { step: 'Search: "rust borrow checker explained"', tier: "C", when: "3 weeks ago" },
+          { step: "Docs pages: 14 opened, 6 read past halfway", tier: "C", when: "3 weeks ago" },
+          { step: "Community post answered", tier: "A", when: "1 week ago" }
+        ]
+      }
+    ],
+    rabbit: { sessions: 6, minutes: 74, lateNightShare: 0.29, example: "A 41-minute stretch that alternated Shorts and the feed 12 times." },
+    goals: [
+      { label: "Short video under 30 min/day", progress: 0.79, target: "30 min/day", note: "You raised this yourself after three weeks under it." },
+      { label: "One long read a day", progress: 0.86, target: "6 days/week", note: "Measured as a session over 8 minutes with a topic attached." }
+    ],
+    networkLog: [
+      { when: "3 days ago", host: "www.googleapis.com (YouTube Data API)", bytes: 2140, why: "Subscription list, narrowest scope, read-only." },
+      { when: "9 days ago", host: "oauth.reddit.com", bytes: 1870, why: "Saved posts, after you connected it." }
+    ],
+    intents: [
+      { label: "Short video", ask: true, note: "Ask after 10 minutes in-app." },
+      { label: "Long reads", ask: false, note: "Never interrupt a long read." },
+      { label: "Communities", ask: true, note: "Ask after 20 minutes." }
+    ],
+    chat: {
+      with: "Sam \xB7 matched on film photography",
+      topic: "Film photography",
+      messages: [
+        { from: "them", text: "Your arc shows darkroom printing next \u2014 did you ever try it?" },
+        { from: "you", text: "Not yet. Mirror says I have followed three sources and opened none." },
+        { from: "them", text: "Mine said the same thing about cyanotypes." }
+      ]
+    },
+    update: { current: "0.1.0", available: "0.2.0", notes: "Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.", bytes: 84e5 },
+    whyParts: [
+      { label: "Yesterday, before 8pm", points: 61, note: "from foreground time", tier: "D" },
+      { label: "Evening block", points: 34, note: "after 8pm, 2 sessions", tier: "D" },
+      { label: "Late-night block", points: 12, note: "after 11pm, 1 session", tier: "D" }
+    ]
   },
   {
     id: "mei",
@@ -2475,17 +2589,168 @@ var PERSONAS = [
       { app: "Instagram", topic: "Film photography", minutes: 27, kind: "habit", intent: "Mindless" }
     ],
     budgets: [
-      { label: "Short video", target: 20, actual: 12, unit: "min/day" },
-      { label: "Social feed", target: 25, actual: 27, unit: "min/day" },
+      { label: "Short video", target: 20, actual: 11, unit: "min/day" },
       { label: "Deep reading", target: 60, actual: 74, unit: "min/day" }
     ],
     traits: [
       { label: "Long-form preference", value: "Average session 24 minutes", evidence: "Session lengths across tiers A/B/C/D." },
       { label: "Low late-night use", value: "8% after 11 pm", evidence: "Timestamps, tier D." }
     ],
-    askable: ["What did I learn about this month?", "Which sources did I actually open?"]
+    askable: ["What did I learn about this month?", "Which sources did I actually open?"],
+    depthBands: [
+      { label: "under 8 s", share: 0.11, note: "almost all of it is one app" },
+      { label: "8 s \u2013 1 min", share: 0.22, note: "checks, replies" },
+      { label: "1 \u2013 5 min", share: 0.27, note: "reading" },
+      { label: "5 \u2013 20 min", share: 0.28, note: "papers, lectures, long reads" },
+      { label: "over 20 min", share: 0.12, note: "sittings with a subject and a question" }
+    ],
+    curiosity: { deepHours: 12.4, habitHours: 2.9, switchesPerHour: 14, note: "Deep work dominates. Mirror says so once and then stays quiet." },
+    iqs: {
+      value: 82,
+      band: "measured band",
+      parts: [
+        { label: "Session length mix", points: 27, max: 30, tier: "D", detail: "11% of opens end under 8 seconds." },
+        { label: "Deliberate share", points: 21, max: 25, tier: "D", detail: "From your labels." },
+        { label: "Switching pressure", points: 17, max: 20, tier: "D", detail: "14 switches per hour." },
+        { label: "Late-night share", points: 12, max: 15, tier: "D", detail: "8% after 11pm." },
+        { label: "Topic depth", points: 5, max: 10, tier: "A", detail: "Four topics followed; two went past depth 60." }
+      ],
+      caveat: "The parts are all measured here. The band tops out at 85: the last points would need content quality, which Mirror cannot judge."
+    },
+    arcs: [
+      { topic: "Astronomy", stage: "deep", weeks: [18, 26, 34, 47, 55, 62, 74, 81], next: "Stellar spectra \u2014 an instrument project, two sources opened.", sourceTier: "A+C" },
+      { topic: "Urban gardening", stage: "practising", weeks: [30, 36, 42, 50, 57, 61, 64, 66], next: "Composting, read consistently for 6 weeks.", sourceTier: "B" },
+      { topic: "Rust programming", stage: "learning", weeks: [12, 20, 31, 40, 49, 54, 57, 58], next: "Async chapter, slowing down.", sourceTier: "C" },
+      { topic: "Film photography", stage: "starting", weeks: [2, 6, 11, 17, 23, 29, 33, 37], next: "Metering basics.", sourceTier: "B" }
+    ],
+    paths: [
+      {
+        topic: "Astronomy",
+        steps: [
+          { step: "Saved: ESA press release on a comet", tier: "A", when: "9 weeks ago" },
+          { step: "Docs/reference: orbital mechanics primer, 31 min", tier: "C", when: "8 weeks ago" },
+          { step: "Live stream watched to 94%", tier: "C", when: "4 weeks ago" },
+          { step: "Subscription: an instrument channel", tier: "A", when: "1 week ago" }
+        ]
+      },
+      {
+        topic: "Urban gardening",
+        steps: [
+          { step: "Imported Takeout: 12 gardening videos", tier: "B", when: "14 weeks ago" },
+          { step: "Community thread read for 9 minutes", tier: "A", when: "7 weeks ago" },
+          { step: "Saved: composting ratios", tier: "A", when: "3 weeks ago" }
+        ]
+      }
+    ],
+    rabbit: { sessions: 2, minutes: 21, lateNightShare: 0.05, example: "One 14-minute feed drift after a film photography post." },
+    goals: [
+      { label: "Short video under 20 min/day", progress: 0.93, target: "20 min/day", note: "Quietly met for 5 of 6 weeks." },
+      { label: "One long read a day", progress: 0.88, target: "6 days/week", note: "Defined as a session over 8 minutes with a topic attached." },
+      { label: "Two phone-free evenings", progress: 0.5, target: "2/week", note: "Counted from launch timestamps." }
+    ],
+    networkLog: [
+      { when: "yesterday", host: "www.googleapis.com (YouTube Data API)", bytes: 3980, why: "Watch-history import, user-initiated." },
+      { when: "4 days ago", host: "reddit.com/api/v1", bytes: 2260, why: "Saved posts, read-only scope." },
+      { when: "11 days ago", host: "mirror.example (update check)", bytes: 640, why: "Version manifest only. Disabled when the backend is off." }
+    ],
+    intents: [
+      { label: "Short video", ask: true, note: "Ask after 10 minutes in-app." },
+      { label: "Social feed", ask: false, note: "Off: you asked to be left alone on this one." },
+      { label: "Research browsing", ask: false, note: "Never ask during long-form reading." }
+    ],
+    chat: {
+      with: "Ana \xB7 matched on astronomy",
+      topic: "Astronomy",
+      messages: [
+        { from: "you", text: "Your arc says stellar spectra. Mine is still on orbital mechanics." },
+        { from: "them", text: "Same instrument project, different week. No streaks here, so we can just talk." }
+      ]
+    },
+    update: { current: "0.1.0", available: "0.2.0", notes: "Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.", bytes: 84e5 },
+    whyParts: [
+      { label: "Yesterday, before 8pm", points: 74, note: "from foreground time", tier: "D" },
+      { label: "Evening block", points: 52, note: "after 8pm, 2 sessions", tier: "D" },
+      { label: "Late-night block", points: 8, note: "after 11pm, 1 session", tier: "D" }
+    ]
   }
 ];
+
+// packages/ui/screens/kit.tsx
+import { jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+function NothingYet({
+  theme,
+  needs,
+  available,
+  feature,
+  actionLabel = "Explain what Mirror needs"
+}) {
+  return /* @__PURE__ */ jsx7(
+    DegradedNotice,
+    {
+      theme,
+      needs,
+      available,
+      feature,
+      actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: actionLabel })
+    }
+  );
+}
+function ScoreBlock({
+  theme,
+  title,
+  score,
+  max = 100,
+  band,
+  parts,
+  caveat,
+  action,
+  columns = 1
+}) {
+  const sum = parts.reduce((total, p) => total + p.points, 0);
+  const sumMax = parts.reduce((total, p) => total + p.max, 0);
+  return /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
+    /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between" }, children: [
+      /* @__PURE__ */ jsxs5(View, { children: [
+        /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: title.toUpperCase() }),
+        /* @__PURE__ */ jsx7(Text2, { role: "display", theme, children: String(score) }),
+        band ? /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: band }) : null
+      ] }),
+      /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `of ${max}` })
+    ] }),
+    /* @__PURE__ */ jsx7(Divider, { theme }),
+    /* @__PURE__ */ jsx7(View, { style: { gap: theme.space(3) }, children: parts.map((part) => /* @__PURE__ */ jsxs5(View, { style: columns === 2 ? { width: "48%" } : void 0, children: [
+      /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.space(2) }, children: [
+        /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", alignItems: "center", gap: theme.space(2), flexShrink: 1 }, children: [
+          /* @__PURE__ */ jsx7(TierBadge, { tier: part.tier, ghost: true, theme }),
+          /* @__PURE__ */ jsx7(Text2, { role: "label", theme, style: { flexShrink: 1 }, children: part.label })
+        ] }),
+        /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `${part.points}/${part.max}` })
+      ] }),
+      /* @__PURE__ */ jsx7(View, { style: { marginTop: theme.space(1) }, children: /* @__PURE__ */ jsx7(
+        Meter,
+        {
+          theme,
+          value: part.max === 0 ? 0 : part.points / part.max,
+          label: `${part.label}: ${part.points} of ${part.max} points`,
+          tone: part.points === 0 ? "muted" : "anchor"
+        }
+      ) }),
+      part.detail ? /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: part.detail }) : null
+    ] }, part.label)) }),
+    /* @__PURE__ */ jsx7(Callout, { theme, tone: "neutral", children: /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `The parts add to ${sum} of a possible ${sumMax}. The score is reported on the same scale as the parts it is made of.` }) }),
+    caveat ? /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: caveat }) }) : null,
+    action ? /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row" }, children: action }) : null
+  ] });
+}
+function Definition({ theme, term, children }) {
+  return /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(1) }, children: [
+    /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: `HOW MIRROR DEFINES \u201C${term.toUpperCase()}\u201D` }),
+    children
+  ] });
+}
+
+// packages/ui/screens/index.tsx
+import { Fragment, jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
 var HERO = (p) => [
   {
     id: "week",
@@ -2507,24 +2772,6 @@ var HERO = (p) => [
     body: "38% of habit minutes fall after 11pm. Neutral observation, no streak, no reminder unless you ask for one."
   }
 ];
-function NothingYet({
-  theme,
-  needs,
-  available,
-  feature,
-  actionLabel = "Explain what Mirror needs"
-}) {
-  return /* @__PURE__ */ jsx7(
-    DegradedNotice,
-    {
-      theme,
-      needs,
-      available,
-      feature,
-      actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: actionLabel })
-    }
-  );
-}
 var TABS = [
   { id: "home", label: "Home" },
   { id: "insights", label: "Insights" },
@@ -2538,59 +2785,94 @@ function OnboardingScreen({ theme }) {
     { title: "Two profiles, never merged", body: "Private holds everything. Public holds only the topics you pick, one by one. Nothing is copied across." },
     { title: "No streaks, no guilt, no dark patterns", body: "Mirror exists to reduce mindless use. It will not nudge you to come back." }
   ];
-  return /* @__PURE__ */ jsx7(Screen, { title: "Onboarding", theme, padded: true, children: /* @__PURE__ */ jsxs5(View, { style: { paddingTop: theme.space(6), gap: theme.space(4) }, children: [
-    /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: "MIRROR" }),
-    /* @__PURE__ */ jsx7(Text2, { role: "display", theme, children: `See how you actually use your phone` }),
-    /* @__PURE__ */ jsx7(Text2, { role: "body", tone: "muted", theme, children: `Mirror shows the quality of your attention, not just the hours. It runs on this device and never asks you to log anything by hand.` }),
-    promises.map((p) => /* @__PURE__ */ jsxs5(Card, { theme, children: [
-      /* @__PURE__ */ jsx7(Text2, { role: "title", theme, children: p.title }),
-      /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: p.body })
+  return /* @__PURE__ */ jsx8(Screen, { title: "Onboarding", theme, padded: true, children: /* @__PURE__ */ jsxs6(View, { style: { paddingTop: theme.space(6), gap: theme.space(4) }, children: [
+    /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "MIRROR" }),
+    /* @__PURE__ */ jsx8(Text2, { role: "display", theme, children: `See how you actually use your phone` }),
+    /* @__PURE__ */ jsx8(Text2, { role: "body", tone: "muted", theme, children: `Mirror shows the quality of your attention, not just the hours. It runs on this device and never asks you to log anything by hand.` }),
+    promises.map((p) => /* @__PURE__ */ jsxs6(Card, { theme, children: [
+      /* @__PURE__ */ jsx8(Text2, { role: "title", theme, children: p.title }),
+      /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: p.body })
     ] }, p.title)),
-    /* @__PURE__ */ jsx7(Pill, { theme, children: "Continue" }),
-    /* @__PURE__ */ jsx7(View, { style: { alignItems: "center" }, children: /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Explore with demo data" }) })
+    /* @__PURE__ */ jsx8(Pill, { theme, children: "Continue" }),
+    /* @__PURE__ */ jsx8(View, { style: { alignItems: "center" }, children: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Explore with demo data" }) })
   ] }) });
 }
 function PermissionPrimerScreen({ theme }) {
-  return /* @__PURE__ */ jsx7(Screen, { title: "Permission primer", theme, padded: true, children: /* @__PURE__ */ jsx7(
-    PermissionPrimer,
-    {
-      theme,
-      ask: {
-        systemName: "Usage access \xB7 Settings \u2192 Apps \u2192 Special access \u2192 Usage access \u2192 Mirror",
-        sees: "How long you use each app and when you open them \u2014 foreground time, launches, timestamps.",
-        cannotSee: "What is inside those apps. No content, no messages, no notifications. Mirror never reads them.",
-        settingsPath: "Android settings \u2192 Special access \u2192 Usage access"
-      },
-      onAllow: () => void 0,
-      onDeny: () => void 0
+  const [step, setStep] = React2.useState("usage");
+  const primers = {
+    usage: {
+      systemName: "Usage access \xB7 Settings \u2192 Apps \u2192 Special access \u2192 Usage access \u2192 Mirror",
+      sees: "How long you use each app and when you open them \u2014 foreground time, launches, timestamps.",
+      cannotSee: "What is inside those apps. No content, no messages, no notifications. Mirror never reads them.",
+      settingsPath: "Android settings \u2192 Special access \u2192 Usage access"
+    },
+    notifications: {
+      systemName: "Notifications \xB7 Mirror may send local notifications",
+      sees: "Nothing new. Notifications are an output, not a source \u2014 Mirror writes them on this device and no server sends them.",
+      cannotSee: "It also cannot read any other app\u2019s notifications. Reading notifications is a forbidden source, not a disabled feature.",
+      settingsPath: "Android settings \u2192 Apps \u2192 Mirror \u2192 Notifications (off unless you allow)"
     }
-  ) });
+  };
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Permission primers",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Before the system asks",
+          subtitle: step === "usage" ? "Step 1 of 2 \xB7 usage access" : "Step 2 of 2 \xB7 notifications"
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(
+          SegmentedControl,
+          {
+            theme,
+            label: "Permission",
+            value: step,
+            onChange: (v) => setStep(v),
+            options: [
+              { value: "usage", label: "Usage access" },
+              { value: "notifications", label: "Notifications" }
+            ]
+          }
+        ),
+        /* @__PURE__ */ jsx8(PermissionPrimer, { theme, ask: primers[step], onAllow: () => void 0, onDeny: () => void 0 }),
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "neutral", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: step === "usage" ? "Usage access is the only permission Mirror needs to work at all. Denying it leaves the app running with an empty, honest dashboard \u2014 not with a degraded one full of guesses." : "Notifications are optional and off by default. With them off, Mirror still works; you simply never hear from it, which for most people is the right setting." }) })
+      ] })
+    }
+  );
 }
 function HomeScreen({ theme, persona, state = "default" }) {
   const [hero, setHero] = React2.useState(0);
   const empty = state === "empty";
   const slides = HERO(persona);
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Home",
+      title: "Dashboard",
       theme,
       padded: false,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
           title: `Good evening, ${persona.name}`,
           subtitle: empty ? "Nothing collected yet" : `Week of ${tierSummary(persona.tiers)} data`,
-          actions: /* @__PURE__ */ jsxs5(Fragment, { children: [
-            /* @__PURE__ */ jsx7(IconButton, { label: "Search your own data", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u2315" }) }),
-            /* @__PURE__ */ jsx7(IconButton, { label: "Profile and settings", theme, badge: true, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: persona.name.slice(0, 1) }) })
+          actions: /* @__PURE__ */ jsxs6(Fragment, { children: [
+            /* @__PURE__ */ jsx8(IconButton, { label: "Search your own data", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u2315" }) }),
+            /* @__PURE__ */ jsx8(IconButton, { label: "Profile and settings", theme, badge: true, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: persona.name.slice(0, 1) }) })
           ] })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { paddingHorizontal: theme.space(4), gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { paddingHorizontal: theme.space(4), gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(
           BoundaryToggle,
           {
             theme,
@@ -2599,30 +2881,30 @@ function HomeScreen({ theme, persona, state = "default" }) {
             consequence: "Private. Only your selections are ever shared \u2014 nothing else leaves this phone."
           }
         ),
-        /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ jsx7(Chip, { label: "Range", value: "This week", theme }),
-          /* @__PURE__ */ jsx7(Chip, { label: "App", value: "All", theme }),
-          /* @__PURE__ */ jsx7(Chip, { label: "Topic", value: persona.topics[0]?.name ?? "All", theme })
+        /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsx8(Chip, { label: "Range", value: "This week", theme }),
+          /* @__PURE__ */ jsx8(Chip, { label: "App", value: "All", theme }),
+          /* @__PURE__ */ jsx8(Chip, { label: "Topic", value: persona.topics[0]?.name ?? "All", theme })
         ] }),
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        empty ? /* @__PURE__ */ jsx7(Card, { theme, children: /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(Card, { theme, children: /* @__PURE__ */ jsx8(
           EmptyState,
           {
             title: "No usage data yet",
             body: "Mirror has nothing to show until Android usage access is granted. It will not fill the gap with estimates.",
-            action: /* @__PURE__ */ jsx7(Pill, { theme, children: "Explain what it can see" }),
+            action: /* @__PURE__ */ jsx8(Pill, { theme, children: "Explain what it can see" }),
             theme
           }
-        ) }) : /* @__PURE__ */ jsxs5(Fragment, { children: [
-          /* @__PURE__ */ jsx7(HeroCarousel, { theme, slides, index: hero, onIndexChange: setHero }),
-          /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Last 7 days", caption: hedged(duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0)), "D", "duration") }),
-            /* @__PURE__ */ jsx7(Sparkline, { theme, values: persona.weeklyMinutes, label: `Daily screen time for 7 days, ${persona.weeklyMinutes.join(", ")} minutes` }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: theme.space(2) }, children: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: d }, d)) })
+        ) }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+          /* @__PURE__ */ jsx8(HeroCarousel, { theme, slides, index: hero, onIndexChange: setHero }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Last 7 days", caption: hedged(duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0)), "D", "duration") }),
+            /* @__PURE__ */ jsx8(Sparkline, { theme, values: persona.weeklyMinutes, label: `Daily screen time for 7 days, ${persona.weeklyMinutes.join(", ")} minutes` }),
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", justifyContent: "space-between", marginTop: theme.space(2) }, children: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: d }, d)) })
           ] }),
-          /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Attention budget", caption: "soft limits, no streaks" }),
-            persona.budgets.map((b) => /* @__PURE__ */ jsx7(View, { style: { marginBottom: theme.space(3) }, children: /* @__PURE__ */ jsx7(
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Attention budget", caption: "soft limits, no streaks" }),
+            persona.budgets.map((b) => /* @__PURE__ */ jsx8(View, { style: { marginBottom: theme.space(3) }, children: /* @__PURE__ */ jsx8(
               Meter,
               {
                 theme,
@@ -2632,18 +2914,18 @@ function HomeScreen({ theme, persona, state = "default" }) {
                 tone: b.actual > b.target ? "muted" : "anchor"
               }
             ) }, b.label)),
-            /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Adjust a budget" })
+            /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Adjust a budget" })
           ] }),
-          /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Learning arcs", caption: "topics you are going deeper on" }),
-            persona.topics.length === 0 ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["A", "B", "C"], available: persona.tiers, feature: "Topic arcs", actionLabel: "Import an export" }) : persona.topics.slice(0, 3).map((topic) => /* @__PURE__ */ jsx7(
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Learning arcs", caption: "topics you are going deeper on" }),
+            persona.topics.length === 0 ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["A", "B", "C"], available: persona.tiers, feature: "Topic arcs", actionLabel: "Import an export" }) : persona.topics.slice(0, 3).map((topic) => /* @__PURE__ */ jsx8(
               ListRow,
               {
                 theme,
-                leading: /* @__PURE__ */ jsx7(TierBadge, { tier: topic.tier[0] ?? "D", ghost: true, theme }),
+                leading: /* @__PURE__ */ jsx8(TierBadge, { tier: topic.tier[0] ?? "D", ghost: true, theme }),
                 title: topic.name,
                 meta: `${topic.hours}h \xB7 first seen ${topic.firstSeen}`,
-                trailing: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, style: { fontWeight: "600" }, children: `${topic.depth}` })
+                trailing: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, style: { fontWeight: "600" }, children: `${topic.depth}` })
               },
               topic.name
             ))
@@ -2653,103 +2935,42 @@ function HomeScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function InsightsScreen({ theme, persona, state = "default" }) {
-  const [open, setOpen] = React2.useState(false);
-  return /* @__PURE__ */ jsx7(
-    Screen,
-    {
-      title: "Insights",
-      theme,
-      padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Insights", subtitle: "Descriptive, never diagnostic" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      overlay: /* @__PURE__ */ jsx7(Sheet, { theme, open, title: "Why this depth score", subtitle: "Every component, with its source tier", onClose: () => setOpen(false), children: /* @__PURE__ */ jsx7(
-        WhySheet,
-        {
-          theme,
-          score: 78,
-          maxScore: 100,
-          caveat: "Depth is an estimate built from session length, completion and return visits. It describes behaviour, not understanding.",
-          components: [
-            { label: "Median session length", points: 26.4, tier: "D", note: "Foreground time per session, 14-day median." },
-            { label: "Completion rate", points: 22.1, tier: "C", note: "Watch completion from the browser extension." },
-            { label: "Return visits", points: 18.7, tier: "B", note: "Imported history: distinct days." },
-            { label: "Cross-source corroboration", points: 10.8, tier: "A", note: "Same topic seen in an official API and in usage." }
-          ]
-        }
-      ) }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Quality of attention", caption: "this week" }),
-          /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(4), alignItems: "center" }, children: [
-            /* @__PURE__ */ jsx7(Ring, { theme, value: persona.intentionalShare, caption: "intentional" }),
-            /* @__PURE__ */ jsxs5(View, { style: { flex: 1, gap: theme.space(2) }, children: [
-              /* @__PURE__ */ jsx7(Stat, { theme, value: `${Math.round(persona.intentionalShare * 100)}%`, label: "Deliberate sessions", hint: hedged("from session length and your labels", "D") }),
-              /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} total, ${persona.sessions.filter((s) => s.kind === "habit").reduce((a, s) => a + s.minutes, 0)}m in habit loops.` })
-            ] })
-          ] })
-        ] }),
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Insights" }) : /* @__PURE__ */ jsxs5(Fragment, { children: [
-          /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Patterns", caption: "stated, then evidenced" }),
-            persona.traits.map((trait) => /* @__PURE__ */ jsxs5(View, { style: { marginBottom: theme.space(3) }, children: [
-              /* @__PURE__ */ jsx7(Text2, { role: "title", theme, children: trait.label }),
-              /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: trait.value }),
-              /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: trait.evidence })
-            ] }, trait.label))
-          ] }),
-          /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Deepest topic", caption: persona.topics[0]?.name ?? "needs topic data" }),
-            persona.topics.length ? /* @__PURE__ */ jsxs5(Fragment, { children: [
-              /* @__PURE__ */ jsx7(Stat, { theme, value: String(persona.topics[0]?.depth), label: "depth score", hint: "0\u2013100, descriptive estimate" }),
-              /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: [
-                /* @__PURE__ */ jsx7(LinkButton, { theme, onPress: () => setOpen(true), children: "Why this score" }),
-                /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Label a session" })
-              ] })
-            ] }) : /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["A", "B", "C"], available: persona.tiers, feature: "Depth scoring", actionLabel: "Import an export" })
-          ] })
-        ] })
-      ] })
-    }
-  );
-}
 function JourneyScreen({ theme, persona }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Journey",
+      title: "Interest Evolution",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
-          title: "Journey",
+          title: "Interest Evolution",
           subtitle: "Where your curiosity went",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "Journey options: range and sources", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Journey options: range and sources", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        persona.topics.length === 0 ? /* @__PURE__ */ jsx7(
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        persona.topics.length === 0 ? /* @__PURE__ */ jsx8(
           DegradedNotice,
           {
             theme,
             needs: ["A", "B", "C"],
             available: persona.tiers,
             feature: "Interest evolution",
-            actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Import an export" })
+            actions: /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Import an export" })
           }
-        ) : /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Interest evolution", caption: "first seen, then depth over time" }),
-          persona.topics.map((topic) => /* @__PURE__ */ jsxs5(View, { style: { marginBottom: theme.space(4) }, children: [
-            /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, children: [
-              /* @__PURE__ */ jsx7(Text2, { role: "title", theme, children: topic.name }),
-              /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `${topic.trend > 0 ? "+" : ""}${topic.trend}%` })
+        ) : /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Interest evolution", caption: "first seen, then depth over time" }),
+          persona.topics.map((topic) => /* @__PURE__ */ jsxs6(View, { style: { marginBottom: theme.space(4) }, children: [
+            /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, children: [
+              /* @__PURE__ */ jsx8(Text2, { role: "title", theme, children: topic.name }),
+              /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `${topic.trend > 0 ? "+" : ""}${topic.trend}%` })
             ] }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row", gap: 3, marginTop: theme.space(2), height: 32, alignItems: "flex-end" }, children: Array.from({ length: 12 }).map((_, i) => /* @__PURE__ */ jsx7(
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", gap: 3, marginTop: theme.space(2), height: 32, alignItems: "flex-end" }, children: Array.from({ length: 12 }).map((_, i) => /* @__PURE__ */ jsx8(
               View,
               {
                 style: {
@@ -2762,13 +2983,13 @@ function JourneyScreen({ theme, persona }) {
               },
               i
             )) }),
-            /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: `first seen ${topic.firstSeen} \xB7 ${tierSummary(topic.tier.split("+"))} \xB7 ${topic.hours}h this month` }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row", marginTop: theme.space(2) }, children: /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Open the sessions behind this" }) })
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: `first seen ${topic.firstSeen} \xB7 ${tierSummary(topic.tier.split("+"))} \xB7 ${topic.hours}h this month` }),
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", marginTop: theme.space(2) }, children: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Open the sessions behind this" }) })
           ] }, topic.name))
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "What changed this month" }),
-          /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "What changed this month" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -2785,34 +3006,34 @@ function JourneyScreen({ theme, persona }) {
   );
 }
 function SessionsScreen({ theme, persona, state = "default" }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
       title: "Sessions",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Sessions", subtitle: "Longest first. Labels train the local model." }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Sessions", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsx7(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: persona.sessions.map((s, i) => /* @__PURE__ */ jsxs5(View, { children: [
-          /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Sessions", subtitle: "Longest first. Labels train the local model." }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Sessions", actionLabel: "Grant usage access" }) : null,
+        /* @__PURE__ */ jsx8(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: persona.sessions.map((s, i) => /* @__PURE__ */ jsxs6(View, { children: [
+          /* @__PURE__ */ jsx8(
             ListRow,
             {
               theme,
-              leading: /* @__PURE__ */ jsx7(TierBadge, { tier: s.topic === "\u2014" ? "D" : "C", ghost: true, theme }),
+              leading: /* @__PURE__ */ jsx8(TierBadge, { tier: s.topic === "\u2014" ? "D" : "C", ghost: true, theme }),
               title: `${s.app} \xB7 ${duration(s.minutes)}`,
               meta: `${s.topic} \xB7 ${s.kind === "deep" ? "deep session" : "habit loop"}`,
-              trailing: /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), alignItems: "center" }, children: [
-                /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: s.intent }),
-                /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Change" })
+              trailing: /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), alignItems: "center" }, children: [
+                /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: s.intent }),
+                /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Change" })
               ] })
             }
           ),
-          i < persona.sessions.length - 1 ? /* @__PURE__ */ jsx7(Divider, { theme }) : null
+          i < persona.sessions.length - 1 ? /* @__PURE__ */ jsx8(Divider, { theme }) : null
         ] }, `${s.app}-${i}`)) }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: persona.tiers.includes("C") ? "Session labels stay on this device and are used to score your own sessions, never to train anything shared." : "Without the browser extension Mirror cannot see what a session was about \u2014 only that it happened, and for how long." })
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: persona.tiers.includes("C") ? "Session labels stay on this device and are used to score your own sessions, never to train anything shared." : "Without the browser extension Mirror cannot see what a session was about \u2014 only that it happened, and for how long." })
       ] })
     }
   );
@@ -2820,41 +3041,41 @@ function SessionsScreen({ theme, persona, state = "default" }) {
 function DiscoveryScreen({ theme, persona, state = "default" }) {
   const rabbit = persona.sessions.filter((s) => s.kind === "habit");
   const minutes = rabbit.reduce((a, s) => a + s.minutes, 0);
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Discovery",
+      title: "Discovery Journey",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
-          title: "Discovery",
-          subtitle: "Exploration vs. exploitation",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "Discovery options: what counts as a rabbit hole", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          title: "Discovery Journey",
+          subtitle: "Exploration vs. exploitation, route by route",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Discovery options: what counts as a rabbit hole", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Rabbit-hole detection", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsxs5(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Rabbit holes", caption: "definition shown, not implied" }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: "A rabbit hole here is three or more consecutive short sessions on the same app with no search, no save and no cross-app follow-up." }),
-          /* @__PURE__ */ jsx7(Divider, { theme }),
-          rabbit.length === 0 ? /* @__PURE__ */ jsx7(EmptyState, { theme, title: "No rabbit holes this week", body: "Nothing met the definition. That is a real result, not a missing signal." }) : /* @__PURE__ */ jsxs5(Fragment, { children: [
-            /* @__PURE__ */ jsx7(Stat, { theme, value: duration(minutes), label: "in habit loops this week", hint: `${rabbit.length} sessions met the definition` }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row", marginTop: theme.space(3) }, children: /* @__PURE__ */ jsxs5(LinkButton, { theme, children: [
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Rabbit-hole detection", actionLabel: "Grant usage access" }) : null,
+        /* @__PURE__ */ jsxs6(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Rabbit holes", caption: "definition shown, not implied" }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "A rabbit hole here is three or more consecutive short sessions on the same app with no search, no save and no cross-app follow-up." }),
+          /* @__PURE__ */ jsx8(Divider, { theme }),
+          rabbit.length === 0 ? /* @__PURE__ */ jsx8(EmptyState, { theme, title: "No rabbit holes this week", body: "Nothing met the definition. That is a real result, not a missing signal." }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+            /* @__PURE__ */ jsx8(Stat, { theme, value: duration(minutes), label: "in habit loops this week", hint: `${rabbit.length} sessions met the definition` }),
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", marginTop: theme.space(3) }, children: /* @__PURE__ */ jsxs6(LinkButton, { theme, children: [
               "Show the ",
               rabbit.length,
               " sessions"
             ] }) })
           ] })
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Exploration this week" }),
-          /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Exploration this week" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -2877,51 +3098,51 @@ function WhatIfScreen({ theme, persona, state = "default" }) {
     { label: "Cap feed sessions at 10 min", delta: -0.11, note: "Applied to sessions longer than the cap, using your own distribution." },
     { label: "Enable quiet hours 22:00\u201307:00", delta: -0.07, note: "Counts only usage inside the window." }
   ];
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
       title: "What if",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
           title: "What if",
           subtitle: "Computed on this device from your own history",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "What-if options: change the scenarios", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "What-if options: change the scenarios", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "What-if scenarios", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsxs5(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: `Baseline: ${duration(baseline)}`, caption: "last 7 days" }),
-          scenarios.map((s) => /* @__PURE__ */ jsxs5(View, { style: { marginBottom: theme.space(3) }, children: [
-            /* @__PURE__ */ jsx7(Meter, { theme, value: 1 + s.delta, label: s.label, caption: `${Math.round(s.delta * 100)}%` }),
-            /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: s.note }),
-            /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Change this scenario" })
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "What-if scenarios", actionLabel: "Grant usage access" }) : null,
+        /* @__PURE__ */ jsxs6(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: `Baseline: ${duration(baseline)}`, caption: "last 7 days" }),
+          scenarios.map((s) => /* @__PURE__ */ jsxs6(View, { style: { marginBottom: theme.space(3) }, children: [
+            /* @__PURE__ */ jsx8(Meter, { theme, value: 1 + s.delta, label: s.label, caption: `${Math.round(s.delta * 100)}%` }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: s.note }),
+            /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Change this scenario" })
           ] }, s.label))
         ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "What-if is a calculation over your history, not a prediction. Mirror does not forecast behaviour and does not turn these into goals on your behalf." })
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: "What-if is a calculation over your history, not a prediction. Mirror does not forecast behaviour and does not turn these into goals on your behalf." })
       ] })
     }
   );
 }
 function FocusScreen({ theme }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
       title: "Focus",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Focus windows", subtitle: "You choose; Mirror only reminds you of your own choice" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Scheduled", caption: "local notifications only" }),
-          /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Focus windows", subtitle: "You choose; Mirror only reminds you of your own choice" }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Scheduled", caption: "local notifications only" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -2932,83 +3153,83 @@ function FocusScreen({ theme }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "How it behaves" }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: "A focus window does not block apps and does not shame you when you leave it. It shows one line when you return and nothing else. You can delete the window in one tap." }),
-          /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: [
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", children: "Add a window" }),
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Remove all" })
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "How it behaves" }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "A focus window does not block apps and does not shame you when you leave it. It shows one line when you return and nothing else. You can delete the window in one tap." }),
+          /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: [
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Add a window" }),
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Remove all" })
           ] })
         ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, children: "Focus windows are tier D only: they need nothing but timestamps, and work with no network and no account." })
+        /* @__PURE__ */ jsx8(Callout, { theme, children: "Focus windows are tier D only: they need nothing but timestamps, and work with no network and no account." })
       ] })
     }
   );
 }
 function ProfileScreen({ theme, persona, state = "default" }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Behaviour profile",
+      title: "Behavior Profile",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
-          title: "Behaviour profile",
+          title: "Behavior Profile",
           subtitle: "Descriptions of what you did, never diagnoses",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "Profile options: recompute and export", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Profile options: recompute and export", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(DataStanding, { theme, tiers: persona.tiers }),
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Behaviour profile", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsxs5(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Traits", caption: "each with the evidence it came from" }),
-          persona.traits.map((trait) => /* @__PURE__ */ jsxs5(View, { style: { marginBottom: theme.space(4) }, children: [
-            /* @__PURE__ */ jsx7(Text2, { role: "title", theme, children: trait.label }),
-            /* @__PURE__ */ jsx7(Text2, { role: "body", theme, children: trait.value }),
-            /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: trait.evidence }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row" }, children: /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Show the raw events" }) })
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Behaviour profile", actionLabel: "Grant usage access" }) : null,
+        /* @__PURE__ */ jsxs6(Card, { theme, style: state === "empty" ? { display: "none" } : void 0, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Traits", caption: "each with the evidence it came from" }),
+          persona.traits.map((trait) => /* @__PURE__ */ jsxs6(View, { style: { marginBottom: theme.space(4) }, children: [
+            /* @__PURE__ */ jsx8(Text2, { role: "title", theme, children: trait.label }),
+            /* @__PURE__ */ jsx8(Text2, { role: "body", theme, children: trait.value }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: trait.evidence }),
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row" }, children: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Show the raw events" }) })
           ] }, trait.label))
         ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "These are estimates from behaviour, not a personality test and not a clinical instrument. Mirror will not label you as anything you cannot see the evidence for." })
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: "These are estimates from behaviour, not a personality test and not a clinical instrument. Mirror will not label you as anything you cannot see the evidence for." })
       ] })
     }
   );
 }
 function WeeklyReportScreen({ theme, persona, state = "default" }) {
   const total = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Weekly report",
+      title: "Weekly Report + Goals",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
-          title: "Weekly report",
+          title: "Weekly Report + Goals",
           subtitle: "Built on this device, printed on request",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "Report options: week and sections", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Report options: week and sections", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Weekly report", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsxs5(Card, { theme, elevated: true, style: state === "empty" ? { display: "none" } : void 0, children: [
-          /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: "WEEK 42" }),
-          /* @__PURE__ */ jsx7(Text2, { role: "headline", theme, style: { marginTop: theme.space(1) }, children: `${duration(total)} on screen` }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", theme, style: { marginTop: theme.space(2) }, children: `${Math.round(persona.intentionalShare * 100)}% deliberate \xB7 ${persona.topics.length} topics tracked \xB7 ${persona.budgets.filter((b) => b.actual <= b.target).length}/${persona.budgets.length} budgets inside` }),
-          /* @__PURE__ */ jsx7(Divider, { theme }),
-          /* @__PURE__ */ jsx7(Sparkline, { theme, values: persona.weeklyMinutes, label: "Daily totals for the reported week" })
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Weekly report", actionLabel: "Grant usage access" }) : null,
+        /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, style: state === "empty" ? { display: "none" } : void 0, children: [
+          /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "WEEK 42" }),
+          /* @__PURE__ */ jsx8(Text2, { role: "headline", theme, style: { marginTop: theme.space(1) }, children: `${duration(total)} on screen` }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", theme, style: { marginTop: theme.space(2) }, children: `${Math.round(persona.intentionalShare * 100)}% deliberate \xB7 ${persona.topics.length} topics tracked \xB7 ${persona.budgets.filter((b) => b.actual <= b.target).length}/${persona.budgets.length} budgets inside` }),
+          /* @__PURE__ */ jsx8(Divider, { theme }),
+          /* @__PURE__ */ jsx8(Sparkline, { theme, values: persona.weeklyMinutes, label: "Daily totals for the reported week" })
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Sections", caption: "what is included, and what is not" }),
-          /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Sections", caption: "what is included, and what is not" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -3020,195 +3241,83 @@ function WeeklyReportScreen({ theme, persona, state = "default" }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", children: "Render share image" }),
-          /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Export PDF" })
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Goals you set", caption: "targets, not streaks" }),
+          persona.goals.map((goal) => /* @__PURE__ */ jsxs6(View, { style: { marginBottom: theme.space(4) }, children: [
+            /* @__PURE__ */ jsx8(
+              Meter,
+              {
+                theme,
+                value: goal.progress,
+                label: goal.label,
+                caption: `${Math.round(goal.progress * 100)}% of ${goal.target}`,
+                tone: goal.progress >= 0.8 ? "anchor" : "muted"
+              }
+            ),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: goal.note })
+          ] }, goal.label)),
+          /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "A missed goal is a missed goal. Nothing resets, nothing turns red, and there is no counter of the days you kept it." })
+        ] }),
+        /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
+          /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Preview the share card" }),
+          /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Export PDF" })
         ] })
       ] })
     }
   );
 }
 function BudgetScreen({ theme, persona, state = "default" }) {
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
       title: "Attention budget",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(
         Toolbar,
         {
           theme,
           title: "Attention budget",
           subtitle: "Soft limits, never red, never a streak",
-          actions: /* @__PURE__ */ jsx7(IconButton, { label: "Budget options: units and reset", theme, children: /* @__PURE__ */ jsx7(Text2, { role: "label", theme, children: "\u22EF" }) })
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Budget options: units and reset", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        state === "empty" || persona.budgets.length === 0 ? /* @__PURE__ */ jsx7(Card, { theme, children: /* @__PURE__ */ jsx7(
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        state === "empty" || persona.budgets.length === 0 ? /* @__PURE__ */ jsx8(Card, { theme, children: /* @__PURE__ */ jsx8(
           EmptyState,
           {
             theme,
             title: "No budgets yet",
             body: "A budget is a number you choose. Mirror will not suggest one, because a suggestion is a nudge.",
-            action: /* @__PURE__ */ jsx7(Pill, { theme, children: "Set a budget" })
+            action: /* @__PURE__ */ jsx8(Pill, { theme, children: "Set a budget" })
           }
         ) }) : persona.budgets.map((b) => {
           const over = b.actual > b.target;
-          return /* @__PURE__ */ jsxs5(Card, { theme, children: [
-            /* @__PURE__ */ jsx7(SectionHeader, { theme, title: b.label, caption: `${b.target} ${b.unit} target` }),
-            /* @__PURE__ */ jsx7(Stat, { theme, value: String(b.actual), unit: b.unit.split("/")[0], label: "last 7 days average", hint: over ? `Over by ${b.actual - b.target} \u2014 shown as a number, not a warning` : "Inside the budget" }),
-            /* @__PURE__ */ jsx7(View, { style: { marginTop: theme.space(3) }, children: /* @__PURE__ */ jsx7(Meter, { theme, value: Math.min(1, b.actual / (b.target * 1.5)), label: "usage against target", caption: `${Math.round(b.actual / b.target * 100)}%`, tone: over ? "muted" : "anchor" }) }),
-            /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row" }, children: /* @__PURE__ */ jsx7(LinkButton, { theme, children: "Adjust this budget" }) })
+          return /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: b.label, caption: `${b.target} ${b.unit} target` }),
+            /* @__PURE__ */ jsx8(Stat, { theme, value: String(b.actual), unit: b.unit.split("/")[0], label: "last 7 days average", hint: over ? `Over by ${b.actual - b.target} \u2014 shown as a number, not a warning` : "Inside the budget" }),
+            /* @__PURE__ */ jsx8(View, { style: { marginTop: theme.space(3) }, children: /* @__PURE__ */ jsx8(Meter, { theme, value: Math.min(1, b.actual / (b.target * 1.5)), label: "usage against target", caption: `${Math.round(b.actual / b.target * 100)}%`, tone: over ? "muted" : "anchor" }) }),
+            /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row" }, children: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Adjust this budget" }) })
           ] }, b.label);
         }),
-        /* @__PURE__ */ jsx7(Callout, { theme, children: "Budgets are stored on this device and are never sent anywhere, not even as an aggregate." })
-      ] })
-    }
-  );
-}
-function AskScreen({ theme, persona, state = "default" }) {
-  const [value, setValue] = React2.useState("");
-  const hasHistory = persona.weeklyMinutes.length === 7;
-  return /* @__PURE__ */ jsx7(
-    Screen,
-    {
-      title: "Ask",
-      theme,
-      padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Ask Mirror", subtitle: "On-device answers over your own data" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(
-          AskComposer,
-          {
-            theme,
-            value,
-            onChange: setValue,
-            onSubmit: () => void 0,
-            suggestions: persona.askable,
-            canAnswer: hasHistory && state === "default",
-            blockedReason: "Ask needs at least a week of on-device history before it can answer without guessing."
-          }
-        ),
-        state === "default" && hasHistory ? /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Example answer", caption: "with its sources" }),
-          /* @__PURE__ */ jsx7(Text2, { role: "body", theme, children: value || persona.askable[0] }),
-          /* @__PURE__ */ jsx7(Divider, { theme }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: `Answered from ${tierSummary(persona.tiers)} data, ${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} of history. No model left this device, and this screen makes no network request.` })
-        ] }) : null
-      ] })
-    }
-  );
-}
-function WidgetsScreen({ theme, persona, state = "default" }) {
-  const canPublish = persona.tiers.some((t) => t !== "D");
-  return /* @__PURE__ */ jsx7(
-    Screen,
-    {
-      title: "Widgets",
-      theme,
-      padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Widgets", subtitle: "Glanceable, local, and explicit about privacy" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        state === "empty" ? /* @__PURE__ */ jsx7(NothingYet, { theme, needs: ["D"], available: [], feature: "Widgets", actionLabel: "Grant usage access" }) : null,
-        /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(3), flexWrap: "wrap" }, children: [
-          /* @__PURE__ */ jsx7(
-            WidgetPreview,
-            {
-              theme,
-              size: "small",
-              variant: "private",
-              title: "Today",
-              value: duration(persona.weeklyMinutes[6] ?? 0),
-              caption: "Private widget: shows totals only, never which app or what you read.",
-              bars: persona.weeklyMinutes.map((m) => m / Math.max(...persona.weeklyMinutes))
-            }
-          ),
-          /* @__PURE__ */ jsx7(
-            WidgetPreview,
-            {
-              theme,
-              size: "medium",
-              variant: canPublish ? "public" : "private",
-              title: canPublish ? "Topics" : "No public widget",
-              value: canPublish ? String(persona.topics.length) : "\u2014",
-              caption: canPublish ? "Public widget: only topics you published, with a coarse bucket. Never history." : "A public widget needs topic data (A/B/C). With usage data only, Mirror shows nothing here rather than inventing it.",
-              bars: canPublish ? persona.topics.map((t) => t.depth / 100) : void 0
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "Widgets are rendered by the OS, which can show them on a lock screen. That is why the private widget shows totals and no titles, and why a public widget can only exist from topics you published yourself." }),
-        /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2) }, children: [
-          /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", children: "Add private widget" }),
-          canPublish ? /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Add public widget" }) : null
-        ] })
-      ] })
-    }
-  );
-}
-function YouScreen({ theme, persona }) {
-  const flags = initialFlags;
-  return /* @__PURE__ */ jsx7(
-    Screen,
-    {
-      title: "You",
-      theme,
-      padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "You", subtitle: "Everything Mirror knows, and where it came from" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Sources", caption: tierSummary(persona.tiers) }),
-          /* @__PURE__ */ jsx7(
-            FactList,
-            {
-              theme,
-              items: persona.connected.map((c) => ({ label: c.label, value: `${c.tier}${c.connected ? " \xB7 on" : " \xB7 off"}`, detail: c.note }))
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Features", caption: "social is off and stays off unless you ask" }),
-          /* @__PURE__ */ jsx7(
-            FactList,
-            {
-              theme,
-              items: [
-                { label: "Insights", value: isOn(flags, "insights") ? "on" : "off", detail: "Local analysis only." },
-                { label: "Weekly report", value: isOn(flags, "weeklyReport") ? "on" : "off", detail: "Rendered on device." },
-                { label: "Cloud report", value: isOn(flags, "cloudReport") ? "on" : "off", detail: "Off by default. Would send aggregates, never events." },
-                { label: "Matching with others", value: isOn(flags, "socialMatching") ? "on" : "off", detail: "Off by default. Shares selected topics only \u2014 never watch, search or purchase history." }
-              ]
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Your data" }),
-          /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", children: "Export everything" }),
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Import an export" })
-          ] }),
-          /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(3) }, children: "Exports are written to a file you choose. Importing is the only way tier B data arrives \u2014 Mirror never fetches it." })
-        ] })
+        /* @__PURE__ */ jsx8(Callout, { theme, children: "Budgets are stored on this device and are never sent anywhere, not even as an aggregate." })
       ] })
     }
   );
 }
 function PrivacyCentreScreen({ theme, persona }) {
   const [sheet, setSheet] = React2.useState(null);
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Privacy centre",
+      title: "Privacy Center",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Privacy centre", subtitle: "Nothing here is a promise you cannot check" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      overlay: /* @__PURE__ */ jsxs5(Fragment, { children: [
-        /* @__PURE__ */ jsx7(Sheet, { theme, open: sheet === "receipt", title: "Privacy receipt", subtitle: "This month, from the on-device log", onClose: () => setSheet(null), children: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Privacy Center", subtitle: "Nothing here is a promise you cannot check" }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      overlay: /* @__PURE__ */ jsxs6(Fragment, { children: [
+        /* @__PURE__ */ jsx8(Sheet, { theme, open: sheet === "receipt", title: "Privacy receipt", subtitle: "This month, from the on-device log", onClose: () => setSheet(null), children: /* @__PURE__ */ jsx8(
           PrivacyReceipt,
           {
             theme,
@@ -3221,12 +3330,12 @@ function PrivacyCentreScreen({ theme, persona }) {
             zeroCopy: "In Privacy Mode this list is empty by construction, not by configuration. A remote config change cannot make it non-empty."
           }
         ) }),
-        /* @__PURE__ */ jsx7(Sheet, { theme, open: sheet === "matrix", title: "What Mirror can see", subtitle: "By data tier", onClose: () => setSheet(null), children: /* @__PURE__ */ jsx7(CapabilityMatrix, { theme, available: persona.tiers, rows: persona.connected }) })
+        /* @__PURE__ */ jsx8(Sheet, { theme, open: sheet === "matrix", title: "What Mirror can see", subtitle: "By data tier", onClose: () => setSheet(null), children: /* @__PURE__ */ jsx8(CapabilityMatrix, { theme, available: persona.tiers, rows: persona.connected }) })
       ] }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Retention", caption: "you set it; the default is 90 days" }),
-          /* @__PURE__ */ jsx7(
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Retention", caption: "you set it; the default is 90 days" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -3238,17 +3347,35 @@ function PrivacyCentreScreen({ theme, persona }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Check it yourself" }),
-          /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", onPress: () => setSheet("receipt"), children: "Open receipt" }),
-            /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", onPress: () => setSheet("matrix"), children: "Capability matrix" })
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Network log", caption: "every request this device made" }),
+          persona.networkLog.length === 0 ? /* @__PURE__ */ jsxs6(Fragment, { children: [
+            /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "0 requests. Privacy Mode is on, so nothing has left this device since it was installed." }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: "This list is written from the app's own request layer, not from a server-side report \u2014 the one thing a server could not be trusted to tell you." })
+          ] }) : persona.networkLog.map((entry) => /* @__PURE__ */ jsx8(
+            ListRow,
+            {
+              theme,
+              title: entry.host,
+              meta: `${entry.when} \xB7 ${entry.why}`,
+              trailing: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `${entry.bytes} B` })
+            },
+            `${entry.when}-${entry.host}`
+          )),
+          /* @__PURE__ */ jsx8(Divider, { theme }),
+          /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "Every line is a request Mirror made. If a line is missing, it did not happen." })
+        ] }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Check it yourself" }),
+          /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", onPress: () => setSheet("receipt"), children: "Open receipt" }),
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", onPress: () => setSheet("matrix"), children: "Capability matrix" })
           ] })
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Delete", caption: "one tap, no confirmation maze" }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: "Deleting erases the local database, including every imported export and every label you wrote. Mirrors of nothing exist elsewhere: there is no server copy to chase." }),
-          /* @__PURE__ */ jsx7(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Delete all data" }) })
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Delete", caption: "one tap, no confirmation maze" }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "Deleting erases the local database, including every imported export and every label you wrote. Mirrors of nothing exist elsewhere: there is no server copy to chase." }),
+          /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Delete all data" }) })
         ] })
       ] })
     }
@@ -3256,43 +3383,54 @@ function PrivacyCentreScreen({ theme, persona }) {
 }
 function PublicProfileScreen({ theme, persona, state = "default" }) {
   const published = state === "empty" ? [] : persona.topics.slice(0, 1);
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Public profile",
+      title: "Public Profile editor",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Public profile", subtitle: "Exactly what a match would see" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsx7(BoundaryToggle, { theme, value: "public", onChange: () => void 0, consequence: "Public. Visible to others: the topics you published, and a coarse activity bucket. Nothing else." }),
-        /* @__PURE__ */ jsxs5(Card, { theme, elevated: true, children: [
-          /* @__PURE__ */ jsx7(Text2, { role: "title-lg", theme, children: persona.name }),
-          /* @__PURE__ */ jsx7(Text2, { role: "label", tone: "muted", theme, children: published.length ? `${published.length} topic published` : "Nothing published yet" }),
-          /* @__PURE__ */ jsx7(Divider, { theme }),
-          published.length ? published.map((t) => /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", alignItems: "center", gap: theme.space(2) }, children: [
-            /* @__PURE__ */ jsx7(TierBadge, { tier: t.tier[0] ?? "D", ghost: true, theme }),
-            /* @__PURE__ */ jsx7(Text2, { role: "body", theme, children: t.name }),
-            /* @__PURE__ */ jsx7(Text2, { role: "micro", tone: "muted", theme, children: t.depth > 60 ? "deep interest" : "exploring" })
+      header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Public Profile editor", subtitle: "Edit, with a live preview of what a match sees" }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(BoundaryToggle, { theme, value: "public", onChange: () => void 0, consequence: "Public. Visible to others: the topics you published, and a coarse activity bucket. Nothing else." }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Editing what is published", caption: "each row is one decision, reversible in one tap" }),
+          persona.topics.length === 0 ? /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "No topics yet. A topic appears here once there is enough on-device evidence to describe it, and it stays private until you publish it." }) : persona.topics.slice(0, 3).map((topic, i) => /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.space(3), marginBottom: theme.space(3) }, children: [
+            /* @__PURE__ */ jsxs6(View, { style: { flexShrink: 1 }, children: [
+              /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: topic.name }),
+              /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: `depth ${topic.depth} \xB7 shares \u201C${topic.depth > 60 ? "deep interest" : "exploring"}\u201D and nothing else` })
+            ] }),
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: i === 0 ? "primary" : "quiet", children: i === 0 ? "Published" : "Private" })
+          ] }, topic.name))
+        ] }),
+        /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, children: [
+          /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "LIVE PREVIEW \xB7 WHAT A MATCH SEES" }),
+          /* @__PURE__ */ jsx8(Text2, { role: "title-lg", theme, children: persona.name }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: published.length ? `${published.length} topic published` : "Nothing published yet" }),
+          /* @__PURE__ */ jsx8(Divider, { theme }),
+          published.length ? published.map((t) => /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", alignItems: "center", gap: theme.space(2) }, children: [
+            /* @__PURE__ */ jsx8(TierBadge, { tier: t.tier[0] ?? "D", ghost: true, theme }),
+            /* @__PURE__ */ jsx8(Text2, { role: "body", theme, children: t.name }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: t.depth > 60 ? "deep interest" : "exploring" })
           ] }, t.name)) : persona.topics.length === 0 ? (
             // "Nothing published" and "nothing you *could* publish" are different
             // states: without topic data there is no choice to make yet, and the
             // screen has to say which of the two the user is in.
-            /* @__PURE__ */ jsx7(
+            /* @__PURE__ */ jsx8(
               DegradedNotice,
               {
                 theme,
                 needs: ["A", "B", "C"],
                 available: persona.tiers,
                 feature: "Publishing a topic",
-                actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Connect a source" })
+                actions: /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Connect a source" })
               }
             )
-          ) : /* @__PURE__ */ jsx7(EmptyState, { theme, title: "Nothing is public", body: "A public profile starts empty. Topics are published one at a time, and each one shows what exactly would be shared." })
+          ) : /* @__PURE__ */ jsx8(EmptyState, { theme, title: "Nothing is public", body: "A public profile starts empty. Topics are published one at a time, and each one shows what exactly would be shared." })
         ] }),
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "Never shared, under any setting" }),
-          /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Never shared, under any setting" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -3312,30 +3450,30 @@ function PublicProfileScreen({ theme, persona, state = "default" }) {
 }
 function MatchesScreen({ theme, persona, state = "default" }) {
   const socialOn = isOn(initialFlags, "socialMatching") && state !== "empty";
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     Screen,
     {
-      title: "Matches",
+      title: "Matches / Chat",
       theme,
       padded: true,
-      header: /* @__PURE__ */ jsx7(Toolbar, { theme, title: "Matches", subtitle: "Off by default, and not required to use Mirror" }),
-      footer: /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      children: /* @__PURE__ */ jsxs5(View, { style: { gap: theme.space(3) }, children: [
-        !socialOn ? /* @__PURE__ */ jsx7(Card, { theme, children: /* @__PURE__ */ jsx7(
+      header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Matches / Chat", subtitle: "Off by default, and not required to use Mirror" }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        !socialOn ? /* @__PURE__ */ jsx8(Card, { theme, children: /* @__PURE__ */ jsx8(
           EmptyState,
           {
             theme,
             title: "Matching is off",
             body: "Mirror is complete without it. If you turn it on, matching uses only the topics you publish, one by one \u2014 never your watch, search or purchase history, and never your raw usage.",
-            action: /* @__PURE__ */ jsxs5(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap", justifyContent: "center" }, children: [
-              /* @__PURE__ */ jsx7(Pill, { theme, variant: "secondary", children: "See what would be shared" }),
-              /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Leave it off" })
+            action: /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap", justifyContent: "center" }, children: [
+              /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "See what would be shared" }),
+              /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Leave it off" })
             ] })
           }
         ) }) : null,
-        /* @__PURE__ */ jsxs5(Card, { theme, children: [
-          /* @__PURE__ */ jsx7(SectionHeader, { theme, title: "What matching can use", caption: "published topics only \u2014 and this list is the whole list" }),
-          /* @__PURE__ */ jsx7(
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "What matching can use", caption: "published topics only \u2014 and this list is the whole list" }),
+          /* @__PURE__ */ jsx8(
             FactList,
             {
               theme,
@@ -3347,19 +3485,38 @@ function MatchesScreen({ theme, persona, state = "default" }) {
             }
           )
         ] }),
-        /* @__PURE__ */ jsx7(Callout, { theme, tone: "limit", children: "Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they use their phone." }),
+        socialOn && persona.chat ? /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: persona.chat.with, caption: `matched on ${persona.chat.topic}` }),
+          persona.chat.messages.map((m, i) => /* @__PURE__ */ jsx8(View, { style: { marginBottom: theme.space(2), alignItems: m.from === "you" ? "flex-end" : "flex-start" }, children: /* @__PURE__ */ jsxs6(View, { style: { maxWidth: "86%" }, children: [
+            /* @__PURE__ */ jsx8(Text2, { role: "body", theme, children: m.text }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: m.from === "you" ? "you" : "them" })
+          ] }) }, i)),
+          /* @__PURE__ */ jsx8(Divider, { theme }),
+          /* @__PURE__ */ jsx8(
+            FactList,
+            {
+              theme,
+              items: [
+                { label: "Shared in this chat", value: "what you type", detail: "Plus the published topic you both matched on." },
+                { label: "Not shared", value: "anything measured", detail: "No totals, no session counts, no app names, no history." },
+                { label: "Stored", value: "on this device", detail: "Messages are kept locally; deleting the match deletes them." }
+              ]
+            }
+          )
+        ] }) : null,
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: "Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they use their phone." }),
         persona.topics.length === 0 ? (
           // Off is not the same as ready-to-turn-on. Without topic data there is
           // nothing to match on, and turning the switch on would produce an empty
           // list the user could read as "no one is interested".
-          /* @__PURE__ */ jsx7(
+          /* @__PURE__ */ jsx8(
             DegradedNotice,
             {
               theme,
               needs: ["A", "B", "C"],
               available: persona.tiers,
               feature: "Matching once you turn it on",
-              actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: "Connect a source" })
+              actions: /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Connect a source" })
             }
           )
         ) : null
@@ -3367,55 +3524,723 @@ function MatchesScreen({ theme, persona, state = "default" }) {
     }
   );
 }
+function DepthScreen({ theme, persona, state = "default" }) {
+  const empty = state === "empty";
+  const bands = persona.depthBands;
+  const under8 = bands[0]?.share ?? 0;
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Depth",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Depth",
+          subtitle: "How far into things you actually got",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Depth options: range and sequence", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Depth", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+          /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, children: [
+            /* @__PURE__ */ jsx8(Definition, { theme, term: "depth", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `Depth is how long a single visit lasts, measured from the operating system's own session boundaries. It is a duration, not a judgement: a long visit to something you chose is the point, and a long visit you did not choose still counts as long.` }) }),
+            /* @__PURE__ */ jsx8(Divider, { theme }),
+            /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(4), alignItems: "flex-end" }, children: [
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${Math.round(under8 * 100)}%`, label: "of visits end under 8 s", hint: "tier D" }),
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${Math.round((bands[4]?.share ?? 0) * 100)}%`, label: "last more than 20 min", hint: "tier D" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Visit length this week", caption: "every visit, not a sample" }),
+            bands.map((band) => /* @__PURE__ */ jsx8(View, { style: { marginBottom: theme.space(3) }, children: /* @__PURE__ */ jsx8(
+              Meter,
+              {
+                theme,
+                value: band.share,
+                label: `${band.label} \u2014 ${band.note}`,
+                caption: `${Math.round(band.share * 100)}%`,
+                tone: band.label === "under 8 s" ? "muted" : "anchor"
+              }
+            ) }, band.label))
+          ] }),
+          persona.topics.length === 0 ? /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "What the long visits were about", caption: "needs topic data" }),
+            /* @__PURE__ */ jsx8(
+              NothingYet,
+              {
+                theme,
+                needs: ["A", "B", "C"],
+                available: persona.tiers,
+                feature: "Depth by topic",
+                actionLabel: "Import an export"
+              }
+            )
+          ] }) : /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Deepest visits", caption: "the subject each one was about" }),
+            persona.sessions.filter((s) => s.kind === "deep").slice(0, 3).map((s) => /* @__PURE__ */ jsx8(
+              ListRow,
+              {
+                theme,
+                title: `${s.minutes} min \xB7 ${s.app}`,
+                meta: s.topic === "\u2014" ? "no topic attached (tier D)" : s.topic,
+                leading: /* @__PURE__ */ jsx8(TierBadge, { tier: s.topic === "\u2014" ? "D" : "C", ghost: true, theme })
+              },
+              `${s.app}-${s.minutes}`
+            ))
+          ] }),
+          /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "Mirror can measure how long a visit lasted. It cannot measure whether the visit was any good for you, so it will not label a video, a post or an app as deep, shallow, useful or wasted." }) })
+        ] })
+      ] })
+    }
+  );
+}
+function CuriosityHabitScreen({ theme, persona, state = "default" }) {
+  const empty = state === "empty";
+  const { deepHours, habitHours, switchesPerHour, note } = persona.curiosity;
+  const total = deepHours + habitHours || 1;
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Curiosity vs habit",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Curiosity vs habit",
+          subtitle: "Two ways the same hour gets spent",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Curiosity options: what counts as habit", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Curiosity vs habit", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(Definition, { theme, term: "habit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `A habit block is time in a feed you reached without searching for anything, made of visits under three minutes. Curiosity is everything else you attended to on purpose \u2014 a search, a saved item, a long read.` }) }),
+            /* @__PURE__ */ jsx8(Divider, { theme }),
+            /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }, children: [
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${deepHours}h`, label: "curiosity", hint: "chosen starts" }),
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${habitHours}h`, label: "habit", hint: "feed drift" })
+            ] }),
+            /* @__PURE__ */ jsx8(View, { style: { marginTop: theme.space(3) }, children: /* @__PURE__ */ jsx8(
+              Meter,
+              {
+                theme,
+                value: deepHours / total,
+                label: "curiosity share of attended time",
+                caption: `${Math.round(deepHours / total * 100)}%`
+              }
+            ) }),
+            /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(2) }, children: `${switchesPerHour} app switches per hour.` })
+          ] }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Where the habit minutes were", caption: "by app, no content read" }),
+            persona.budgets.map((b) => /* @__PURE__ */ jsx8(View, { style: { marginBottom: theme.space(3) }, children: /* @__PURE__ */ jsx8(
+              Meter,
+              {
+                theme,
+                value: Math.min(1, b.actual / Math.max(b.target, 1)),
+                label: b.label,
+                caption: `${b.actual} / ${b.target} ${b.unit}`,
+                tone: b.actual > b.target ? "muted" : "anchor"
+              }
+            ) }, b.label))
+          ] }),
+          /* @__PURE__ */ jsx8(Callout, { theme, tone: "neutral", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: note }) }),
+          /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "Habit is not a failure and Mirror will not frame it as one. There is no streak to break here, no red state, and no message telling you to do better." }) })
+        ] })
+      ] })
+    }
+  );
+}
+function IqsScreen({ theme, persona, state = "default" }) {
+  const empty = state === "empty";
+  const iqs = persona.iqs;
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "IQS",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Interest quality",
+          subtitle: "A composite, never a verdict",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "IQS options: parts and weights", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "IQS", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsx8(Card, { theme, elevated: true, children: /* @__PURE__ */ jsx8(
+          ScoreBlock,
+          {
+            theme,
+            title: "Interest Quality Score",
+            score: iqs.value,
+            band: iqs.band,
+            parts: iqs.parts,
+            caveat: iqs.caveat,
+            action: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Why this score" })
+          }
+        ) }),
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "IQS is an estimate from behaviour on this device. It is not a diagnosis, not a personality test, and not comparable between people \u2014 the band exists because a single number invites exactly that comparison." }) })
+      ] })
+    }
+  );
+}
+function RabbitHoleScreen({ theme, persona, state = "default" }) {
+  const empty = state === "empty";
+  const rabbit = persona.rabbit;
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Rabbit hole",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Rabbit hole",
+          subtitle: "Drift, defined so you can disagree with it",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Rabbit hole options: change the definition", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(Definition, { theme, term: "rabbit hole", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "Five or more visits to the same feed within twenty minutes where each visit is under three minutes and no search started it. You can loosen or tighten this below, and the count changes with it." }) }),
+          /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap", marginTop: theme.space(3) }, children: [
+            /* @__PURE__ */ jsx8(Chip, { label: "Visits", value: "5+", theme }),
+            /* @__PURE__ */ jsx8(Chip, { label: "Window", value: "20 min", theme }),
+            /* @__PURE__ */ jsx8(Chip, { label: "Visit length", value: "under 3 min", theme })
+          ] })
+        ] }),
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Rabbit-hole detection", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "This week", caption: "against the definition above" }),
+            /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${rabbit.sessions}`, label: "blocks that qualified" }),
+              /* @__PURE__ */ jsx8(Stat, { theme, value: duration(rabbit.minutes), label: "inside them" }),
+              /* @__PURE__ */ jsx8(Stat, { theme, value: `${Math.round(rabbit.lateNightShare * 100)}%`, label: "after 11pm" })
+            ] }),
+            /* @__PURE__ */ jsx8(Divider, { theme }),
+            /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: rabbit.example })
+          ] }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "What Mirror will not do about it", caption: "the point of the screen" }),
+            /* @__PURE__ */ jsx8(
+              FactList,
+              {
+                theme,
+                items: [
+                  { label: "Block the feed", value: "not offered" },
+                  { label: "Nudge you out of it", value: "only if you ask", detail: "An intent check you wrote yourself, one prompt, no repeat." },
+                  { label: "Score you on it", value: "never" },
+                  { label: "Show it publicly", value: "never", detail: "This number never appears on the public profile, in any form." }
+                ]
+              }
+            )
+          ] })
+        ] })
+      ] })
+    }
+  );
+}
+function ConnectionsScreen({ theme, persona }) {
+  const [boundary, setBoundary] = React2.useState("private");
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Connections",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Connections",
+          subtitle: "Every source, and what each one cannot do",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Connection options: add a source", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\uFF0B" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(
+          BoundaryToggle,
+          {
+            theme,
+            value: boundary,
+            onChange: setBoundary,
+            consequence: boundary === "private" ? "Private. Connexions feed the private profile only. Nothing you connect here can be seen by a match." : "Public. Only topics you publish are shared \u2014 never a connected source, a watch history or a search."
+          }
+        ),
+        /* @__PURE__ */ jsx8(CapabilityMatrix, { theme, available: persona.tiers, rows: persona.connected }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Revoking", caption: "one tap, no confirmation maze" }),
+          /* @__PURE__ */ jsx8(
+            FactList,
+            {
+              theme,
+              items: [
+                { label: "Usage access", value: "Android setting", detail: "Revocable in Android settings; Mirror notices and stops collecting within a minute." },
+                { label: "Extension (tier C)", value: "per site", detail: "Allow-listed sites only; removing the extension stops tier C at the browser." },
+                { label: "OAuth sources (tier A)", value: "per scope", detail: "Revoke in the provider too \u2014 Mirror deletes its copy either way." },
+                { label: "Imports (tier B)", value: "delete any time", detail: "An import is a file you can remove without affecting the others." }
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "Mirror will never ask for an accessibility service, a screen recorder, an overlay or a notification listener. If a future version offers a source that needs one of those, it is not this product." }) })
+      ] })
+    }
+  );
+}
+function WhyDrawerSheet({ theme, persona }) {
+  const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
+  return /* @__PURE__ */ jsx8(
+    Sheet,
+    {
+      open: true,
+      theme,
+      title: "Why this number",
+      subtitle: "Every part that produced yesterday's total",
+      onClose: () => void 0,
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(
+          WhySheet,
+          {
+            theme,
+            score: sum,
+            maxScore: sum,
+            components: persona.whyParts.map((p) => ({ label: p.label, points: p.points, note: p.note, tier: p.tier })),
+            caveat: "The parts add up exactly, because a total you cannot take apart is not a measurement."
+          }
+        ),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "What is not in this number" }),
+          /* @__PURE__ */ jsx8(
+            FactList,
+            {
+              theme,
+              items: [
+                { label: "Content you watched", value: "not measured", detail: "Mirror cannot read it and does not try." },
+                { label: "Whether any of it was good for you", value: "not measured" },
+                { label: "Anything on another device", value: "not measured" }
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "If a part is missing from this list, the number is smaller. Mirror never re-weights the parts to hide a gap." }) })
+      ] })
+    }
+  );
+}
+function LearningArcsScreen({ theme, persona, state = "default" }) {
+  const empty = state === "empty" || persona.arcs.length === 0;
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Learning arcs",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Learning arcs",
+          subtitle: "How a subject deepened, week by week",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Arc options: range and topics", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(
+          NothingYet,
+          {
+            theme,
+            needs: ["A", "B", "C"],
+            available: persona.tiers,
+            feature: "Learning arcs",
+            actionLabel: "Import an export"
+          }
+        ) : persona.arcs.map((arc) => /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" }, children: [
+            /* @__PURE__ */ jsx8(Text2, { role: "title", theme, children: arc.topic }),
+            /* @__PURE__ */ jsx8(Chip, { label: "stage", value: arc.stage, theme })
+          ] }),
+          /* @__PURE__ */ jsx8(View, { style: { marginTop: theme.space(2) }, children: /* @__PURE__ */ jsx8(
+            Sparkline,
+            {
+              theme,
+              values: arc.weeks,
+              label: `${arc.topic}: depth over the last eight weeks, ${arc.weeks.join(", ")}`
+            }
+          ) }),
+          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, style: { marginTop: theme.space(2) }, children: arc.next }),
+          /* @__PURE__ */ jsxs6(Text2, { role: "micro", tone: "muted", theme, children: [
+            "from tier ",
+            arc.sourceTier,
+            " sources"
+          ] })
+        ] }, arc.topic)),
+        !empty ? /* @__PURE__ */ jsx8(Callout, { theme, tone: "neutral", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "A stalled arc is a fact, not a failure \u2014 it is listed the same way as a growing one, and Mirror will not ask you to pick it back up." }) }) : null
+      ] })
+    }
+  );
+}
+function AskSheet({ theme, persona, state = "default" }) {
+  const canAnswer = state !== "empty" && persona.askable.length > 0;
+  return /* @__PURE__ */ jsx8(Sheet, { open: true, theme, title: "Ask Mirror", subtitle: "Answers come from this device, or not at all", onClose: () => void 0, children: /* @__PURE__ */ jsx8(
+    AskComposer,
+    {
+      theme,
+      value: "",
+      onChange: () => void 0,
+      onSubmit: () => void 0,
+      suggestions: canAnswer ? persona.askable : [],
+      canAnswer,
+      blockedReason: canAnswer ? void 0 : "There is not enough on-device history to answer without guessing. Mirror will not guess."
+    }
+  ) });
+}
+function PrivacyReceiptSheet({ theme, persona, state = "default" }) {
+  const rows = persona.networkLog;
+  const bytes = rows.reduce((total, r) => total + r.bytes, 0);
+  const empty = state === "empty" || rows.length === 0;
+  return /* @__PURE__ */ jsx8(Sheet, { open: true, theme, title: "Privacy receipt", subtitle: "Generated from the on-device request log", onClose: () => void 0, children: /* @__PURE__ */ jsx8(
+    PrivacyReceipt,
+    {
+      theme,
+      periodLabel: "October",
+      rows: empty ? [
+        { label: "Sent this month", value: "0 B", detail: "Privacy Mode has never made an outbound request." },
+        { label: "Requests logged", value: "0" }
+      ] : [
+        { label: "Sent this month", value: `${Math.round(bytes / 1024)} KB`, detail: `${rows.length} requests, all of them yours.` },
+        { label: "Raw events sent", value: "0", detail: "Titles, searches and timestamps stay here." },
+        ...rows.slice(0, 3).map((r) => ({ label: r.host, value: `${r.bytes} B`, detail: `${r.when} \u2014 ${r.why}` }))
+      ],
+      zeroCopy: empty ? "In Privacy Mode this list is empty by construction: there is nothing to itemise because nothing was sent." : "Every line here is a request Mirror made. If a line is missing, it did not happen."
+    }
+  ) });
+}
+function PersonaPickerSheet({ theme, persona }) {
+  return /* @__PURE__ */ jsx8(Sheet, { open: true, theme, title: "Demo persona", subtitle: "Which data the screens are built from", onClose: () => void 0, children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+    /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "Demo data replaces your own while it is on. It is never mixed with it, never written to storage, and turning it off restores your real numbers unchanged." }) }),
+    PERSONAS.map((p) => /* @__PURE__ */ jsx8(
+      ListRow,
+      {
+        theme,
+        title: `${p.name}${p.id === persona.id ? " \xB7 showing now" : ""}`,
+        meta: p.blurb,
+        leading: /* @__PURE__ */ jsx8(TierBadge, { tier: p.tiers[p.tiers.length - 1] ?? "D", ghost: true, theme }),
+        trailing: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, style: { fontWeight: "600" }, children: p.tiers.join("") })
+      },
+      p.id
+    )),
+    /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2) }, children: [
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: persona.id === "ananya" ? "primary" : "quiet", children: "Ananya \xB7 tier D" }),
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: persona.id === "rehan" ? "primary" : "quiet", children: "Rehan \xB7 D+B+C" }),
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: persona.id === "mei" ? "primary" : "quiet", children: "Mei \xB7 all tiers" })
+    ] })
+  ] }) });
+}
+function IntentCheckScreen({ theme, persona }) {
+  return /* @__PURE__ */ jsx8(
+    Screen,
+    {
+      title: "Intent check",
+      theme,
+      padded: true,
+      header: /* @__PURE__ */ jsx8(
+        Toolbar,
+        {
+          theme,
+          title: "Intent check",
+          subtitle: "One question, only if you asked for it",
+          actions: /* @__PURE__ */ jsx8(IconButton, { label: "Intent check options: timing and quiet hours", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
+        }
+      ),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Where Mirror may ask", caption: "off unless you turn it on" }),
+          persona.intents.map((intent) => /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: theme.space(3), marginBottom: theme.space(3) }, children: [
+            /* @__PURE__ */ jsxs6(View, { style: { flexShrink: 1 }, children: [
+              /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: intent.label }),
+              /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: intent.note })
+            ] }),
+            /* @__PURE__ */ jsx8(Pill, { theme, variant: intent.ask ? "primary" : "quiet", children: intent.ask ? "Asks" : "Silent" })
+          ] }, intent.label))
+        ] }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Quiet hours", caption: "no prompt can fire inside them" }),
+          /* @__PURE__ */ jsx8(
+            FactList,
+            {
+              theme,
+              items: [
+                { label: "Quiet hours", value: "22:00 \u2013 07:00", detail: "Local time, on this device. Nothing fires overnight." },
+                { label: "Maximum prompts", value: "1 per day", detail: "Never repeated inside a session." },
+                { label: "Prompt style", value: "local notification", detail: "No push service, no server, no tracking pixel." }
+              ]
+            }
+          )
+        ] }),
+        /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "The intent check exists to hold a decision you already made, once. It is not a reminder to use Mirror, it never counts how many times you followed it, and turning it off is one tap with no \u201Care you sure\u201D." }) }),
+        /* @__PURE__ */ jsxs6(Card, { theme, children: [
+          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Where your intent labels go" }),
+          /* @__PURE__ */ jsx8(
+            FactList,
+            {
+              theme,
+              items: [
+                { label: "Stored", value: "on this device" },
+                { label: "Trains", value: "a local model" },
+                { label: "Shared", value: "never", detail: "Intent labels are excluded from the public profile and from matches." }
+              ]
+            }
+          )
+        ] })
+      ] })
+    }
+  );
+}
+function ShareCardState({ theme, persona }) {
+  return /* @__PURE__ */ jsxs6(View, { style: { flex: 1, backgroundColor: theme.color.scrim, justifyContent: "center", padding: theme.space(5), gap: theme.space(3) }, children: [
+    /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, style: { backgroundColor: theme.color.card }, children: [
+      /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "PRIVATE \xB7 PREVIEW ONLY" }),
+      /* @__PURE__ */ jsx8(Text2, { role: "headline", theme, style: { marginTop: theme.space(2) }, children: `${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} with ${persona.topics[0]?.name ?? "one habit loop"} in the middle` }),
+      /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, style: { marginTop: theme.space(2) }, children: `${Math.round(persona.intentionalShare * 100)}% deliberate \xB7 week 42` }),
+      /* @__PURE__ */ jsx8(Divider, { theme }),
+      /* @__PURE__ */ jsx8(
+        FactList,
+        {
+          theme,
+          items: [
+            { label: "App names on the card", value: "none" },
+            { label: "Topics on the card", value: persona.topics.length ? "one, chosen by you" : "none" },
+            { label: "Totals", value: "private, never on a shared card" }
+          ]
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx8(Text2, { role: "micro", theme, style: { color: theme.color.inkMuted, textAlign: "center" }, children: "Nothing is shared until you tap Share, and this preview shows the whole card \u2014 there is no second version." }),
+    /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), justifyContent: "center", flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Keep private" }),
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Share this card" })
+    ] })
+  ] });
+}
+function WidgetItem({ theme, persona }) {
+  return /* @__PURE__ */ jsxs6(View, { style: { flex: 1, backgroundColor: theme.color.canvas, padding: theme.space(5), gap: theme.space(4) }, children: [
+    /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { paddingTop: theme.space(4) }, children: "HOME SCREEN \xB7 AS IT WOULD APPEAR" }),
+    /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(3), flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsx8(
+        WidgetPreview,
+        {
+          theme,
+          size: "medium",
+          variant: "private",
+          title: "This week",
+          value: duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0)),
+          caption: "private widget \xB7 totals only",
+          bars: persona.weeklyMinutes
+        }
+      ),
+      /* @__PURE__ */ jsx8(
+        WidgetPreview,
+        {
+          theme,
+          size: "small",
+          variant: "private",
+          title: "Intentional",
+          value: `${Math.round(persona.intentionalShare * 100)}%`,
+          caption: "private"
+        }
+      )
+    ] }),
+    /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", gap: theme.space(3), flexWrap: "wrap" }, children: /* @__PURE__ */ jsx8(
+      WidgetPreview,
+      {
+        theme,
+        size: "medium",
+        variant: "public",
+        title: "Following",
+        value: persona.topics.length ? persona.topics[0].name : "nothing published",
+        caption: "public widget \xB7 published topics only"
+      }
+    ) }),
+    /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "A widget can sit on a lock screen. The private widget never shows an app name, a topic or a number a stranger could use, and the public widget only ever repeats what you already published." }) }),
+    /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(2) }, children: [
+      /* @__PURE__ */ jsx8(
+        SegmentedControl,
+        {
+          theme,
+          label: "Widget layout",
+          value: "medium",
+          onChange: () => void 0,
+          options: [
+            { value: "small", label: "Small" },
+            { value: "medium", label: "Medium" }
+          ]
+        }
+      ),
+      /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), flexWrap: "wrap" }, children: [
+        /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Add to home screen" }),
+        /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Keep widgets private" })
+      ] }),
+      /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "Widgets read from the on-device database only. Removing the widget does not remove any data, and adding it does not start any collection." })
+    ] })
+  ] });
+}
+function UpdateState({ theme, persona }) {
+  const { current, available, notes, bytes } = persona.update;
+  return /* @__PURE__ */ jsx8(View, { style: { flex: 1, justifyContent: "flex-end", backgroundColor: theme.color.scrim, padding: theme.space(3) }, children: /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, children: [
+    /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: `VERSION ${current} \u2192 ${available}` }),
+    /* @__PURE__ */ jsx8(Text2, { role: "title", theme, style: { marginTop: theme.space(1) }, children: "An update is available" }),
+    /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: notes }),
+    /* @__PURE__ */ jsx8(Divider, { theme }),
+    /* @__PURE__ */ jsx8(
+      FactList,
+      {
+        theme,
+        items: [
+          { label: "Size", value: `${Math.round(bytes / 1e6)} MB` },
+          { label: "New permissions", value: "none" },
+          { label: "New data sent anywhere", value: "none" },
+          { label: "Works offline", value: "yes", detail: "The update is a download; nothing about your data changes." }
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3), flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Later" }),
+      /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "What changed" })
+    ] })
+  ] }) });
+}
+var SECTION_J = [
+  { id: "J1", title: "Onboarding + privacy promise", kind: "screen" },
+  { id: "J2", title: "Permission primers (Usage access, notifications)", kind: "screen" },
+  { id: "J3", title: "Dashboard", kind: "screen" },
+  { id: "J4", title: "Interest Evolution", kind: "screen" },
+  { id: "J5", title: "Depth", kind: "screen" },
+  { id: "J6", title: "Curiosity vs Habit", kind: "screen" },
+  { id: "J7", title: "IQS", kind: "screen" },
+  { id: "J8", title: "Sessions", kind: "screen" },
+  { id: "J9", title: "Discovery Journey", kind: "screen" },
+  { id: "J10", title: "Behavior Profile", kind: "screen" },
+  { id: "J11", title: "Rabbit Hole", kind: "screen" },
+  { id: "J12", title: "Weekly Report + Goals", kind: "screen" },
+  { id: "J13", title: "Connections / Consent Dashboard (with capability matrix)", kind: "screen" },
+  { id: "J14", title: "Privacy Center (network log, delete everything)", kind: "screen" },
+  { id: "J15", title: "Public Profile editor (live preview)", kind: "screen" },
+  { id: "J16", title: "Matches / Chat", kind: "screen" },
+  { id: "J17", title: "Why drawer", kind: "sheet", parent: "dashboard" },
+  { id: "J18", title: "What-if Simulator", kind: "screen" },
+  { id: "J19", title: "Attention Budget", kind: "screen" },
+  { id: "J20", title: "Focus Windows", kind: "screen" },
+  { id: "J21", title: "Learning Arcs", kind: "screen" },
+  { id: "J22", title: "Ask sheet", kind: "sheet", parent: "dashboard" },
+  { id: "J23", title: "Privacy Receipt", kind: "sheet", parent: "privacy-center" },
+  { id: "J24", title: "Demo persona picker", kind: "sheet", parent: "dashboard" },
+  { id: "J25", title: "Intent Check settings", kind: "screen" },
+  { id: "J26", title: "Private Share Card preview", kind: "state", parent: "weekly-report-goals" },
+  { id: "J27", title: "Home-screen widget", kind: "widget", parent: "dashboard" },
+  { id: "J28", title: '"Update available / app version" state (calm, non-blocking)', kind: "state", parent: "dashboard" }
+];
 var SCREENS = [
-  { id: "J1", slug: "onboarding", title: "Onboarding", phase: "P2", requires: [], states: ["default"], rule: "State the three promises before asking for anything.", Component: OnboardingScreen },
-  { id: "J2", slug: "permission-primer", title: "Permission primer", phase: "P1", requires: [], states: ["default"], rule: 'Explain the permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
-  { id: "J3", slug: "home", title: "Home", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "The measured reference layout: hero, budget, arcs \u2014 and an honest empty state.", Component: HomeScreen },
-  { id: "J4", slug: "insights", title: "Insights", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "Every score explains itself; no number appears without its parts.", Component: InsightsScreen },
-  { id: "J5", slug: "journey", title: "Journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Interest evolution is only shown when topic-level data exists.", Component: JourneyScreen },
-  { id: "J6", slug: "sessions", title: "Sessions", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "The user can annotate their own sessions; labels stay local.", Component: SessionsScreen },
-  { id: "J7", slug: "discovery", title: "Discovery", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: 'Define "rabbit hole" in the UI, then report against that definition.', Component: DiscoveryScreen },
-  { id: "J8", slug: "what-if", title: "What if", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Counterfactuals are calculations over your history, never predictions.", Component: WhatIfScreen },
-  { id: "J9", slug: "focus", title: "Focus windows", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Focus never blocks or shames; it repeats the choice you made.", Component: FocusScreen },
-  { id: "J10", slug: "profile", title: "Behaviour profile", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Descriptive traits with their evidence attached, never clinical labels.", Component: ProfileScreen },
-  { id: "J11", slug: "weekly-report", title: "Weekly report", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "A local document; sharing is an export you perform, not a sync.", Component: WeeklyReportScreen },
-  { id: "J12", slug: "budget", title: "Attention budget", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Budgets are chosen by the user and rendered as numbers, never alarms.", Component: BudgetScreen },
-  { id: "J13", slug: "ask", title: "Ask Mirror", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Answer from local data or refuse \u2014 never guess, never call out.", Component: AskScreen },
-  { id: "J14", slug: "widgets", title: "Widgets", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Widgets can appear on a lock screen: show totals privately, topics publicly.", Component: WidgetsScreen },
-  { id: "J15", slug: "you", title: "You", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Every source and every feature flag visible in one place.", Component: YouScreen },
-  { id: "J16", slug: "privacy-centre", title: "Privacy centre", phase: "P5", requires: [], states: ["default"], rule: "Retention, deletion, receipt and capability matrix \u2014 all checkable in-app.", Component: PrivacyCentreScreen },
-  { id: "J17", slug: "public-profile", title: "Public profile", phase: "P6", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Show the user exactly what a match sees, including the never-shared list.", Component: PublicProfileScreen },
-  { id: "J18", slug: "matches", title: "Matches", phase: "P6", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Social is off by default and says so instead of teasing engagement.", Component: MatchesScreen }
+  { id: "J1", slug: "onboarding", title: "Onboarding + privacy promise", kind: "screen", phase: "P1", requires: [], states: ["default"], rule: "State the three promises before asking for anything.", Component: OnboardingScreen },
+  { id: "J2", slug: "permission-primers", title: "Permission primers (Usage access, notifications)", kind: "screen", phase: "P1", requires: [], states: ["default"], rule: 'Explain each permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
+  { id: "J3", slug: "dashboard", title: "Dashboard", kind: "screen", tab: "home", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "The measured reference layout \u2014 and an honest empty state instead of estimates.", Component: HomeScreen },
+  { id: "J4", slug: "interest-evolution", title: "Interest Evolution", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Interest evolution is only shown when topic-level data exists.", Component: JourneyScreen },
+  { id: "J5", slug: "depth", title: "Depth", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Show how long visits last, and refuse to call any visit good or wasted.", Component: DepthScreen },
+  { id: "J6", slug: "curiosity-vs-habit", title: "Curiosity vs Habit", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Name both halves of the week without framing habit as a failure.", Component: CuriosityHabitScreen },
+  { id: "J7", slug: "iqs", title: "IQS", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "A composite score built only from parts that exist, with the band shown.", Component: IqsScreen },
+  { id: "J8", slug: "sessions", title: "Sessions", kind: "screen", tab: "sessions", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "The user annotates their own sessions; labels stay local and train a local model.", Component: SessionsScreen },
+  { id: "J9", slug: "discovery-journey", title: "Discovery Journey", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Show the route a topic was reached by, step by step, with the tier of each step.", Component: DiscoveryScreen },
+  { id: "J10", slug: "behavior-profile", title: "Behavior Profile", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Descriptive traits with their evidence attached, never clinical labels.", Component: ProfileScreen },
+  { id: "J11", slug: "rabbit-hole", title: "Rabbit Hole", kind: "screen", tab: "journey", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Print the definition, let the user change it, and never punish what it finds.", Component: RabbitHoleScreen },
+  { id: "J12", slug: "weekly-report-goals", title: "Weekly Report + Goals", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "A local document plus goals the user set; no streaks, no nudges.", Component: WeeklyReportScreen },
+  { id: "J13", slug: "connections", title: "Connections / Consent Dashboard (with capability matrix)", kind: "screen", tab: "you", phase: "P5", requires: [], states: ["default"], rule: "Every source with its capability matrix and a one-tap revoke.", Component: ConnectionsScreen },
+  { id: "J14", slug: "privacy-center", title: "Privacy Center (network log, delete everything)", kind: "screen", tab: "you", phase: "P5", requires: [], states: ["default", "empty"], rule: "Retention, the network log, deletion and the receipt \u2014 all checkable in-app.", Component: PrivacyCentreScreen },
+  { id: "J15", slug: "public-profile-editor", title: "Public Profile editor (live preview)", kind: "screen", tab: "you", phase: "P6", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Edit what is published with a live preview of exactly what a match sees.", Component: PublicProfileScreen },
+  { id: "J16", slug: "matches-chat", title: "Matches / Chat", kind: "screen", tab: "you", phase: "P6", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Social is off by default; chat shares nothing but what the user sent.", Component: MatchesScreen },
+  { id: "J17", slug: "why-drawer", title: "Why drawer", kind: "sheet", parent: "dashboard", phase: "P2", requires: ["D"], states: ["default"], rule: "Every number opens into the parts that produced it, and the parts add up.", Component: WhyDrawerSheet },
+  { id: "J18", slug: "what-if", title: "What-if Simulator", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Counterfactuals are calculations over your history, never predictions.", Component: WhatIfScreen },
+  { id: "J19", slug: "attention-budget", title: "Attention Budget", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Budgets are chosen by the user and rendered as numbers, never alarms.", Component: BudgetScreen },
+  { id: "J20", slug: "focus-windows", title: "Focus Windows", kind: "screen", tab: "you", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Focus never blocks or shames; it repeats the choice you made.", Component: FocusScreen },
+  { id: "J21", slug: "learning-arcs", title: "Learning Arcs", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "A stalled arc is reported exactly like a growing one.", Component: LearningArcsScreen },
+  { id: "J22", slug: "ask-sheet", title: "Ask sheet", kind: "sheet", parent: "dashboard", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Answer from local data or refuse \u2014 never guess, never call out.", Component: AskSheet },
+  { id: "J23", slug: "privacy-receipt", title: "Privacy Receipt", kind: "sheet", parent: "privacy-center", phase: "P5", requires: [], states: ["default", "empty"], rule: "What left the device, in bytes, with the empty case explained rather than hidden.", Component: PrivacyReceiptSheet },
+  { id: "J24", slug: "persona-picker", title: "Demo persona picker", kind: "sheet", parent: "dashboard", phase: "P4", requires: [], states: ["default"], rule: "Demo data replaces yours while it is on, and is never mixed with it.", Component: PersonaPickerSheet },
+  { id: "J25", slug: "intent-check-settings", title: "Intent Check settings", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default"], rule: "The only place Mirror may interrupt, off unless asked for, with quiet hours.", Component: IntentCheckScreen },
+  { id: "J26", slug: "share-card-preview", title: "Private Share Card preview", kind: "state", parent: "weekly-report-goals", phase: "P4", requires: ["D"], states: ["default"], rule: "Preview the whole card; nothing is shared until the user shares it.", Component: ShareCardState },
+  { id: "J27", slug: "home-widget", title: "Home-screen widget", kind: "widget", parent: "dashboard", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "A lock-screen surface: totals privately, published topics only in public.", Component: WidgetItem },
+  { id: "J28", slug: "update-state", title: '"Update available / app version" state (calm, non-blocking)', kind: "state", parent: "dashboard", phase: "P5", requires: [], states: ["default"], rule: "Calm and non-blocking, and explicit that nothing new is collected.", Component: UpdateState }
 ];
 var TAB_ITEMS = TABS;
 var screensByPhase = (phase) => SCREENS.filter((s) => s.phase === phase);
+var screensByKind = (kind) => SCREENS.filter((s) => s.kind === kind);
+var screensByTab = (tab) => SCREENS.filter((s) => s.tab === tab);
+var specBySlug = (slug) => SCREENS.find((s) => s.slug === slug);
 
 // packages/ui/screens/render.tsx
-import { jsx as jsx8 } from "react/jsx-runtime";
+import { jsx as jsx9, jsxs as jsxs7 } from "react/jsx-runtime";
+var OVERLAY = { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 };
+function treeFor(spec, persona, theme, state = "default") {
+  const Item = spec.Component;
+  if (spec.kind === "screen" || spec.kind === "widget") {
+    return /* @__PURE__ */ jsx9(Item, { theme, persona, state });
+  }
+  const parentSpec = spec.parent ? specBySlug(spec.parent) : void 0;
+  if (!parentSpec) {
+    throw new Error(`${spec.id} ${spec.slug}: a ${spec.kind} needs a parent screen, and "${spec.parent}" is not in the inventory`);
+  }
+  const Parent = parentSpec.Component;
+  return /* @__PURE__ */ jsxs7(View, { style: { flex: 1 }, children: [
+    /* @__PURE__ */ jsx9(Parent, { theme, persona, state: "default" }),
+    /* @__PURE__ */ jsx9(View, { style: OVERLAY, children: /* @__PURE__ */ jsx9(Item, { theme, persona, state }) })
+  ] });
+}
 function renderScreen(spec, persona, theme, state = "default") {
-  const Component = spec.Component;
-  return /* @__PURE__ */ jsx8(
+  return /* @__PURE__ */ jsx9(
     ThemeProvider,
     {
       initialTheme: theme.name,
       overrides: { reducedTransparency: theme.reducedTransparency, reducedMotion: theme.reducedMotion, textScale: 1 },
       followSystem: false,
-      children: /* @__PURE__ */ jsx8(Component, { theme, persona, state })
+      children: treeFor(spec, persona, theme, state)
     }
   );
 }
-function personaFor(spec, preferred) {
-  if (preferred) return preferred;
-  return PERSONAS.find((p) => spec.requires.every((tier) => p.tiers.includes(tier))) ?? PERSONAS[1];
+function personaFor(spec, state = "default", all = PERSONAS) {
+  const capable = all.find((p) => spec.requires.every((tier) => p.tiers.includes(tier))) ?? all[0];
+  if (state !== "empty" || spec.requires.length === 0 || !capable) return capable;
+  const lacking = [...all].sort((a, b) => a.tiers.length - b.tiers.length).find((p) => spec.requires.some((tier) => !p.tiers.includes(tier)));
+  return lacking ?? capable;
 }
 function specFor(slug) {
-  const spec = SCREENS.find((s) => s.slug === slug);
+  const spec = specBySlug(slug);
   if (!spec) throw new Error(`unknown screen "${slug}" (known: ${SCREENS.map((s) => s.slug).join(", ")})`);
   return spec;
 }
-function personaById(id) {
-  const persona = PERSONAS.find((p) => p.id === id);
-  if (!persona) throw new Error(`unknown persona "${id}" (known: ${PERSONAS.map((p) => p.id).join(", ")})`);
+function personaById(id, all = PERSONAS) {
+  const persona = all.find((p) => p.id === id);
+  if (!persona) throw new Error(`unknown persona "${id}" (known: ${all.map((p) => p.id).join(", ")})`);
   return persona;
 }
 function renderOne(slug, personaId, state = "default", themeName = "dark") {
@@ -3425,11 +4250,12 @@ function renderOne(slug, personaId, state = "default", themeName = "dark") {
   return { spec, persona, state, theme, element: renderScreen(spec, persona, theme, state) };
 }
 function renderMatrix(options = {}) {
+  const all = options.all ?? PERSONAS;
   const out = [];
   for (const spec of SCREENS) {
     if (options.screen && spec.slug !== options.screen) continue;
-    const persona = personaFor(spec, options.persona);
     for (const state of options.states ?? spec.states) {
+      const persona = options.persona ?? personaFor(spec, state, all);
       for (const name of options.themes ?? ["dark", "light"]) {
         const theme = createTheme(name);
         out.push({ spec, persona, state, theme, element: renderScreen(spec, persona, theme, state) });
@@ -3440,7 +4266,7 @@ function renderMatrix(options = {}) {
 }
 export {
   AskComposer,
-  AskScreen,
+  AskSheet,
   Backdrop,
   BoundaryToggle,
   BudgetScreen,
@@ -3450,9 +4276,13 @@ export {
   Chip,
   ChipRow,
   ConfidenceChip,
+  ConnectionsScreen,
+  CuriosityHabitScreen,
   DEFAULT_THEME,
   DataStanding,
+  Definition,
   DegradedNotice,
+  DepthScreen,
   DiscoveryScreen,
   Divider,
   EmptyState,
@@ -3464,30 +4294,39 @@ export {
   HomeScreen,
   IMPOSSIBLE,
   IconButton,
-  InsightsScreen,
+  IntentCheckScreen,
+  IqsScreen,
   JourneyScreen,
+  LearningArcsScreen,
   LinkButton,
   ListRow,
   MIN_TOUCH_DP,
   MatchesScreen,
   Meter,
+  NothingYet,
   OnboardingScreen,
   PERSONAS,
   PermissionPrimer,
   PermissionPrimerScreen,
+  PersonaPickerSheet,
   Pill,
   PrivacyCentreScreen,
   PrivacyReceipt,
+  PrivacyReceiptSheet,
   ProfileScreen,
   PublicProfileScreen,
   ROLES,
+  RabbitHoleScreen,
   Ring,
   SCREENS,
+  SECTION_J,
+  ScoreBlock,
   Screen,
   ScrollView,
   SectionHeader,
   SegmentedControl,
   SessionsScreen,
+  ShareCardState,
   Sheet,
   Sparkline,
   Stat,
@@ -3504,12 +4343,13 @@ export {
   TierAction,
   TierBadge,
   Toolbar,
+  UpdateState,
   WeeklyReportScreen,
   WhatIfScreen,
+  WhyDrawerSheet,
   WhySheet,
+  WidgetItem,
   WidgetPreview,
-  WidgetsScreen,
-  YouScreen,
   a11yTarget,
   adjustments,
   announceValue,
@@ -3543,14 +4383,18 @@ export {
   renderOne,
   renderScreen,
   rgba,
+  screensByKind,
   screensByPhase,
+  screensByTab,
   shortDay,
+  specBySlug,
   specFor,
   tierLabel,
   tierSummary,
   toHex,
   tokenMeta,
   touchTarget,
+  treeFor,
   useLiveBlur,
   useTheme,
   useThemeControls

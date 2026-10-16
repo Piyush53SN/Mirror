@@ -388,6 +388,84 @@ test('degraded states are rendered by the pattern, never by ad-hoc copy', () => 
   ok.unmount();
 });
 
+/* ------------------------------------------------- Section J inventory ---- */
+
+test('the inventory covers the 28 Section J items exactly, in order', () => {
+  assert.equal(ui.SECTION_J.length, 28, 'Section J has 28 items');
+  assert.equal(ui.SCREENS.length, 28, 'every Section J item is a SCREENS entry');
+  assert.deepEqual(
+    ui.SCREENS.map((s) => s.id),
+    ui.SECTION_J.map((i) => i.id),
+    'the rendered inventory must keep Section J order',
+  );
+  for (const item of ui.SECTION_J) {
+    const spec = ui.specBySlug(ui.SCREENS.find((s) => s.id === item.id).slug);
+    assert.equal(spec.title, item.title, `${item.id}: title must match the brief`);
+    assert.equal(spec.kind, item.kind, `${item.id}: kind must match the brief`);
+    if (item.parent) assert.equal(spec.parent, item.parent, `${item.id}: parent must match the brief`);
+  }
+  const slugs = new Set(ui.SCREENS.map((s) => s.slug));
+  assert.equal(slugs.size, 28, 'slugs are unique');
+});
+
+test('the four kinds are all represented: screens, sheets, states and a widget', () => {
+  const byKind = {};
+  for (const spec of ui.SCREENS) byKind[spec.kind] = (byKind[spec.kind] ?? 0) + 1;
+  assert.ok(byKind.screen >= 20, `expected the list to be mostly screens, got ${byKind.screen}`);
+  assert.equal(byKind.sheet, 4, 'the Why drawer, Ask, the receipt and the persona picker are sheets');
+  assert.equal(byKind.state, 2, 'the share card and the update notice are states');
+  assert.equal(byKind.widget, 1, 'the home-screen widget is a widget');
+  for (const spec of ui.SCREENS) {
+    if (spec.kind === 'sheet' || spec.kind === 'state') {
+      assert.ok(spec.parent, `${spec.slug} is a ${spec.kind}: it must name the screen it appears on`);
+      assert.ok(ui.specBySlug(spec.parent), `${spec.slug} names an unknown parent "${spec.parent}"`);
+    }
+  }
+});
+
+test('a sheet is rendered over its parent screen, not instead of it', () => {
+  for (const spec of ui.SCREENS.filter((s) => s.kind === 'sheet' || s.kind === 'state')) {
+    const theme = ui.createTheme('dark');
+    const parent = ui.specBySlug(spec.parent);
+    let renderer;
+    TestRenderer.act(() => {
+      renderer = TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[1], theme, spec.states[0]));
+    });
+    const text = JSON.stringify(renderer.toJSON());
+    // Exactly one screen container: the parent's. A sheet that rendered its own
+    // full screen would be a page, not a sheet.
+    const labels = [];
+    (function walk(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      // The DOM binding maps accessibilityLabel → aria-label; read both so the
+      // test does not depend on which host it is looking at.
+      const label = node.props?.['aria-label'] ?? node.props?.accessibilityLabel;
+      if (typeof label === 'string') labels.push(label);
+      walk(node.children);
+    })(renderer.toJSON());
+    // "…on screen" hero-dot labels also end in "screen"; a Screen container's label
+    // is "<title> screen" and is not a slide indicator.
+    const screens = labels.filter((l) => l.endsWith(' screen') && !/^Slide /.test(l));
+    assert.equal(
+      screens.length,
+      1,
+      `${spec.slug} must render over exactly one screen (${spec.parent}); found ${JSON.stringify(screens)}`,
+    );
+    assert.ok(text.length > 500, `${spec.slug} rendered nothing over ${spec.parent}`);
+    renderer.unmount();
+  }
+});
+
+test('every item declares the rule it carries and the tiers it needs', () => {
+  for (const spec of ui.SCREENS) {
+    assert.ok(spec.rule.length > 20, `${spec.slug} needs a rule a reviewer can check (got "${spec.rule}")`);
+    assert.ok(spec.states.includes('default'), `${spec.slug} must render in its default state`);
+    assert.ok(['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].includes(spec.phase), `${spec.slug}: unknown phase ${spec.phase}`);
+    for (const tier of spec.requires) assert.ok(['A', 'B', 'C', 'D'].includes(tier), `${spec.slug}: unknown tier ${tier}`);
+  }
+});
+
 /* --------------------------------------------------------------- source ---- */
 
 test('components carry no colour literals: every colour comes from the theme', () => {

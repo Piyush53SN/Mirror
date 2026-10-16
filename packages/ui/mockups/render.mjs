@@ -17,7 +17,7 @@
  *   packages/ui/mockups/gallery/index.html         the gallery
  *   packages/ui/mockups/gallery/manifest.json      what was rendered (for tests)
  */
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { buildRenderer, paths } from './render-lib.mjs';
 
@@ -94,60 +94,83 @@ ${subtitle ? `<p data-review-chrome style="padding:0 32px 32px;color:#9D9D9D;fon
 // Bundled + imported through the shared seam, so the tests render exactly what
 // this script renders.
 const mod = await buildRenderer({ force: true });
-const { htmlFor, personaFor, SCREENS, PERSONAS, createTheme } = mod;
+const { htmlFor, personaFor, SCREENS, SECTION_J, createTheme } = mod;
 
 mkdirSync(OUT, { recursive: true });
+
+// A gallery that still lists a screen deleted from the inventory is worse than no
+// gallery: drop every page that is not part of this run before writing.
+for (const file of readdirSync(OUT)) {
+  if (file.endsWith('.html') && file !== 'index.html') rmSync(join(OUT, file));
+}
+for (const file of readdirSync(OUT)) {
+  const slug = file.replace(/\.html$/, '');
+  if (file.endsWith('.html') && file !== 'index.html' && !SCREENS.some((sp) => sp.slug === slug)) rmSync(join(OUT, file));
+}
 
 const rendered = [];
 /** dark/default frame markup per slug, reused by the gallery so it needs no iframes. */
 const galleryFrame = new Map();
 
-/**
- * The persona a frame is rendered with.
- *
- * A "default" frame uses the persona that can actually show the screen. An
- * "empty" frame is the interesting one: it uses a persona that *lacks* a tier the
- * screen needs, so the frame shows the real degraded view rather than a
- * duplicate of the default one. Screens with no requirements fall back.
- */
-function personaForFrame(spec, state) {
-  const capable = personaFor(spec);
-  if (state !== 'empty' || spec.requires.length === 0) return { persona: capable, degraded: false };
-  const lacking = [...PERSONAS]
-    .sort((a, b) => a.tiers.length - b.tiers.length)
-    .find((p) => spec.requires.some((tier) => !p.tiers.includes(tier)));
-  return lacking ? { persona: lacking, degraded: true } : { persona: capable, degraded: false };
-}
+const kindLabel = (kind) =>
+  kind === 'screen' ? 'full screen' : kind === 'sheet' ? 'bottom sheet' : kind === 'state' ? 'state of a parent screen' : 'home-screen widget';
 
 for (const spec of SCREENS) {
   if (onlyScreen && spec.slug !== onlyScreen) continue;
   const frames = [];
   for (const state of spec.states) {
-    const { persona, degraded } = personaForFrame(spec, state);
+    const persona = personaFor(spec, state);
+    const degraded = spec.requires.some((tier) => !persona.tiers.includes(tier));
     for (const theme of ['dark', 'light']) {
       const themeObj = createTheme(theme);
-      const html = htmlFor({ spec, persona, state, theme: themeObj, element: mod.renderScreen(spec, persona, themeObj, state) });
+      const markup = htmlFor({ spec, persona, state, theme: themeObj, element: mod.renderScreen(spec, persona, themeObj, state) });
+      // Sheets and states are drawn over their parent screen inside the same frame,
+      // and the marker says which screen that is — a reviewer should be able to see
+      // both without opening two files.
+      const html =
+        spec.kind === 'screen' || spec.kind === 'widget'
+          ? markup
+          : `<div data-mock-parent="${spec.parent}" data-mock-item="${spec.slug}">${markup}</div>`;
       const label = `${state} · ${theme} · ${persona.name}${degraded ? ' (lacking a required tier)' : ''}`;
-      const frame = `<div class="frame"${theme === 'light' ? ' data-theme="light"' : ''} data-screen="${spec.slug}" data-state="${state}" data-mock-theme="${theme}">${html}</div>`;
+      const frame = `<div class="frame"${theme === 'light' ? ' data-theme="light"' : ''} data-screen="${spec.slug}" data-kind="${spec.kind}" data-state="${state}" data-mock-theme="${theme}">${html}</div>`;
       if (state === 'default' && theme === 'dark') galleryFrame.set(spec.slug, frame);
       frames.push(`
         <div class="cell">
           <h3>${spec.id} ${escapeHtml(spec.title)} — ${escapeHtml(label)}</h3>
           ${frame}
         </div>`);
-      rendered.push({ id: spec.id, slug: spec.slug, title: spec.title, phase: spec.phase, state, theme, persona: persona.id, degraded, requires: spec.requires, rule: spec.rule, bytes: html.length });
+      rendered.push({
+        id: spec.id,
+        slug: spec.slug,
+        title: spec.title,
+        kind: spec.kind,
+        parent: spec.parent ?? null,
+        tab: spec.tab ?? null,
+        phase: spec.phase,
+        state,
+        theme,
+        persona: persona.id,
+        degraded,
+        requires: spec.requires,
+        rule: spec.rule,
+        bytes: html.length,
+      });
     }
   }
 
+  const parentNote = spec.parent
+    ? `<p>Rendered over <a href="./${spec.parent}.html">${escapeHtml(spec.parent)}</a>, because that is what it is: a ${escapeHtml(kindLabel(spec.kind))}.</p>`
+    : '';
   const file = page({
     title: `${spec.id} ${spec.title}`,
-    subtitle: `${spec.rule} · needs tier ${spec.requires.length ? spec.requires.join('/') : 'none'} · ships in ${spec.phase}`,
+    subtitle: `${spec.rule} · ${kindLabel(spec.kind)} · needs tier ${spec.requires.length ? spec.requires.join('/') : 'none'} · ships in ${spec.phase}`,
     body: `<div class="wrap">
       <div class="states">${frames.join('')}</div>
       <div class="meta" data-review-chrome>
         <h1>${spec.id} · ${escapeHtml(spec.title)}</h1>
         <p>${escapeHtml(spec.rule)}</p>
-        <p><span class="tag">needs ${spec.requires.length ? spec.requires.join('/') : 'no data'}</span><span class="tag">${spec.phase}</span></p>
+        <p><span class="tag">${escapeHtml(kindLabel(spec.kind))}</span><span class="tag">needs ${spec.requires.length ? spec.requires.join('/') : 'no data'}</span><span class="tag">${spec.phase}</span>${spec.tab ? `<span class="tag">tab: ${escapeHtml(spec.tab)}</span>` : ''}</p>
+        ${parentNote}
         <h2>What this file is</h2>
         <p>Rendered by <code>packages/ui/mockups/render.mjs</code> from the real components in
         <code>packages/ui/screens</code> through the DOM binding, with the generated token CSS inlined.
@@ -162,21 +185,21 @@ for (const spec of SCREENS) {
     </div>`,
   });
   writeFileSync(join(OUT, `${spec.slug}.html`), file);
-  console.log(`rendered ${spec.id} ${spec.slug} (${frames.length} frames)`);
+  console.log(`rendered ${spec.id} ${spec.slug} (${spec.kind}, ${frames.length} frames)`);
 }
 
-/* gallery */
+/* gallery — all 28 Section J items, in the order the brief lists them */
 const gallery = page({
-  title: 'All screens — Mirror mockups',
-  subtitle: 'Generated from packages/ui/screens. Dark is the default theme; light uses the same tokens. Every card links to that screen in both states and both themes.',
+  title: 'All screens — Mirror mockups (Section J)',
+  subtitle: `All ${SCREENS.length} Section J items: screens, sheets, states and widgets, rendered from the design system. Dark is the default theme; light uses the same tokens.`,
   body: `<div class="gallery">
     ${rendered
       .filter((r) => r.state === 'default' && r.theme === 'dark')
       .map(
-        (r) => `<div class="cell">
+        (r) => `<div class="cell" id="${r.slug}">
           <h3>${r.id} · ${escapeHtml(r.title)}</h3>
           <p>${escapeHtml(r.rule)}</p>
-          <p><span class="tag">tier ${r.requires.length ? r.requires.join('/') : 'none'}</span><span class="tag">${r.phase}</span><a href="./${r.slug}.html">all states →</a></p>
+          <p><span class="tag">${escapeHtml(kindLabel(r.kind))}</span><span class="tag">tier ${r.requires.length ? r.requires.join('/') : 'none'}</span><span class="tag">${r.phase}</span>${r.parent ? `<span class="tag">over ${escapeHtml(r.parent)}</span>` : ''}<a href="./${r.slug}.html">all states →</a></p>
           ${galleryFrame.get(r.slug) ?? ''}
         </div>`,
       )
@@ -185,7 +208,19 @@ const gallery = page({
 });
 writeFileSync(join(OUT, 'index.html'), gallery);
 
-writeFileSync(join(OUT, 'manifest.json'), JSON.stringify({ generatedFrom: 'packages/ui/screens/index.tsx', screens: SCREENS.length, frames: rendered }, null, 2) + '\n');
+writeFileSync(
+  join(OUT, 'manifest.json'),
+  JSON.stringify(
+    {
+      generatedFrom: 'packages/ui/screens/index.tsx',
+      sectionJ: SECTION_J,
+      items: SCREENS.length,
+      frames: rendered,
+    },
+    null,
+    2,
+  ) + '\n',
+);
 
 if (!existsSync(join(OUT, 'index.html'))) throw new Error('gallery was not written');
-console.log(`\n${rendered.length} frames · ${SCREENS.filter((s) => !onlyScreen || s.slug === onlyScreen).length} screens → ${OUT}`);
+console.log(`\n${rendered.length} frames · ${SCREENS.filter((s) => !onlyScreen || s.slug === onlyScreen).length} Section J items → ${OUT}`);

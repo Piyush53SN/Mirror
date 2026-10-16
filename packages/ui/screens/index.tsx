@@ -36,129 +36,10 @@ import {
   WidgetPreview,
   WhySheet,
 } from '../src/patterns.js';
+import { PERSONAS, type Persona } from './personas.js';
+import { Definition, NothingYet, ScoreBlock, type ScreenProps, type ScreenState } from './kit.js';
 
 /* ------------------------------------------------------------------ data ---- */
-
-export type Persona = {
-  id: string;
-  name: string;
-  blurb: string;
-  tiers: DataTier[];
-  connected: { label: string; tier: DataTier; connected: boolean; note: string }[];
-  weeklyMinutes: number[];
-  intentionalShare: number;
-  topics: { name: string; depth: number; hours: number; trend: number; tier: string; firstSeen: string }[];
-  sessions: { app: string; topic: string; minutes: number; kind: 'deep' | 'habit'; intent: 'Intentional' | 'Mindless' }[];
-  budgets: { label: string; target: number; actual: number; unit: string }[];
-  traits: { label: string; value: string; evidence: string }[];
-  askable: string[];
-};
-
-const baseConnected = [
-  { label: 'Per-app foreground time, launches, timestamps', tier: 'D' as DataTier, connected: true, note: 'Android Usage access. Automatic after one grant.' },
-  { label: 'App category', tier: 'D' as DataTier, connected: true, note: 'Coarse label from the operating system.' },
-  { label: 'Watch completion, searches, scroll depth', tier: 'C' as DataTier, connected: false, note: 'Desktop browser extension, allow-listed sites only.' },
-  { label: 'Watch history, search history', tier: 'A' as DataTier, connected: false, note: 'The YouTube Data API has no watch-history endpoint. Use your Takeout export.' },
-  { label: 'Saved items, subscriptions, communities', tier: 'A' as DataTier, connected: false, note: 'Reddit and Twitch OAuth, narrowest scopes.' },
-  { label: 'Instagram and Amazon history', tier: 'B' as DataTier, connected: false, note: 'No consumer history API. Import your own export.' },
-];
-
-export const PERSONAS: Persona[] = [
-  {
-    id: 'ananya',
-    name: 'Ananya',
-    blurb: 'Student, tier D only — the baseline case: usage data and nothing else.',
-    tiers: ['D'],
-    connected: baseConnected.map((c) => (c.tier === 'D' ? { ...c, connected: true } : c)),
-    weeklyMinutes: [96, 118, 104, 132, 121, 88, 76],
-    intentionalShare: 0.46,
-    topics: [],
-    sessions: [
-      { app: 'YouTube', topic: '—', minutes: 42, kind: 'habit', intent: 'Mindless' },
-      { app: 'Instagram', topic: '—', minutes: 27, kind: 'habit', intent: 'Mindless' },
-      { app: 'WhatsApp', topic: '—', minutes: 19, kind: 'deep', intent: 'Intentional' },
-      { app: 'Chrome', topic: '—', minutes: 12, kind: 'deep', intent: 'Intentional' },
-    ],
-    budgets: [
-      { label: 'Short video', target: 60, actual: 96, unit: 'min/day' },
-      { label: 'Social feed', target: 45, actual: 38, unit: 'min/day' },
-    ],
-    traits: [
-      { label: 'Evening-heavy use', value: '64% after 8 pm', evidence: 'Foreground time by hour, tier D, 14 days.' },
-      { label: 'Frequent switching', value: '38 app switches/hour', evidence: 'Launch timestamps, tier D.' },
-    ],
-    askable: ['How much of my week was intentional?', 'When do I switch apps most?'],
-  },
-  {
-    id: 'rehan',
-    name: 'Rehan',
-    blurb: 'Creator, tiers D + B + C — usage plus an imported export and the browser extension.',
-    tiers: ['D', 'C', 'B'],
-    connected: baseConnected.map((c) => (c.tier === 'D' || c.tier === 'C' || c.tier === 'B' ? { ...c, connected: true } : c)),
-    weeklyMinutes: [112, 96, 128, 141, 118, 104, 92],
-    intentionalShare: 0.61,
-    topics: [
-      { name: 'Film photography', depth: 78, hours: 4.2, trend: 14, tier: 'B+C', firstSeen: '6 weeks ago' },
-      { name: 'Rust programming', depth: 64, hours: 2.6, trend: 8, tier: 'C', firstSeen: '3 weeks ago' },
-      { name: 'Urban gardening', depth: 41, hours: 1.1, trend: -6, tier: 'B', firstSeen: '11 weeks ago' },
-    ],
-    sessions: [
-      { app: 'YouTube', topic: 'Film photography', minutes: 46, kind: 'deep', intent: 'Intentional' },
-      { app: 'Reddit', topic: 'Rust programming', minutes: 24, kind: 'deep', intent: 'Intentional' },
-      { app: 'YouTube', topic: 'Shorts', minutes: 38, kind: 'habit', intent: 'Mindless' },
-      { app: 'Instagram', topic: '—', minutes: 22, kind: 'habit', intent: 'Mindless' },
-    ],
-    budgets: [
-      { label: 'Short video', target: 30, actual: 38, unit: 'min/day' },
-      { label: 'Social feed', target: 30, actual: 22, unit: 'min/day' },
-      { label: 'Deep reading', target: 45, actual: 51, unit: 'min/day' },
-    ],
-    traits: [
-      { label: 'Deliberate starter', value: '3 of 4 topics began from a search', evidence: 'First-seen events, tier C search terms and tier B history.' },
-      { label: 'Shallow tail', value: '22% of short-video sessions end under 8s', evidence: 'Session length distribution, tier C.' },
-    ],
-    askable: ['Which topic grew the most this month?', 'How deep was my film photography reading?'],
-  },
-  {
-    id: 'mei',
-    name: 'Mei',
-    blurb: 'Researcher, all four tiers — the fullest picture Mirror can honestly build.',
-    tiers: ['D', 'C', 'B', 'A'],
-    connected: baseConnected.map((c) => ({ ...c, connected: true })),
-    weeklyMinutes: [88, 92, 76, 104, 96, 71, 64],
-    intentionalShare: 0.72,
-    topics: [
-      { name: 'Astronomy', depth: 81, hours: 5.1, trend: 9, tier: 'A+C', firstSeen: '9 weeks ago' },
-      { name: 'Urban gardening', depth: 66, hours: 3.4, trend: 3, tier: 'B', firstSeen: '14 weeks ago' },
-      { name: 'Rust programming', depth: 58, hours: 2.2, trend: -4, tier: 'C', firstSeen: '5 weeks ago' },
-      { name: 'Film photography', depth: 37, hours: 0.8, trend: 12, tier: 'B', firstSeen: '2 weeks ago' },
-    ],
-    sessions: [
-      { app: 'Chrome', topic: 'Astronomy', minutes: 52, kind: 'deep', intent: 'Intentional' },
-      { app: 'Twitch', topic: 'Astronomy live', minutes: 61, kind: 'deep', intent: 'Intentional' },
-      { app: 'Reddit', topic: 'Urban gardening', minutes: 18, kind: 'deep', intent: 'Intentional' },
-      { app: 'Instagram', topic: 'Film photography', minutes: 27, kind: 'habit', intent: 'Mindless' },
-    ],
-    budgets: [
-      { label: 'Short video', target: 20, actual: 12, unit: 'min/day' },
-      { label: 'Social feed', target: 25, actual: 27, unit: 'min/day' },
-      { label: 'Deep reading', target: 60, actual: 74, unit: 'min/day' },
-    ],
-    traits: [
-      { label: 'Long-form preference', value: 'Average session 24 minutes', evidence: 'Session lengths across tiers A/B/C/D.' },
-      { label: 'Low late-night use', value: '8% after 11 pm', evidence: 'Timestamps, tier D.' },
-    ],
-    askable: ['What did I learn about this month?', 'Which sources did I actually open?'],
-  },
-];
-
-export type ScreenState = 'default' | 'empty';
-
-export type ScreenProps = {
-  theme: MirrorTheme;
-  persona: Persona;
-  state?: ScreenState;
-};
 
 const HERO = (p: Persona) => [
   {
@@ -182,40 +63,6 @@ const HERO = (p: Persona) => [
   },
 ];
 
-/**
- * The empty state every screen uses. It always offers the same one action —
- * explaining what Mirror would need — because an empty screen that only says
- * "no data" leaves the user stuck, and one that offers a "get started" nudge
- * breaks the no-engagement rule.
- */
-function NothingYet({
-  theme,
-  needs,
-  available,
-  feature,
-  actionLabel = 'Explain what Mirror needs',
-}: {
-  theme: MirrorTheme;
-  needs: DataTier[];
-  available: DataTier[];
-  feature: string;
-  actionLabel?: string;
-}) {
-  return (
-    <DegradedNotice
-      theme={theme}
-      needs={needs}
-      available={available}
-      feature={feature}
-      actions={
-        <Pill theme={theme} variant="quiet">
-          {actionLabel}
-        </Pill>
-      }
-    />
-  );
-}
-
 const TABS = [
   { id: 'home', label: 'Home' },
   { id: 'insights', label: 'Insights' },
@@ -226,7 +73,7 @@ const TABS = [
 
 /* ------------------------------------------------------------------ J1 ------ */
 
-/** J1 · Onboarding — the three promises, then the choice to skip. */
+/** J1 · Onboarding + privacy promise — three promises, then the choice to skip. */
 export function OnboardingScreen({ theme }: ScreenProps) {
   const promises = [
     { title: 'Your history stays on this phone', body: 'Titles, searches and timestamps are stored and analysed locally, encrypted.' },
@@ -268,19 +115,55 @@ export function OnboardingScreen({ theme }: ScreenProps) {
 
 /** J2 · Permission primer — explains before the OS asks, and the "not now" path. */
 export function PermissionPrimerScreen({ theme }: ScreenProps) {
+  const [step, setStep] = React.useState<'usage' | 'notifications'>('usage');
+  const primers = {
+    usage: {
+      systemName: 'Usage access · Settings → Apps → Special access → Usage access → Mirror',
+      sees: 'How long you use each app and when you open them — foreground time, launches, timestamps.',
+      cannotSee: 'What is inside those apps. No content, no messages, no notifications. Mirror never reads them.',
+      settingsPath: 'Android settings → Special access → Usage access',
+    },
+    notifications: {
+      systemName: 'Notifications · Mirror may send local notifications',
+      sees: 'Nothing new. Notifications are an output, not a source — Mirror writes them on this device and no server sends them.',
+      cannotSee: 'It also cannot read any other app’s notifications. Reading notifications is a forbidden source, not a disabled feature.',
+      settingsPath: 'Android settings → Apps → Mirror → Notifications (off unless you allow)',
+    },
+  } as const;
   return (
-    <Screen title="Permission primer" theme={theme} padded>
-      <PermissionPrimer
-        theme={theme}
-        ask={{
-          systemName: 'Usage access · Settings → Apps → Special access → Usage access → Mirror',
-          sees: 'How long you use each app and when you open them — foreground time, launches, timestamps.',
-          cannotSee: 'What is inside those apps. No content, no messages, no notifications. Mirror never reads them.',
-          settingsPath: 'Android settings → Special access → Usage access',
-        }}
-        onAllow={() => undefined}
-        onDeny={() => undefined}
-      />
+    <Screen
+      title="Permission primers"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Before the system asks"
+          subtitle={step === 'usage' ? 'Step 1 of 2 · usage access' : 'Step 2 of 2 · notifications'}
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <SegmentedControl
+          theme={theme}
+          label="Permission"
+          value={step}
+          onChange={(v) => setStep(v as 'usage' | 'notifications')}
+          options={[
+            { value: 'usage', label: 'Usage access' },
+            { value: 'notifications', label: 'Notifications' },
+          ]}
+        />
+        <PermissionPrimer theme={theme} ask={primers[step]} onAllow={() => undefined} onDeny={() => undefined} />
+        <Callout theme={theme} tone="neutral">
+          <Text role="label" tone="muted" theme={theme}>
+            {step === 'usage'
+              ? 'Usage access is the only permission Mirror needs to work at all. Denying it leaves the app running with an empty, honest dashboard — not with a degraded one full of guesses.'
+              : 'Notifications are optional and off by default. With them off, Mirror still works; you simply never hear from it, which for most people is the right setting.'}
+          </Text>
+        </Callout>
+      </View>
     </Screen>
   );
 }
@@ -294,7 +177,7 @@ export function HomeScreen({ theme, persona, state = 'default' }: ScreenProps) {
   const slides = HERO(persona);
   return (
     <Screen
-      title="Home"
+      title="Dashboard"
       theme={theme}
       padded={false}
       header={
@@ -395,105 +278,19 @@ export function HomeScreen({ theme, persona, state = 'default' }: ScreenProps) {
   );
 }
 
-/* ------------------------------------------------------------------ J4 ------ */
-
-/** J4 · Insights — patterns, with the "why" sheet one tap away. */
-export function InsightsScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const [open, setOpen] = React.useState(false);
-  return (
-    <Screen
-      title="Insights"
-      theme={theme}
-      padded
-      header={<Toolbar theme={theme} title="Insights" subtitle="Descriptive, never diagnostic" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
-      overlay={
-        <Sheet theme={theme} open={open} title="Why this depth score" subtitle="Every component, with its source tier" onClose={() => setOpen(false)}>
-          <WhySheet
-            theme={theme}
-            score={78}
-            maxScore={100}
-            caveat="Depth is an estimate built from session length, completion and return visits. It describes behaviour, not understanding."
-            components={[
-              { label: 'Median session length', points: 26.4, tier: 'D', note: 'Foreground time per session, 14-day median.' },
-              { label: 'Completion rate', points: 22.1, tier: 'C', note: 'Watch completion from the browser extension.' },
-              { label: 'Return visits', points: 18.7, tier: 'B', note: 'Imported history: distinct days.' },
-              { label: 'Cross-source corroboration', points: 10.8, tier: 'A', note: 'Same topic seen in an official API and in usage.' },
-            ]}
-          />
-        </Sheet>
-      }
-    >
-      <View style={{ gap: theme.space(3) }}>
-        <DataStanding theme={theme} tiers={persona.tiers} />
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="Quality of attention" caption="this week" />
-          <View style={{ flexDirection: 'row', gap: theme.space(4), alignItems: 'center' }}>
-            <Ring theme={theme} value={persona.intentionalShare} caption="intentional" />
-            <View style={{ flex: 1, gap: theme.space(2) }}>
-              <Stat theme={theme} value={`${Math.round(persona.intentionalShare * 100)}%`} label="Deliberate sessions" hint={hedged('from session length and your labels', 'D')} />
-              <Text role="label" tone="muted" theme={theme}>
-                {`${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} total, ${persona.sessions.filter((s) => s.kind === 'habit').reduce((a, s) => a + s.minutes, 0)}m in habit loops.`}
-              </Text>
-            </View>
-          </View>
-        </Card>
-        {state === 'empty' ? (
-          <NothingYet theme={theme} needs={['D']} available={[]} feature="Insights" />
-        ) : (
-          <>
-            <Card theme={theme}>
-              <SectionHeader theme={theme} title="Patterns" caption="stated, then evidenced" />
-              {persona.traits.map((trait) => (
-                <View key={trait.label} style={{ marginBottom: theme.space(3) }}>
-                  <Text role="title" theme={theme}>
-                    {trait.label}
-                  </Text>
-                  <Text role="label" theme={theme}>
-                    {trait.value}
-                  </Text>
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {trait.evidence}
-                  </Text>
-                </View>
-              ))}
-            </Card>
-            <Card theme={theme}>
-              <SectionHeader theme={theme} title="Deepest topic" caption={persona.topics[0]?.name ?? 'needs topic data'} />
-              {persona.topics.length ? (
-                <>
-                  <Stat theme={theme} value={String(persona.topics[0]?.depth)} label="depth score" hint="0–100, descriptive estimate" />
-                  <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
-                    <LinkButton theme={theme} onPress={() => setOpen(true)}>
-                      Why this score
-                    </LinkButton>
-                    <LinkButton theme={theme}>Label a session</LinkButton>
-                  </View>
-                </>
-              ) : (
-                <NothingYet theme={theme} needs={['A', 'B', 'C']} available={persona.tiers} feature="Depth scoring" actionLabel="Import an export" />
-              )}
-            </Card>
-          </>
-        )}
-      </View>
-    </Screen>
-  );
-}
-
 /* ------------------------------------------------------------------ J5 ------ */
 
 /** J5 · Journey — how interests appeared, grew and faded. */
 export function JourneyScreen({ theme, persona }: ScreenProps) {
   return (
     <Screen
-      title="Journey"
+      title="Interest Evolution"
       theme={theme}
       padded
       header={
         <Toolbar
           theme={theme}
-          title="Journey"
+          title="Interest Evolution"
           subtitle="Where your curiosity went"
           actions={
             <IconButton label="Journey options: range and sources" theme={theme}>
@@ -623,14 +420,14 @@ export function DiscoveryScreen({ theme, persona, state = 'default' }: ScreenPro
   const minutes = rabbit.reduce((a, s) => a + s.minutes, 0);
   return (
     <Screen
-      title="Discovery"
+      title="Discovery Journey"
       theme={theme}
       padded
       header={
         <Toolbar
           theme={theme}
-          title="Discovery"
-          subtitle="Exploration vs. exploitation"
+          title="Discovery Journey"
+          subtitle="Exploration vs. exploitation, route by route"
           actions={
             <IconButton label="Discovery options: what counts as a rabbit hole" theme={theme}>
               <Text role="label" theme={theme}>⋯</Text>
@@ -782,13 +579,13 @@ export function FocusScreen({ theme }: ScreenProps) {
 export function ProfileScreen({ theme, persona, state = 'default' }: ScreenProps) {
   return (
     <Screen
-      title="Behaviour profile"
+      title="Behavior Profile"
       theme={theme}
       padded
       header={
         <Toolbar
           theme={theme}
-          title="Behaviour profile"
+          title="Behavior Profile"
           subtitle="Descriptions of what you did, never diagnoses"
           actions={
             <IconButton label="Profile options: recompute and export" theme={theme}>
@@ -837,13 +634,13 @@ export function WeeklyReportScreen({ theme, persona, state = 'default' }: Screen
   const total = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
   return (
     <Screen
-      title="Weekly report"
+      title="Weekly Report + Goals"
       theme={theme}
       padded
       header={
         <Toolbar
           theme={theme}
-          title="Weekly report"
+          title="Weekly Report + Goals"
           subtitle="Built on this device, printed on request"
           actions={
             <IconButton label="Report options: week and sections" theme={theme}>
@@ -880,9 +677,29 @@ export function WeeklyReportScreen({ theme, persona, state = 'default' }: Screen
             ]}
           />
         </Card>
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Goals you set" caption="targets, not streaks" />
+          {persona.goals.map((goal) => (
+            <View key={goal.label} style={{ marginBottom: theme.space(4) }}>
+              <Meter
+                theme={theme}
+                value={goal.progress}
+                label={goal.label}
+                caption={`${Math.round(goal.progress * 100)}% of ${goal.target}`}
+                tone={goal.progress >= 0.8 ? 'anchor' : 'muted'}
+              />
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+                {goal.note}
+              </Text>
+            </View>
+          ))}
+          <Text role="micro" tone="muted" theme={theme}>
+            A missed goal is a missed goal. Nothing resets, nothing turns red, and there is no counter of the days you kept it.
+          </Text>
+        </Card>
         <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
           <Pill theme={theme} variant="secondary">
-            Render share image
+            Preview the share card
           </Pill>
           <Pill theme={theme} variant="quiet">
             Export PDF
@@ -951,157 +768,9 @@ export function BudgetScreen({ theme, persona, state = 'default' }: ScreenProps)
   );
 }
 
-/* ------------------------------------------------------------------ J13 ----- */
-
-/** J13 · Ask — questions answered from local data, or refused. */
-export function AskScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const [value, setValue] = React.useState('');
-  const hasHistory = persona.weeklyMinutes.length === 7;
-  return (
-    <Screen
-      title="Ask"
-      theme={theme}
-      padded
-      header={<Toolbar theme={theme} title="Ask Mirror" subtitle="On-device answers over your own data" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
-    >
-      <View style={{ gap: theme.space(3) }}>
-        <AskComposer
-          theme={theme}
-          value={value}
-          onChange={setValue}
-          onSubmit={() => undefined}
-          suggestions={persona.askable}
-          canAnswer={hasHistory && state === 'default'}
-          blockedReason="Ask needs at least a week of on-device history before it can answer without guessing."
-        />
-        {state === 'default' && hasHistory ? (
-          <Card theme={theme}>
-            <SectionHeader theme={theme} title="Example answer" caption="with its sources" />
-            <Text role="body" theme={theme}>
-              {value || persona.askable[0]}
-            </Text>
-            <Divider theme={theme} />
-            <Text role="label" tone="muted" theme={theme}>
-              {`Answered from ${tierSummary(persona.tiers)} data, ${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} of history. No model left this device, and this screen makes no network request.`}
-            </Text>
-          </Card>
-        ) : null}
-      </View>
-    </Screen>
-  );
-}
-
-/* ------------------------------------------------------------------ J14 ----- */
-
-/** J14 · Widgets — including the honest "no public widget yet" state. */
-export function WidgetsScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const canPublish = persona.tiers.some((t) => t !== 'D');
-  return (
-    <Screen
-      title="Widgets"
-      theme={theme}
-      padded
-      header={<Toolbar theme={theme} title="Widgets" subtitle="Glanceable, local, and explicit about privacy" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
-    >
-      <View style={{ gap: theme.space(3) }}>
-        {state === 'empty' ? <NothingYet theme={theme} needs={['D']} available={[]} feature="Widgets" actionLabel="Grant usage access" /> : null}
-        <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
-          <WidgetPreview
-            theme={theme}
-            size="small"
-            variant="private"
-            title="Today"
-            value={duration(persona.weeklyMinutes[6] ?? 0)}
-            caption="Private widget: shows totals only, never which app or what you read."
-            bars={persona.weeklyMinutes.map((m) => m / Math.max(...persona.weeklyMinutes))}
-          />
-          <WidgetPreview
-            theme={theme}
-            size="medium"
-            variant={canPublish ? 'public' : 'private'}
-            title={canPublish ? 'Topics' : 'No public widget'}
-            value={canPublish ? String(persona.topics.length) : '—'}
-            caption={
-              canPublish
-                ? 'Public widget: only topics you published, with a coarse bucket. Never history.'
-                : 'A public widget needs topic data (A/B/C). With usage data only, Mirror shows nothing here rather than inventing it.'
-            }
-            bars={canPublish ? persona.topics.map((t) => t.depth / 100) : undefined}
-          />
-        </View>
-        <Callout theme={theme} tone="limit">
-          Widgets are rendered by the OS, which can show them on a lock screen. That is why the private widget shows totals
-          and no titles, and why a public widget can only exist from topics you published yourself.
-        </Callout>
-        <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
-          <Pill theme={theme} variant="secondary">
-            Add private widget
-          </Pill>
-          {canPublish ? (
-            <Pill theme={theme} variant="quiet">
-              Add public widget
-            </Pill>
-          ) : null}
-        </View>
-      </View>
-    </Screen>
-  );
-}
-
 /* ------------------------------------------------------------------ J15 ----- */
 
 /** J15 · You — settings, exports and the standing of every source. */
-export function YouScreen({ theme, persona }: ScreenProps) {
-  const flags = initialFlags;
-  return (
-    <Screen
-      title="You"
-      theme={theme}
-      padded
-      header={<Toolbar theme={theme} title="You" subtitle="Everything Mirror knows, and where it came from" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
-    >
-      <View style={{ gap: theme.space(3) }}>
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="Sources" caption={tierSummary(persona.tiers)} />
-          <FactList
-            theme={theme}
-            items={persona.connected.map((c) => ({ label: c.label, value: `${c.tier}${c.connected ? ' · on' : ' · off'}`, detail: c.note }))}
-          />
-        </Card>
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="Features" caption="social is off and stays off unless you ask" />
-          <FactList
-            theme={theme}
-            items={[
-              { label: 'Insights', value: isOn(flags, 'insights') ? 'on' : 'off', detail: 'Local analysis only.' },
-              { label: 'Weekly report', value: isOn(flags, 'weeklyReport') ? 'on' : 'off', detail: 'Rendered on device.' },
-              { label: 'Cloud report', value: isOn(flags, 'cloudReport') ? 'on' : 'off', detail: 'Off by default. Would send aggregates, never events.' },
-              { label: 'Matching with others', value: isOn(flags, 'socialMatching') ? 'on' : 'off', detail: 'Off by default. Shares selected topics only — never watch, search or purchase history.' },
-            ]}
-          />
-        </Card>
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="Your data" />
-          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
-            <Pill theme={theme} variant="secondary">
-              Export everything
-            </Pill>
-            <Pill theme={theme} variant="quiet">
-              Import an export
-            </Pill>
-          </View>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(3) }}>
-            Exports are written to a file you choose. Importing is the only way tier B data arrives — Mirror never fetches it.
-          </Text>
-        </Card>
-      </View>
-    </Screen>
-  );
-}
-
 /* ------------------------------------------------------------------ J16 ----- */
 
 /** J16 · Privacy centre — retention, deletion, the receipt and the matrix. */
@@ -1109,10 +778,10 @@ export function PrivacyCentreScreen({ theme, persona }: ScreenProps) {
   const [sheet, setSheet] = React.useState<'receipt' | 'matrix' | null>(null);
   return (
     <Screen
-      title="Privacy centre"
+      title="Privacy Center"
       theme={theme}
       padded
-      header={<Toolbar theme={theme} title="Privacy centre" subtitle="Nothing here is a promise you cannot check" />}
+      header={<Toolbar theme={theme} title="Privacy Center" subtitle="Nothing here is a promise you cannot check" />}
       footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
       overlay={
         <>
@@ -1145,6 +814,38 @@ export function PrivacyCentreScreen({ theme, persona }: ScreenProps) {
               { label: 'Session labels you wrote', value: 'kept', detail: 'They are yours; Mirror will not expire them silently.' },
             ]}
           />
+        </Card>
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Network log" caption="every request this device made" />
+          {persona.networkLog.length === 0 ? (
+            <>
+              <Text role="label" theme={theme}>
+                0 requests. Privacy Mode is on, so nothing has left this device since it was installed.
+              </Text>
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+                This list is written from the app's own request layer, not from a server-side report — the one thing a server
+                could not be trusted to tell you.
+              </Text>
+            </>
+          ) : (
+            persona.networkLog.map((entry) => (
+              <ListRow
+                key={`${entry.when}-${entry.host}`}
+                theme={theme}
+                title={entry.host}
+                meta={`${entry.when} · ${entry.why}`}
+                trailing={
+                  <Text role="label" tone="muted" theme={theme}>
+                    {`${entry.bytes} B`}
+                  </Text>
+                }
+              />
+            ))
+          )}
+          <Divider theme={theme} />
+          <Text role="micro" tone="muted" theme={theme}>
+            Every line is a request Mirror made. If a line is missing, it did not happen.
+          </Text>
         </Card>
         <Card theme={theme}>
           <SectionHeader theme={theme} title="Check it yourself" />
@@ -1181,15 +882,41 @@ export function PublicProfileScreen({ theme, persona, state = 'default' }: Scree
   const published = state === 'empty' ? [] : persona.topics.slice(0, 1);
   return (
     <Screen
-      title="Public profile"
+      title="Public Profile editor"
       theme={theme}
       padded
-      header={<Toolbar theme={theme} title="Public profile" subtitle="Exactly what a match would see" />}
+      header={<Toolbar theme={theme} title="Public Profile editor" subtitle="Edit, with a live preview of what a match sees" />}
       footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <BoundaryToggle theme={theme} value="public" onChange={() => undefined} consequence="Public. Visible to others: the topics you published, and a coarse activity bucket. Nothing else." />
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Editing what is published" caption="each row is one decision, reversible in one tap" />
+          {persona.topics.length === 0 ? (
+            <Text role="label" tone="muted" theme={theme}>
+              No topics yet. A topic appears here once there is enough on-device evidence to describe it, and it stays private
+              until you publish it.
+            </Text>
+          ) : (
+            persona.topics.slice(0, 3).map((topic, i) => (
+              <View key={topic.name} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space(3), marginBottom: theme.space(3) }}>
+                <View style={{ flexShrink: 1 }}>
+                  <Text role="label" theme={theme}>{topic.name}</Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`depth ${topic.depth} · shares “${topic.depth > 60 ? 'deep interest' : 'exploring'}” and nothing else`}
+                  </Text>
+                </View>
+                <Pill theme={theme} variant={i === 0 ? 'primary' : 'quiet'}>
+                  {i === 0 ? 'Published' : 'Private'}
+                </Pill>
+              </View>
+            ))
+          )}
+        </Card>
         <Card theme={theme} elevated>
+          <Text role="micro" tone="muted" theme={theme}>
+            LIVE PREVIEW · WHAT A MATCH SEES
+          </Text>
           <Text role="title-lg" theme={theme}>
             {persona.name}
           </Text>
@@ -1249,10 +976,10 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
   const socialOn = isOn(initialFlags, 'socialMatching') && state !== 'empty';
   return (
     <Screen
-      title="Matches"
+      title="Matches / Chat"
       theme={theme}
       padded
-      header={<Toolbar theme={theme} title="Matches" subtitle="Off by default, and not required to use Mirror" />}
+      header={<Toolbar theme={theme} title="Matches / Chat" subtitle="Off by default, and not required to use Mirror" />}
       footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
     >
       <View style={{ gap: theme.space(3) }}>
@@ -1286,6 +1013,28 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
             ]}
           />
         </Card>
+        {socialOn && persona.chat ? (
+          <Card theme={theme}>
+            <SectionHeader theme={theme} title={persona.chat.with} caption={`matched on ${persona.chat.topic}`} />
+            {persona.chat.messages.map((m, i) => (
+              <View key={i} style={{ marginBottom: theme.space(2), alignItems: m.from === 'you' ? 'flex-end' : 'flex-start' }}>
+                <View style={{ maxWidth: '86%' }}>
+                  <Text role="body" theme={theme}>{m.text}</Text>
+                  <Text role="micro" tone="muted" theme={theme}>{m.from === 'you' ? 'you' : 'them'}</Text>
+                </View>
+              </View>
+            ))}
+            <Divider theme={theme} />
+            <FactList
+              theme={theme}
+              items={[
+                { label: 'Shared in this chat', value: 'what you type', detail: 'Plus the published topic you both matched on.' },
+                { label: 'Not shared', value: 'anything measured', detail: 'No totals, no session counts, no app names, no history.' },
+                { label: 'Stored', value: 'on this device', detail: 'Messages are kept locally; deleting the match deletes them.' },
+              ]}
+            />
+          </Card>
+        ) : null}
         <Callout theme={theme} tone="limit">
           Mirror will not notify you to come back, will not show who viewed you, and will not rank people by how much they
           use their phone.
@@ -1309,44 +1058,891 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
 
 /* -------------------------------------------------------------- manifest ---- */
 
+/* ================================================================== J5 ====== */
+
+/** J5 · Depth — session-length distribution, and what "deep" is defined as. */
+export function DepthScreen({ theme, persona, state = 'default' }: ScreenProps) {
+  const empty = state === 'empty';
+  const bands = persona.depthBands;
+  const under8 = bands[0]?.share ?? 0;
+  return (
+    <Screen
+      title="Depth"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Depth"
+          subtitle="How far into things you actually got"
+          actions={
+            <IconButton label="Depth options: range and sequence" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        {empty ? (
+          <NothingYet theme={theme} needs={['D']} available={[]} feature="Depth" actionLabel="Grant usage access" />
+        ) : (
+          <>
+            <Card theme={theme} elevated>
+              <Definition theme={theme} term="depth">
+                <Text role="label" tone="muted" theme={theme}>
+                  {`Depth is how long a single visit lasts, measured from the operating system's own session boundaries. It is a duration, not a judgement: a long visit to something you chose is the point, and a long visit you did not choose still counts as long.`}
+                </Text>
+              </Definition>
+              <Divider theme={theme} />
+              <View style={{ flexDirection: 'row', gap: theme.space(4), alignItems: 'flex-end' }}>
+                <Stat theme={theme} value={`${Math.round(under8 * 100)}%`} label="of visits end under 8 s" hint="tier D" />
+                <Stat theme={theme} value={`${Math.round((bands[4]?.share ?? 0) * 100)}%`} label="last more than 20 min" hint="tier D" />
+              </View>
+            </Card>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Visit length this week" caption="every visit, not a sample" />
+              {bands.map((band) => (
+                <View key={band.label} style={{ marginBottom: theme.space(3) }}>
+                  <Meter
+                    theme={theme}
+                    value={band.share}
+                    label={`${band.label} — ${band.note}`}
+                    caption={`${Math.round(band.share * 100)}%`}
+                    tone={band.label === 'under 8 s' ? 'muted' : 'anchor'}
+                  />
+                </View>
+              ))}
+            </Card>
+            {persona.topics.length === 0 ? (
+              <Card theme={theme}>
+                <SectionHeader theme={theme} title="What the long visits were about" caption="needs topic data" />
+                <NothingYet
+                  theme={theme}
+                  needs={['A', 'B', 'C']}
+                  available={persona.tiers}
+                  feature="Depth by topic"
+                  actionLabel="Import an export"
+                />
+              </Card>
+            ) : (
+              <Card theme={theme}>
+                <SectionHeader theme={theme} title="Deepest visits" caption="the subject each one was about" />
+                {persona.sessions
+                  .filter((s) => s.kind === 'deep')
+                  .slice(0, 3)
+                  .map((s) => (
+                    <ListRow
+                      key={`${s.app}-${s.minutes}`}
+                      theme={theme}
+                      title={`${s.minutes} min · ${s.app}`}
+                      meta={s.topic === '—' ? 'no topic attached (tier D)' : s.topic}
+                      leading={<TierBadge tier={s.topic === '—' ? 'D' : 'C'} ghost theme={theme} />}
+                    />
+                  ))}
+              </Card>
+            )}
+            <Callout theme={theme} tone="limit">
+              <Text role="label" theme={theme}>
+                {/* The rule that keeps this screen honest: it can show duration, and it
+                    refuses to claim the duration was good for you. */}
+                Mirror can measure how long a visit lasted. It cannot measure whether the visit was any good for you, so it will
+                not label a video, a post or an app as deep, shallow, useful or wasted.
+              </Text>
+            </Callout>
+          </>
+        )}
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J6 ====== */
+
+/** J6 · Curiosity vs Habit — the two halves of the same week, both named. */
+export function CuriosityHabitScreen({ theme, persona, state = 'default' }: ScreenProps) {
+  const empty = state === 'empty';
+  const { deepHours, habitHours, switchesPerHour, note } = persona.curiosity;
+  const total = deepHours + habitHours || 1;
+  return (
+    <Screen
+      title="Curiosity vs habit"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Curiosity vs habit"
+          subtitle="Two ways the same hour gets spent"
+          actions={
+            <IconButton label="Curiosity options: what counts as habit" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        {empty ? (
+          <NothingYet theme={theme} needs={['D']} available={[]} feature="Curiosity vs habit" actionLabel="Grant usage access" />
+        ) : (
+          <>
+            <Card theme={theme}>
+              <Definition theme={theme} term="habit">
+                <Text role="label" tone="muted" theme={theme}>
+                  {`A habit block is time in a feed you reached without searching for anything, made of visits under three minutes. Curiosity is everything else you attended to on purpose — a search, a saved item, a long read.`}
+                </Text>
+              </Definition>
+              <Divider theme={theme} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <Stat theme={theme} value={`${deepHours}h`} label="curiosity" hint="chosen starts" />
+                <Stat theme={theme} value={`${habitHours}h`} label="habit" hint="feed drift" />
+              </View>
+              <View style={{ marginTop: theme.space(3) }}>
+                <Meter
+                  theme={theme}
+                  value={deepHours / total}
+                  label="curiosity share of attended time"
+                  caption={`${Math.round((deepHours / total) * 100)}%`}
+                />
+              </View>
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+                {`${switchesPerHour} app switches per hour.`}
+              </Text>
+            </Card>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Where the habit minutes were" caption="by app, no content read" />
+              {persona.budgets.map((b) => (
+                <View key={b.label} style={{ marginBottom: theme.space(3) }}>
+                  <Meter
+                    theme={theme}
+                    value={Math.min(1, b.actual / Math.max(b.target, 1))}
+                    label={b.label}
+                    caption={`${b.actual} / ${b.target} ${b.unit}`}
+                    tone={b.actual > b.target ? 'muted' : 'anchor'}
+                  />
+                </View>
+              ))}
+            </Card>
+            <Callout theme={theme} tone="neutral">
+              <Text role="label" theme={theme}>{note}</Text>
+            </Callout>
+            <Callout theme={theme} tone="limit">
+              <Text role="label" theme={theme}>
+                Habit is not a failure and Mirror will not frame it as one. There is no streak to break here, no red state, and no
+                message telling you to do better.
+              </Text>
+            </Callout>
+          </>
+        )}
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J7 ====== */
+
+/** J7 · IQS — the composite score, built only from parts that exist. */
+export function IqsScreen({ theme, persona, state = 'default' }: ScreenProps) {
+  const empty = state === 'empty';
+  const iqs = persona.iqs;
+  return (
+    <Screen
+      title="IQS"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Interest quality"
+          subtitle="A composite, never a verdict"
+          actions={
+            <IconButton label="IQS options: parts and weights" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        {empty ? (
+          <NothingYet theme={theme} needs={['D']} available={[]} feature="IQS" actionLabel="Grant usage access" />
+        ) : (
+          <Card theme={theme} elevated>
+            <ScoreBlock
+              theme={theme}
+              title="Interest Quality Score"
+              score={iqs.value}
+              band={iqs.band}
+              parts={iqs.parts}
+              caveat={iqs.caveat}
+              action={<LinkButton theme={theme}>Why this score</LinkButton>}
+            />
+          </Card>
+        )}
+        <Callout theme={theme} tone="limit">
+          <Text role="label" theme={theme}>
+            IQS is an estimate from behaviour on this device. It is not a diagnosis, not a personality test, and not comparable
+            between people — the band exists because a single number invites exactly that comparison.
+          </Text>
+        </Callout>
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J11 ===== */
+
+/** J11 · Rabbit Hole — the definition is yours, and it is printed on the screen. */
+export function RabbitHoleScreen({ theme, persona, state = 'default' }: ScreenProps) {
+  const empty = state === 'empty';
+  const rabbit = persona.rabbit;
+  return (
+    <Screen
+      title="Rabbit hole"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Rabbit hole"
+          subtitle="Drift, defined so you can disagree with it"
+          actions={
+            <IconButton label="Rabbit hole options: change the definition" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        <Card theme={theme}>
+          <Definition theme={theme} term="rabbit hole">
+            <Text role="label" tone="muted" theme={theme}>
+              Five or more visits to the same feed within twenty minutes where each visit is under three minutes and no search
+              started it. You can loosen or tighten this below, and the count changes with it.
+            </Text>
+          </Definition>
+          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', marginTop: theme.space(3) }}>
+            <Chip label="Visits" value="5+" theme={theme} />
+            <Chip label="Window" value="20 min" theme={theme} />
+            <Chip label="Visit length" value="under 3 min" theme={theme} />
+          </View>
+        </Card>
+        {empty ? (
+          <NothingYet theme={theme} needs={['D']} available={[]} feature="Rabbit-hole detection" actionLabel="Grant usage access" />
+        ) : (
+          <>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="This week" caption="against the definition above" />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Stat theme={theme} value={`${rabbit.sessions}`} label="blocks that qualified" />
+                <Stat theme={theme} value={duration(rabbit.minutes)} label="inside them" />
+                <Stat theme={theme} value={`${Math.round(rabbit.lateNightShare * 100)}%`} label="after 11pm" />
+              </View>
+              <Divider theme={theme} />
+              <Text role="label" tone="muted" theme={theme}>{rabbit.example}</Text>
+            </Card>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="What Mirror will not do about it" caption="the point of the screen" />
+              <FactList
+                theme={theme}
+                items={[
+                  { label: 'Block the feed', value: 'not offered' },
+                  { label: 'Nudge you out of it', value: 'only if you ask', detail: 'An intent check you wrote yourself, one prompt, no repeat.' },
+                  { label: 'Score you on it', value: 'never' },
+                  { label: 'Show it publicly', value: 'never', detail: 'This number never appears on the public profile, in any form.' },
+                ]}
+              />
+            </Card>
+          </>
+        )}
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J13 ===== */
+
+/** J13 · Connections / consent dashboard — sources, capability matrix, revocation. */
+export function ConnectionsScreen({ theme, persona }: ScreenProps) {
+  const [boundary, setBoundary] = React.useState<'private' | 'public'>('private');
+  return (
+    <Screen
+      title="Connections"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Connections"
+          subtitle="Every source, and what each one cannot do"
+          actions={
+            <IconButton label="Connection options: add a source" theme={theme}>
+              <Text role="label" theme={theme}>＋</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <BoundaryToggle
+          theme={theme}
+          value={boundary}
+          onChange={setBoundary}
+          consequence={
+            boundary === 'private'
+              ? 'Private. Connexions feed the private profile only. Nothing you connect here can be seen by a match.'
+              : 'Public. Only topics you publish are shared — never a connected source, a watch history or a search.'
+          }
+        />
+        <CapabilityMatrix theme={theme} available={persona.tiers} rows={persona.connected} />
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Revoking" caption="one tap, no confirmation maze" />
+          <FactList
+            theme={theme}
+            items={[
+              { label: 'Usage access', value: 'Android setting', detail: 'Revocable in Android settings; Mirror notices and stops collecting within a minute.' },
+              { label: 'Extension (tier C)', value: 'per site', detail: 'Allow-listed sites only; removing the extension stops tier C at the browser.' },
+              { label: 'OAuth sources (tier A)', value: 'per scope', detail: 'Revoke in the provider too — Mirror deletes its copy either way.' },
+              { label: 'Imports (tier B)', value: 'delete any time', detail: 'An import is a file you can remove without affecting the others.' },
+            ]}
+          />
+        </Card>
+        <Callout theme={theme} tone="limit">
+          <Text role="label" theme={theme}>
+            Mirror will never ask for an accessibility service, a screen recorder, an overlay or a notification listener. If a
+            future version offers a source that needs one of those, it is not this product.
+          </Text>
+        </Callout>
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J17 ===== */
+
+/** J17 · Why drawer — a sheet over whatever number the user is questioning. */
+export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
+  const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
+  return (
+    <Sheet
+      open
+      theme={theme}
+      title="Why this number"
+      subtitle="Every part that produced yesterday's total"
+      onClose={() => undefined}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <WhySheet
+          theme={theme}
+          score={sum}
+          maxScore={sum}
+          components={persona.whyParts.map((p) => ({ label: p.label, points: p.points, note: p.note, tier: p.tier }))}
+          caveat="The parts add up exactly, because a total you cannot take apart is not a measurement."
+        />
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="What is not in this number" />
+          <FactList
+            theme={theme}
+            items={[
+              { label: 'Content you watched', value: 'not measured', detail: 'Mirror cannot read it and does not try.' },
+              { label: 'Whether any of it was good for you', value: 'not measured' },
+              { label: 'Anything on another device', value: 'not measured' },
+            ]}
+          />
+        </Card>
+        <Callout theme={theme} tone="limit">
+          <Text role="label" theme={theme}>
+            If a part is missing from this list, the number is smaller. Mirror never re-weights the parts to hide a gap.
+          </Text>
+        </Callout>
+      </View>
+    </Sheet>
+  );
+}
+
+/* ================================================================== J21 ===== */
+
+/** J21 · Learning arcs — a topic followed over months, with what came next. */
+export function LearningArcsScreen({ theme, persona, state = 'default' }: ScreenProps) {
+  const empty = state === 'empty' || persona.arcs.length === 0;
+  return (
+    <Screen
+      title="Learning arcs"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Learning arcs"
+          subtitle="How a subject deepened, week by week"
+          actions={
+            <IconButton label="Arc options: range and topics" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        {empty ? (
+          <NothingYet
+            theme={theme}
+            needs={['A', 'B', 'C']}
+            available={persona.tiers}
+            feature="Learning arcs"
+            actionLabel="Import an export"
+          />
+        ) : (
+          persona.arcs.map((arc) => (
+            <Card key={arc.topic} theme={theme}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Text role="title" theme={theme}>{arc.topic}</Text>
+                <Chip label="stage" value={arc.stage} theme={theme} />
+              </View>
+              <View style={{ marginTop: theme.space(2) }}>
+                <Sparkline
+                  theme={theme}
+                  values={arc.weeks}
+                  label={`${arc.topic}: depth over the last eight weeks, ${arc.weeks.join(', ')}`}
+                />
+              </View>
+              <Text role="label" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+                {arc.next}
+              </Text>
+              <Text role="micro" tone="muted" theme={theme}>from tier {arc.sourceTier} sources</Text>
+            </Card>
+          ))
+        )}
+        {!empty ? (
+          <Callout theme={theme} tone="neutral">
+            <Text role="label" theme={theme}>
+              A stalled arc is a fact, not a failure — it is listed the same way as a growing one, and Mirror will not ask you to
+              pick it back up.
+            </Text>
+          </Callout>
+        ) : null}
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J22 ===== */
+
+/** J22 · Ask — a sheet that answers from local data or refuses, never guesses. */
+export function AskSheet({ theme, persona, state = 'default' }: ScreenProps) {
+  const canAnswer = state !== 'empty' && persona.askable.length > 0;
+  return (
+    <Sheet open theme={theme} title="Ask Mirror" subtitle="Answers come from this device, or not at all" onClose={() => undefined}>
+      <AskComposer
+        theme={theme}
+        value=""
+        onChange={() => undefined}
+        onSubmit={() => undefined}
+        suggestions={canAnswer ? persona.askable : []}
+        canAnswer={canAnswer}
+        blockedReason={
+          canAnswer
+            ? undefined
+            : 'There is not enough on-device history to answer without guessing. Mirror will not guess.'
+        }
+      />
+    </Sheet>
+  );
+}
+
+/* ================================================================== J23 ===== */
+
+/** J23 · Privacy receipt — what left the device, in bytes, this month. */
+export function PrivacyReceiptSheet({ theme, persona, state = 'default' }: ScreenProps) {
+  const rows = persona.networkLog;
+  const bytes = rows.reduce((total, r) => total + r.bytes, 0);
+  const empty = state === 'empty' || rows.length === 0;
+  return (
+    <Sheet open theme={theme} title="Privacy receipt" subtitle="Generated from the on-device request log" onClose={() => undefined}>
+      <PrivacyReceipt
+        theme={theme}
+        periodLabel="October"
+        rows={
+          empty
+            ? [
+                { label: 'Sent this month', value: '0 B', detail: 'Privacy Mode has never made an outbound request.' },
+                { label: 'Requests logged', value: '0' },
+              ]
+            : [
+                { label: 'Sent this month', value: `${Math.round(bytes / 1024)} KB`, detail: `${rows.length} requests, all of them yours.` },
+                { label: 'Raw events sent', value: '0', detail: 'Titles, searches and timestamps stay here.' },
+                ...rows.slice(0, 3).map((r) => ({ label: r.host, value: `${r.bytes} B`, detail: `${r.when} — ${r.why}` })),
+              ]
+        }
+        zeroCopy={
+          empty
+            ? 'In Privacy Mode this list is empty by construction: there is nothing to itemise because nothing was sent.'
+            : 'Every line here is a request Mirror made. If a line is missing, it did not happen.'
+        }
+      />
+    </Sheet>
+  );
+}
+
+/* ================================================================== J24 ===== */
+
+/** J24 · Demo persona picker — switches whose data is on screen, and says so. */
+export function PersonaPickerSheet({ theme, persona }: ScreenProps) {
+  return (
+    <Sheet open theme={theme} title="Demo persona" subtitle="Which data the screens are built from" onClose={() => undefined}>
+      <View style={{ gap: theme.space(3) }}>
+        <Callout theme={theme} tone="limit">
+          <Text role="label" theme={theme}>
+            Demo data replaces your own while it is on. It is never mixed with it, never written to storage, and turning it off
+            restores your real numbers unchanged.
+          </Text>
+        </Callout>
+        {PERSONAS.map((p) => (
+          <ListRow
+            key={p.id}
+            theme={theme}
+            title={`${p.name}${p.id === persona.id ? ' · showing now' : ''}`}
+            meta={p.blurb}
+            leading={<TierBadge tier={(p.tiers[p.tiers.length - 1] as DataTier) ?? 'D'} ghost theme={theme} />}
+            trailing={
+              <Text role="label" theme={theme} style={{ fontWeight: '600' }}>
+                {p.tiers.join('')}
+              </Text>
+            }
+          />
+        ))}
+        <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
+          <Pill theme={theme} variant={persona.id === 'ananya' ? 'primary' : 'quiet'}>Ananya · tier D</Pill>
+          <Pill theme={theme} variant={persona.id === 'rehan' ? 'primary' : 'quiet'}>Rehan · D+B+C</Pill>
+          <Pill theme={theme} variant={persona.id === 'mei' ? 'primary' : 'quiet'}>Mei · all tiers</Pill>
+        </View>
+      </View>
+    </Sheet>
+  );
+}
+
+/* ================================================================== J25 ===== */
+
+/** J25 · Intent Check settings — the one place Mirror is allowed to interrupt. */
+export function IntentCheckScreen({ theme, persona }: ScreenProps) {
+  return (
+    <Screen
+      title="Intent check"
+      theme={theme}
+      padded
+      header={
+        <Toolbar
+          theme={theme}
+          title="Intent check"
+          subtitle="One question, only if you asked for it"
+          actions={
+            <IconButton label="Intent check options: timing and quiet hours" theme={theme}>
+              <Text role="label" theme={theme}>⋯</Text>
+            </IconButton>
+          }
+        />
+      }
+      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Where Mirror may ask" caption="off unless you turn it on" />
+          {persona.intents.map((intent) => (
+            <View key={intent.label} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: theme.space(3), marginBottom: theme.space(3) }}>
+              <View style={{ flexShrink: 1 }}>
+                <Text role="label" theme={theme}>{intent.label}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{intent.note}</Text>
+              </View>
+              <Pill theme={theme} variant={intent.ask ? 'primary' : 'quiet'}>
+                {intent.ask ? 'Asks' : 'Silent'}
+              </Pill>
+            </View>
+          ))}
+        </Card>
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Quiet hours" caption="no prompt can fire inside them" />
+          <FactList
+            theme={theme}
+            items={[
+              { label: 'Quiet hours', value: '22:00 – 07:00', detail: 'Local time, on this device. Nothing fires overnight.' },
+              { label: 'Maximum prompts', value: '1 per day', detail: 'Never repeated inside a session.' },
+              { label: 'Prompt style', value: 'local notification', detail: 'No push service, no server, no tracking pixel.' },
+            ]}
+          />
+        </Card>
+        <Callout theme={theme} tone="limit">
+          <Text role="label" theme={theme}>
+            The intent check exists to hold a decision you already made, once. It is not a reminder to use Mirror, it never counts
+            how many times you followed it, and turning it off is one tap with no “are you sure”.
+          </Text>
+        </Callout>
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Where your intent labels go" />
+          <FactList
+            theme={theme}
+            items={[
+              { label: 'Stored', value: 'on this device' },
+              { label: 'Trains', value: 'a local model' },
+              { label: 'Shared', value: 'never', detail: 'Intent labels are excluded from the public profile and from matches.' },
+            ]}
+          />
+        </Card>
+      </View>
+    </Screen>
+  );
+}
+
+/* ================================================================== J26 ===== */
+
+/** J26 · Private share card preview — the card, and what would not be on it. */
+export function ShareCardState({ theme, persona }: ScreenProps) {
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.color.scrim, justifyContent: 'center', padding: theme.space(5), gap: theme.space(3) }}>
+      <Card theme={theme} elevated style={{ backgroundColor: theme.color.card }}>
+        <Text role="micro" tone="muted" theme={theme}>
+          PRIVATE · PREVIEW ONLY
+        </Text>
+        <Text role="headline" theme={theme} style={{ marginTop: theme.space(2) }}>
+          {`${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} with ${persona.topics[0]?.name ?? 'one habit loop'} in the middle`}
+        </Text>
+        <Text role="label" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+          {`${Math.round(persona.intentionalShare * 100)}% deliberate · week 42`}
+        </Text>
+        <Divider theme={theme} />
+        <FactList
+          theme={theme}
+          items={[
+            { label: 'App names on the card', value: 'none' },
+            { label: 'Topics on the card', value: persona.topics.length ? 'one, chosen by you' : 'none' },
+            { label: 'Totals', value: 'private, never on a shared card' },
+          ]}
+        />
+      </Card>
+      <Text role="micro" theme={theme} style={{ color: theme.color.inkMuted, textAlign: 'center' }}>
+        Nothing is shared until you tap Share, and this preview shows the whole card — there is no second version.
+      </Text>
+      <View style={{ flexDirection: 'row', gap: theme.space(2), justifyContent: 'center', flexWrap: 'wrap' }}>
+        <Pill theme={theme} variant="secondary">Keep private</Pill>
+        <Pill theme={theme} variant="quiet">Share this card</Pill>
+      </View>
+    </View>
+  );
+}
+
+/* ================================================================== J27 ===== */
+
+/** J27 · Home-screen widget — totals privately, topics only if you opt in. */
+export function WidgetItem({ theme, persona }: ScreenProps) {
+  return (
+    <View style={{ flex: 1, backgroundColor: theme.color.canvas, padding: theme.space(5), gap: theme.space(4) }}>
+      <Text role="micro" tone="muted" theme={theme} style={{ paddingTop: theme.space(4) }}>
+        HOME SCREEN · AS IT WOULD APPEAR
+      </Text>
+      <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+        <WidgetPreview
+          theme={theme}
+          size="medium"
+          variant="private"
+          title="This week"
+          value={duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))}
+          caption="private widget · totals only"
+          bars={persona.weeklyMinutes}
+        />
+        <WidgetPreview
+          theme={theme}
+          size="small"
+          variant="private"
+          title="Intentional"
+          value={`${Math.round(persona.intentionalShare * 100)}%`}
+          caption="private"
+        />
+      </View>
+      <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+        <WidgetPreview
+          theme={theme}
+          size="medium"
+          variant="public"
+          title="Following"
+          value={persona.topics.length ? (persona.topics[0] as { name: string }).name : 'nothing published'}
+          caption="public widget · published topics only"
+        />
+      </View>
+      <Callout theme={theme} tone="limit">
+        <Text role="label" theme={theme}>
+          A widget can sit on a lock screen. The private widget never shows an app name, a topic or a number a stranger could use,
+          and the public widget only ever repeats what you already published.
+        </Text>
+      </Callout>
+      <View style={{ gap: theme.space(2) }}>
+        <SegmentedControl
+          theme={theme}
+          label="Widget layout"
+          value="medium"
+          onChange={() => undefined}
+          options={[
+            { value: 'small', label: 'Small' },
+            { value: 'medium', label: 'Medium' },
+          ]}
+        />
+        <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+          <Pill theme={theme} variant="secondary">Add to home screen</Pill>
+          <Pill theme={theme} variant="quiet">Keep widgets private</Pill>
+        </View>
+        <Text role="micro" tone="muted" theme={theme}>
+          Widgets read from the on-device database only. Removing the widget does not remove any data, and adding it does not
+          start any collection.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/* ================================================================== J28 ===== */
+
+/** J28 · Update available — calm, non-blocking, and explicit about collection. */
+export function UpdateState({ theme, persona }: ScreenProps) {
+  const { current, available, notes, bytes } = persona.update;
+  return (
+    <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.color.scrim, padding: theme.space(3) }}>
+      <Card theme={theme} elevated>
+        <Text role="micro" tone="muted" theme={theme}>
+          {`VERSION ${current} → ${available}`}
+        </Text>
+        <Text role="title" theme={theme} style={{ marginTop: theme.space(1) }}>
+          An update is available
+        </Text>
+        <Text role="label" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+          {notes}
+        </Text>
+        <Divider theme={theme} />
+        <FactList
+          theme={theme}
+          items={[
+            { label: 'Size', value: `${Math.round(bytes / 1_000_000)} MB` },
+            { label: 'New permissions', value: 'none' },
+            { label: 'New data sent anywhere', value: 'none' },
+            { label: 'Works offline', value: 'yes', detail: 'The update is a download; nothing about your data changes.' },
+          ]}
+        />
+        <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3), flexWrap: 'wrap' }}>
+          <Pill theme={theme} variant="secondary">Later</Pill>
+          <Pill theme={theme} variant="quiet">What changed</Pill>
+        </View>
+      </Card>
+    </View>
+  );
+}
+
+export type ScreenKind = 'screen' | 'sheet' | 'state' | 'widget';
+
 export type ScreenSpec = {
-  /** Stable inventory id (J1..J18) — used by tests and the mockup manifest. */
+  /** Inventory id, J1..J28 — the Section J list is 28 items. */
   id: string;
   slug: string;
   title: string;
+  /**
+   * How it appears: a full screen, a bottom sheet, a state of a parent screen,
+   * or a home-screen widget. The gallery renders sheets/states *over* their
+   * parent, so what a reviewer sees is what a user would see.
+   */
+  kind: ScreenKind;
+  /** For sheets, states and widgets: the slug of the screen they appear on. */
+  parent?: string;
+  /** Which tab it is reached from, when it is a full screen. */
+  tab?: string;
   /** Which phase ships it, from the roadmap. */
   phase: 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6';
   /** Tiers the screen needs to show anything beyond its empty state. */
   requires: DataTier[];
-  /** States the mockup renderer must produce for this screen. */
+  /** States the mockup renderer must produce for this item. */
   states: ScreenState[];
   /** The product rule this screen carries, so the next person knows why it exists. */
   rule: string;
   Component: React.ComponentType<ScreenProps>;
 };
 
+/** The Section J list, verbatim, so a test can prove the inventory covers it. */
+export const SECTION_J: { id: string; title: string; kind: ScreenKind; parent?: string }[] = [
+  { id: 'J1', title: 'Onboarding + privacy promise', kind: 'screen' },
+  { id: 'J2', title: 'Permission primers (Usage access, notifications)', kind: 'screen' },
+  { id: 'J3', title: 'Dashboard', kind: 'screen' },
+  { id: 'J4', title: 'Interest Evolution', kind: 'screen' },
+  { id: 'J5', title: 'Depth', kind: 'screen' },
+  { id: 'J6', title: 'Curiosity vs Habit', kind: 'screen' },
+  { id: 'J7', title: 'IQS', kind: 'screen' },
+  { id: 'J8', title: 'Sessions', kind: 'screen' },
+  { id: 'J9', title: 'Discovery Journey', kind: 'screen' },
+  { id: 'J10', title: 'Behavior Profile', kind: 'screen' },
+  { id: 'J11', title: 'Rabbit Hole', kind: 'screen' },
+  { id: 'J12', title: 'Weekly Report + Goals', kind: 'screen' },
+  { id: 'J13', title: 'Connections / Consent Dashboard (with capability matrix)', kind: 'screen' },
+  { id: 'J14', title: 'Privacy Center (network log, delete everything)', kind: 'screen' },
+  { id: 'J15', title: 'Public Profile editor (live preview)', kind: 'screen' },
+  { id: 'J16', title: 'Matches / Chat', kind: 'screen' },
+  { id: 'J17', title: 'Why drawer', kind: 'sheet', parent: 'dashboard' },
+  { id: 'J18', title: 'What-if Simulator', kind: 'screen' },
+  { id: 'J19', title: 'Attention Budget', kind: 'screen' },
+  { id: 'J20', title: 'Focus Windows', kind: 'screen' },
+  { id: 'J21', title: 'Learning Arcs', kind: 'screen' },
+  { id: 'J22', title: 'Ask sheet', kind: 'sheet', parent: 'dashboard' },
+  { id: 'J23', title: 'Privacy Receipt', kind: 'sheet', parent: 'privacy-center' },
+  { id: 'J24', title: 'Demo persona picker', kind: 'sheet', parent: 'dashboard' },
+  { id: 'J25', title: 'Intent Check settings', kind: 'screen' },
+  { id: 'J26', title: 'Private Share Card preview', kind: 'state', parent: 'weekly-report-goals' },
+  { id: 'J27', title: 'Home-screen widget', kind: 'widget', parent: 'dashboard' },
+  { id: 'J28', title: '"Update available / app version" state (calm, non-blocking)', kind: 'state', parent: 'dashboard' },
+];
+
 export const SCREENS: ScreenSpec[] = [
-  { id: 'J1', slug: 'onboarding', title: 'Onboarding', phase: 'P2', requires: [], states: ['default'], rule: 'State the three promises before asking for anything.', Component: OnboardingScreen },
-  { id: 'J2', slug: 'permission-primer', title: 'Permission primer', phase: 'P1', requires: [], states: ['default'], rule: 'Explain the permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
-  { id: 'J3', slug: 'home', title: 'Home', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'The measured reference layout: hero, budget, arcs — and an honest empty state.', Component: HomeScreen },
-  { id: 'J4', slug: 'insights', title: 'Insights', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'Every score explains itself; no number appears without its parts.', Component: InsightsScreen },
-  { id: 'J5', slug: 'journey', title: 'Journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Interest evolution is only shown when topic-level data exists.', Component: JourneyScreen },
-  { id: 'J6', slug: 'sessions', title: 'Sessions', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'The user can annotate their own sessions; labels stay local.', Component: SessionsScreen },
-  { id: 'J7', slug: 'discovery', title: 'Discovery', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Define "rabbit hole" in the UI, then report against that definition.', Component: DiscoveryScreen },
-  { id: 'J8', slug: 'what-if', title: 'What if', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Counterfactuals are calculations over your history, never predictions.', Component: WhatIfScreen },
-  { id: 'J9', slug: 'focus', title: 'Focus windows', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Focus never blocks or shames; it repeats the choice you made.', Component: FocusScreen },
-  { id: 'J10', slug: 'profile', title: 'Behaviour profile', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Descriptive traits with their evidence attached, never clinical labels.', Component: ProfileScreen },
-  { id: 'J11', slug: 'weekly-report', title: 'Weekly report', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'A local document; sharing is an export you perform, not a sync.', Component: WeeklyReportScreen },
-  { id: 'J12', slug: 'budget', title: 'Attention budget', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Budgets are chosen by the user and rendered as numbers, never alarms.', Component: BudgetScreen },
-  { id: 'J13', slug: 'ask', title: 'Ask Mirror', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Answer from local data or refuse — never guess, never call out.', Component: AskScreen },
-  { id: 'J14', slug: 'widgets', title: 'Widgets', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Widgets can appear on a lock screen: show totals privately, topics publicly.', Component: WidgetsScreen },
-  { id: 'J15', slug: 'you', title: 'You', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Every source and every feature flag visible in one place.', Component: YouScreen },
-  { id: 'J16', slug: 'privacy-centre', title: 'Privacy centre', phase: 'P5', requires: [], states: ['default'], rule: 'Retention, deletion, receipt and capability matrix — all checkable in-app.', Component: PrivacyCentreScreen },
-  { id: 'J17', slug: 'public-profile', title: 'Public profile', phase: 'P6', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Show the user exactly what a match sees, including the never-shared list.', Component: PublicProfileScreen },
-  { id: 'J18', slug: 'matches', title: 'Matches', phase: 'P6', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Social is off by default and says so instead of teasing engagement.', Component: MatchesScreen },
+  { id: 'J1', slug: 'onboarding', title: 'Onboarding + privacy promise', kind: 'screen', phase: 'P1', requires: [], states: ['default'], rule: 'State the three promises before asking for anything.', Component: OnboardingScreen },
+  { id: 'J2', slug: 'permission-primers', title: 'Permission primers (Usage access, notifications)', kind: 'screen', phase: 'P1', requires: [], states: ['default'], rule: 'Explain each permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
+  { id: 'J3', slug: 'dashboard', title: 'Dashboard', kind: 'screen', tab: 'home', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'The measured reference layout — and an honest empty state instead of estimates.', Component: HomeScreen },
+  { id: 'J4', slug: 'interest-evolution', title: 'Interest Evolution', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Interest evolution is only shown when topic-level data exists.', Component: JourneyScreen },
+  { id: 'J5', slug: 'depth', title: 'Depth', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Show how long visits last, and refuse to call any visit good or wasted.', Component: DepthScreen },
+  { id: 'J6', slug: 'curiosity-vs-habit', title: 'Curiosity vs Habit', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Name both halves of the week without framing habit as a failure.', Component: CuriosityHabitScreen },
+  { id: 'J7', slug: 'iqs', title: 'IQS', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'A composite score built only from parts that exist, with the band shown.', Component: IqsScreen },
+  { id: 'J8', slug: 'sessions', title: 'Sessions', kind: 'screen', tab: 'sessions', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'The user annotates their own sessions; labels stay local and train a local model.', Component: SessionsScreen },
+  { id: 'J9', slug: 'discovery-journey', title: 'Discovery Journey', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Show the route a topic was reached by, step by step, with the tier of each step.', Component: DiscoveryScreen },
+  { id: 'J10', slug: 'behavior-profile', title: 'Behavior Profile', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Descriptive traits with their evidence attached, never clinical labels.', Component: ProfileScreen },
+  { id: 'J11', slug: 'rabbit-hole', title: 'Rabbit Hole', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Print the definition, let the user change it, and never punish what it finds.', Component: RabbitHoleScreen },
+  { id: 'J12', slug: 'weekly-report-goals', title: 'Weekly Report + Goals', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'A local document plus goals the user set; no streaks, no nudges.', Component: WeeklyReportScreen },
+  { id: 'J13', slug: 'connections', title: 'Connections / Consent Dashboard (with capability matrix)', kind: 'screen', tab: 'you', phase: 'P5', requires: [], states: ['default'], rule: 'Every source with its capability matrix and a one-tap revoke.', Component: ConnectionsScreen },
+  { id: 'J14', slug: 'privacy-center', title: 'Privacy Center (network log, delete everything)', kind: 'screen', tab: 'you', phase: 'P5', requires: [], states: ['default', 'empty'], rule: 'Retention, the network log, deletion and the receipt — all checkable in-app.', Component: PrivacyCentreScreen },
+  { id: 'J15', slug: 'public-profile-editor', title: 'Public Profile editor (live preview)', kind: 'screen', tab: 'you', phase: 'P6', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Edit what is published with a live preview of exactly what a match sees.', Component: PublicProfileScreen },
+  { id: 'J16', slug: 'matches-chat', title: 'Matches / Chat', kind: 'screen', tab: 'you', phase: 'P6', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Social is off by default; chat shares nothing but what the user sent.', Component: MatchesScreen },
+  { id: 'J17', slug: 'why-drawer', title: 'Why drawer', kind: 'sheet', parent: 'dashboard', phase: 'P2', requires: ['D'], states: ['default'], rule: 'Every number opens into the parts that produced it, and the parts add up.', Component: WhyDrawerSheet },
+  { id: 'J18', slug: 'what-if', title: 'What-if Simulator', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Counterfactuals are calculations over your history, never predictions.', Component: WhatIfScreen },
+  { id: 'J19', slug: 'attention-budget', title: 'Attention Budget', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Budgets are chosen by the user and rendered as numbers, never alarms.', Component: BudgetScreen },
+  { id: 'J20', slug: 'focus-windows', title: 'Focus Windows', kind: 'screen', tab: 'you', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Focus never blocks or shames; it repeats the choice you made.', Component: FocusScreen },
+  { id: 'J21', slug: 'learning-arcs', title: 'Learning Arcs', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'A stalled arc is reported exactly like a growing one.', Component: LearningArcsScreen },
+  { id: 'J22', slug: 'ask-sheet', title: 'Ask sheet', kind: 'sheet', parent: 'dashboard', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Answer from local data or refuse — never guess, never call out.', Component: AskSheet },
+  { id: 'J23', slug: 'privacy-receipt', title: 'Privacy Receipt', kind: 'sheet', parent: 'privacy-center', phase: 'P5', requires: [], states: ['default', 'empty'], rule: 'What left the device, in bytes, with the empty case explained rather than hidden.', Component: PrivacyReceiptSheet },
+  { id: 'J24', slug: 'persona-picker', title: 'Demo persona picker', kind: 'sheet', parent: 'dashboard', phase: 'P4', requires: [], states: ['default'], rule: 'Demo data replaces yours while it is on, and is never mixed with it.', Component: PersonaPickerSheet },
+  { id: 'J25', slug: 'intent-check-settings', title: 'Intent Check settings', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default'], rule: 'The only place Mirror may interrupt, off unless asked for, with quiet hours.', Component: IntentCheckScreen },
+  { id: 'J26', slug: 'share-card-preview', title: 'Private Share Card preview', kind: 'state', parent: 'weekly-report-goals', phase: 'P4', requires: ['D'], states: ['default'], rule: 'Preview the whole card; nothing is shared until the user shares it.', Component: ShareCardState },
+  { id: 'J27', slug: 'home-widget', title: 'Home-screen widget', kind: 'widget', parent: 'dashboard', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'A lock-screen surface: totals privately, published topics only in public.', Component: WidgetItem },
+  { id: 'J28', slug: 'update-state', title: '"Update available / app version" state (calm, non-blocking)', kind: 'state', parent: 'dashboard', phase: 'P5', requires: [], states: ['default'], rule: 'Calm and non-blocking, and explicit that nothing new is collected.', Component: UpdateState },
 ];
 
 export const TAB_ITEMS = TABS;
 export { TABS };
+export { PERSONAS, NothingYet, Definition, ScoreBlock };
+export type { Persona, ScreenProps, ScreenState };
 
 export const screensByPhase = (phase: ScreenSpec['phase']) => SCREENS.filter((s) => s.phase === phase);
+export const screensByKind = (kind: ScreenKind) => SCREENS.filter((s) => s.kind === kind);
+export const screensByTab = (tab: string) => SCREENS.filter((s) => s.tab === tab);
+export const specBySlug = (slug: string) => SCREENS.find((s) => s.slug === slug);

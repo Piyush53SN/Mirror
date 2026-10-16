@@ -92,33 +92,81 @@ function measureTargets(frameHtml) {
 
 /* ------------------------------------------------------------ inventory ---- */
 
-test('every screen in the inventory is rendered, in both themes and every state', () => {
-  assert.equal(manifest.screens, 18, `expected 18 screens in the screen inventory, found ${manifest.screens}`);
-  const ids = new Set(manifest.frames.map((f) => f.id));
-  for (let i = 1; i <= 18; i++) {
-    assert.ok(ids.has(`J${i}`), `J${i} is missing from the rendered frames`);
+test('the Section J inventory has 28 items, and every one is rendered', () => {
+  assert.equal(manifest.sectionJ.length, 28, 'the brief lists 28 items; SECTION_J must have all of them');
+  assert.equal(manifest.items, 28, 'every Section J item must be in SCREENS');
+  const listed = manifest.sectionJ.map((i) => i.id);
+  const rendered = new Set(manifest.frames.map((f) => f.id));
+  for (const id of listed) {
+    assert.ok(rendered.has(id), `${id} is in Section J but has no rendered frame`);
   }
-  for (const id of ids) {
+  assert.deepEqual([...rendered].sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))), listed, 'rendered ids must match Section J exactly');
+  for (const id of listed) {
     const rows = manifest.frames.filter((f) => f.id === id);
     assert.ok(rows.some((r) => r.theme === 'dark'), `${id} has no dark frame (dark is the default theme)`);
     assert.ok(rows.some((r) => r.theme === 'light'), `${id} has no light frame`);
-    const spec = rows[0];
-    if (spec.state !== undefined) {
-      const states = new Set(rows.map((r) => r.state));
-      assert.ok(states.has('default'), `${id} has no default state`);
-    }
+    assert.ok(rows.some((r) => r.state === 'default'), `${id} has no default state`);
   }
-  for (const file of SCREEN_FILES()) {
-    assert.ok(read(file).includes('<!DOCTYPE html>'), `${file} is not a page`);
-  }
-  assert.ok(existsSync(join(OUT, 'index.html')), 'the gallery must exist');
+  assert.ok(SCREEN_FILES().length >= 28, `expected a page per item, found ${SCREEN_FILES().length}`);
 });
 
-test('the gallery links every screen', () => {
+test('sheets, states and widgets are rendered over their parent, not as pages', () => {
+  const kinds = new Set(manifest.frames.map((f) => f.kind));
+  for (const kind of ['screen', 'sheet', 'state', 'widget']) {
+    assert.ok(kinds.has(kind), `no frame is rendered as a ${kind}; Section J has all four`);
+  }
+  for (const frame of manifest.frames) {
+    if (frame.kind === 'screen') {
+      assert.equal(frame.parent, null, `${frame.slug} is a full screen and must not declare a parent`);
+      continue;
+    }
+    if (frame.kind === 'widget') {
+      // A widget is its own surface (it lives on the OS home screen), but the
+      // inventory still records the screen it belongs to.
+      assert.ok(!read(`${frame.slug}.html`).includes('data-mock-parent'), `${frame.slug} is a widget: it must render standalone, not layered`);
+      assert.ok(frame.parent, `${frame.slug} should record the screen it belongs to`);
+      continue;
+    }
+    assert.ok(frame.parent, `${frame.slug} is a ${frame.kind}: it must name the screen it appears on`);
+    const parent = manifest.frames.find((f) => f.slug === frame.parent);
+    assert.ok(parent, `${frame.slug} names an unknown parent "${frame.parent}"`);
+    // the item's own copy must also be in the parent's page, over the parent's screen
+    const page = read(`${frame.slug}.html`);
+    assert.ok(page.includes(`data-screen="${frame.slug}"`), `${frame.slug}.html must contain its own frame`);
+    // The parent screen is inside that frame: a sheet is not a page of its own.
+    const parentSpec = manifest.frames.find((f) => f.slug === frame.parent && f.theme === frame.theme && f.state === 'default');
+    assert.ok(parentSpec, `${frame.slug} needs a default frame of ${frame.parent} to sit over`);
+    assert.ok(
+      page.includes(`data-mock-parent="${frame.parent}"`),
+      `${frame.slug}.html must carry its parent screen (${frame.parent}) inside the same frame`,
+    );
+    assert.ok(
+      page.includes('position:absolute'),
+      `${frame.slug} must be layered over the parent, not flow after it (the overlay is absolute)`,
+    );
+  }
+  const kindsOf = (slug) => manifest.frames.find((f) => f.slug === slug).kind;
+  assert.equal(kindsOf('why-drawer'), 'sheet', 'the Why drawer is a sheet');
+  assert.equal(kindsOf('ask-sheet'), 'sheet', 'Ask is a sheet');
+  assert.equal(kindsOf('privacy-receipt'), 'sheet', 'the receipt is a sheet');
+  assert.equal(kindsOf('persona-picker'), 'sheet', 'the persona picker is a sheet');
+  assert.equal(kindsOf('home-widget'), 'widget', 'the widget is a widget');
+  assert.equal(kindsOf('update-state'), 'state', 'the update notice is a state');
+  assert.equal(kindsOf('share-card-preview'), 'state', 'the share card is a state');
+});
+
+test('the gallery shows all 28 items, in the order the brief lists them', () => {
   const gallery = read('index.html');
   for (const file of SCREEN_FILES()) {
     assert.ok(gallery.includes(`./${file}`), `gallery does not link ${file}`);
   }
+  const positions = manifest.sectionJ.map((i) => {
+    const slug = manifest.frames.find((f) => f.id === i.id).slug;
+    return gallery.indexOf(`id="${slug}"`);
+  });
+  assert.ok(positions.every((p) => p > 0), 'every item must appear in the gallery');
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'the gallery must keep the Section J order');
+  assert.ok(existsSync(join(OUT, 'index.html')), 'the gallery must exist');
 });
 
 /* ---------------------------------------------------------- the 48dp rule -- */
@@ -162,7 +210,7 @@ test('every tap target has an accessible name (and none is a bare icon)', () => 
 
 test('scrollable screens reserve space for the floating tab bar', () => {
   // A screen whose last card sits under the tab bar is a real bug on a phone.
-  const home = read('home.html');
+  const home = read('dashboard.html');
   const { doc } = measureTargets(frames(home)[0].html);
   const scroller = doc.querySelector('[data-scroll]');
   assert.ok(scroller, 'the home frame must have a scroll region');
@@ -194,7 +242,7 @@ test('the mockups embed the generated token block, not a copy of the palette', (
     assert.ok(html.includes('--m-glass-sheet-fill'), `${file} is missing the sheet token — re-run npm run tokens`);
   }
   const css = readFileSync(join(UI, 'tokens/tokens.css'), 'utf8');
-  assert.ok(read('home.html').includes(css.trim().slice(0, 200)), 'the inlined block must be the generated file');
+  assert.ok(read('dashboard.html').includes(css.trim().slice(0, 200)), 'the inlined block must be the generated file');
 });
 
 /* ------------------------------------------------------ never fake a signal - */
@@ -204,11 +252,12 @@ test('screens that need tiers A/B/C show an honest empty state for a tier-D user
   // degraded copy is present and no topic data is invented.
   const { buildRenderer } = await import('../mockups/render-lib.mjs');
   const mod = await buildRenderer();
-  const cases = ['journey', 'insights'];
+  const cases = ['interest-evolution', 'depth'];
   for (const slug of cases) {
-    const html = mod.htmlFor(mod.renderOne(slug, 'ananya', 'default', 'dark'));
     const spec = mod.SCREENS.find((s) => s.slug === slug);
+    assert.ok(spec, `unknown slug ${slug}`);
     if (spec.requires.length === 0) continue;
+    const html = mod.htmlFor(mod.renderScreen(spec, mod.PERSONAS[0], mod.createTheme('dark'), 'default'));
     const mentionsLimit = /unavailable|not on this device|will not estimate|No data yet|nothing to show/i.test(html);
     assert.ok(mentionsLimit, `${slug} for a tier-D user must state what is unavailable, not show empty scaffolding`);
     assert.ok(!/Astronomy|Rust programming|Urban gardening/i.test(html), `${slug} invented topic data for a user without topic tiers`);
@@ -245,7 +294,7 @@ test('every required-tier screen is shown degraded for a user who lacks the tier
 test('social screens ship the off state, not a teaser', async () => {
   const { buildRenderer } = await import('../mockups/render-lib.mjs');
   const mod = await buildRenderer();
-  const html = mod.htmlFor(mod.renderOne('matches', 'mei', 'default', 'dark'));
+  const html = mod.htmlFor(mod.renderOne('matches-chat', 'mei', 'default', 'dark'));
   assert.ok(/Matching is off/i.test(html), 'matches must state that matching is off');
   assert.ok(/never your watch, search or purchase history/i.test(html), 'and what would never be shared');
   assert.ok(/Leave it off/i.test(html), 'the user must be able to decline from that screen');
@@ -254,7 +303,7 @@ test('social screens ship the off state, not a teaser', async () => {
 test('the privacy centre states retention and deletion, and the receipt is reachable', async () => {
   const { buildRenderer } = await import('../mockups/render-lib.mjs');
   const mod = await buildRenderer();
-  const html = mod.htmlFor(mod.renderOne('privacy-centre', 'mei', 'default', 'dark'));
+  const html = mod.htmlFor(mod.renderOne('privacy-center', 'mei', 'default', 'dark'));
   assert.match(html, /Retention/i);
   assert.match(html, /Delete all data/i);
   assert.match(html, /Open receipt/i, 'the receipt must be one tap away from this screen');

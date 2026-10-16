@@ -2,7 +2,7 @@
   "name": "mirror",
   "version": "0.1.0",
   "private": true,
-  "description": "Mirror \u2014 privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
+  "description": "Mirror — privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -32,6 +32,7 @@
   "license": "UNLICENSED",
   "devDependencies": {
     "@types/react": "^18.3.31",
+    "@types/react-dom": "^19.3.0",
     "esbuild": "^0.28.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

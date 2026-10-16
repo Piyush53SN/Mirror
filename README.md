@@ -10,9 +10,9 @@ There is no engagement-maximising design in this product, by policy — see
 
 > **Build status:** design layer only, no app code yet. P-UI-0 (image analysis →
 > design brief) is approved and P-UI-1 (image-derived tokens + HTML prototype) is
-> accepted; P-UI-2 (React Native design system + mockups of all 18 screens) is
-> delivered here for review. The app scaffolding — React Native app shell,
-> storage, collectors — arrives with P0/P1.
+> accepted; P-UI-2 (React Native design system + mockups of all **28 Section J
+> items**) is delivered here for review. The app scaffolding — React Native app
+> shell, storage, collectors — arrives with P0/P1.
 
 ---
 
@@ -27,19 +27,19 @@ second styling path and no hand-written CSS to drift.
 | artifact | what it is |
 | --- | --- |
 | [`packages/ui/src/`](packages/ui/src) | the design system: `tokens.ts`, `theme.tsx`, `flags.ts`, `tiers.ts`, `a11y.ts`, `format.ts`, `primitives/*`, `patterns.tsx` |
-| [`packages/ui/screens/index.tsx`](packages/ui/screens/index.tsx) | all **18 screens** (`J1`–`J18`) as components, each with the rule it obeys, the data tiers it needs and its empty state |
+| [`packages/ui/screens/index.tsx`](packages/ui/screens/index.tsx) | all **28 Section J items** (`J1`–`J28`) as components — screens, sheets, states and the widget — each with the rule it obeys, the tiers it needs and its empty state |
 | [`packages/ui/mockups/gallery/index.html`](packages/ui/mockups/gallery/index.html) | **the gallery** — every screen × persona × state × theme, dark and light |
 | [`packages/ui/README.md`](packages/ui/README.md) | the component API and how to add a screen |
-| `packages/ui/tests/ui.test.mjs` | 25 component tests (tokens, theme, blur budget, contrast, a11y, flags, source rules) |
-| `packages/ui/tests/mockups.test.mjs` | 13 tests over the rendered artifacts (48dp on every target in every frame, offline, empty states, tone) |
+| `packages/ui/tests/ui.test.mjs` | 29 component tests (tokens, theme, blur budget, contrast, a11y, flags, inventory, source rules) |
+| `packages/ui/tests/mockups.test.mjs` | 15 tests over the rendered artifacts (28 items present, sheets layered over parents, 48dp on every target, offline, honest empty states) |
 
 ### Run it
 
 ```bash
 npm install            # once (.npmrc handles react-native's exact react pin)
-npm run mockups        # render 66 frames (18 screens) → packages/ui/mockups/gallery/
-npm run typecheck      # tsc --noEmit over packages/ui
-npm test               # 80 checks: tokens 24 · prototype 18 · components 25 · mockups 13
+npm run mockups        # render 96 frames (28 Section J items) → packages/ui/mockups/gallery/
+npm run typecheck      # tsc --noEmit over packages/ui (src, screens and the DOM binding)
+npm test               # 86 checks: tokens 24 · prototype 18 · components 29 · mockups 15
 npm run verify         # tokens → typecheck → tests → browser check
 open packages/ui/mockups/gallery/index.html   # no server, no build step, no network
 ```
@@ -59,10 +59,15 @@ open packages/ui/mockups/gallery/index.html   # no server, no build step, no net
 - **Contrast is composed, not assumed.** Text contrast is measured against the
   *composited* colour over every backdrop stop, so a translucent card cannot hide
   a failing pair.
-- **Every screen declares its tiers and degrades honestly.** Each screen renders a
-  `DegradedNotice` naming what it is missing rather than approximating a signal.
-- **48dp everywhere, on the rendered output.** Every tap target in all 66 frames is
-  measured; a frame with no targets at all fails as a vacuous pass.
+- **Every item declares its tiers and degrades honestly.** Each screen renders a
+  `DegradedNotice` naming what it is missing rather than approximating a signal,
+  and the "empty" frame of a screen that needs A/B/C is rendered for a persona who
+  lacks them — so the degraded view is what a reviewer sees.
+- **The inventory is the brief's, item for item.** `SECTION_J` holds the 28 items
+  verbatim; a test asserts `SCREENS` matches it in id, title, kind and parent.
+- **48dp everywhere, on the rendered output.** Every tap target in all 96 frames is
+  measured; a frame with no targets at all fails as a vacuous pass — that check is
+  what forced real affordances onto screens that only looked finished.
 - **No network, no storage, no analytics.** Asserted by scanning the sources and by
   the mockup output containing no external references.
 
@@ -154,7 +159,7 @@ python3 scripts/design/font-match.py --fonts-dir /tmp/ttf
 | --- | --- |
 | **P-UI-0** | image analysis → design brief ✅ approved |
 | **P-UI-1** | image-derived tokens + single-file HTML phone-frame prototype (dark default, light toggle) ✅ accepted |
-| **P-UI-2** | React Native design system in `/packages/ui` + mockups of every screen ✅ *(this phase, awaiting approval)* |
+| **P-UI-2** | React Native design system in `/packages/ui` + mockups of all 28 Section J items 🔁 *(in review — inventory replaced after review feedback)* |
 | P0 | monorepo scaffold, CI, EAS build profiles, event schema, connectors & preference schemas, synthetic data, canary harness, store-readiness draft |
 | P1 | encrypted local storage, Android usage collector, ingestion pipeline, importers, embeddings |
 | P2 | scoring engine + dashboard + Why-this-score + **release stage 1** (signed APK/AAB) |
