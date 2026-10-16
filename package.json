@@ -2,7 +2,7 @@
   "name": "mirror",
   "version": "0.1.0",
   "private": true,
-  "description": "Mirror — privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
+  "description": "Mirror \u2014 privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -14,16 +14,29 @@
   ],
   "scripts": {
     "tokens": "node scripts/generate-tokens.mjs",
-    "test": "npm run test:tokens && npm run test:prototype",
+    "typecheck": "tsc -p packages/ui/tsconfig.json --noEmit",
+    "mockups": "node packages/ui/mockups/render.mjs",
+    "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups",
     "test:tokens": "node --test tests/tokens.test.mjs",
     "test:prototype": "node --test tests/prototype.test.mjs",
+    "test:ui": "node --test packages/ui/tests/ui.test.mjs",
+    "test:mockups": "npm run mockups && node --test packages/ui/tests/mockups.test.mjs",
     "check:prototype": "node scripts/check-prototype.mjs",
-    "verify": "npm run tokens && npm test && npm run check:prototype"
+    "verify": "npm run tokens && npm run typecheck && npm test && npm run check:prototype"
   },
   "keywords": [
     "privacy",
     "digital-wellbeing",
     "local-first"
   ],
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/react": "^18.3.31",
+    "esbuild": "^0.28.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-native": "^0.74.7",
+    "react-test-renderer": "^18.3.1",
+    "typescript": "^5.9.3"
+  }
 }

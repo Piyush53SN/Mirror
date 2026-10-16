@@ -1,0 +1,942 @@
+{
+  "generatedFrom": "packages/ui/screens/index.tsx",
+  "screens": 18,
+  "frames": [
+    {
+      "id": "J1",
+      "slug": "onboarding",
+      "title": "Onboarding",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "State the three promises before asking for anything.",
+      "bytes": 4685
+    },
+    {
+      "id": "J1",
+      "slug": "onboarding",
+      "title": "Onboarding",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "State the three promises before asking for anything.",
+      "bytes": 4682
+    },
+    {
+      "id": "J2",
+      "slug": "permission-primer",
+      "title": "Permission primer",
+      "phase": "P1",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "Explain the permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
+      "bytes": 5048
+    },
+    {
+      "id": "J2",
+      "slug": "permission-primer",
+      "title": "Permission primer",
+      "phase": "P1",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "Explain the permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
+      "bytes": 5044
+    },
+    {
+      "id": "J3",
+      "slug": "home",
+      "title": "Home",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The measured reference layout: hero, budget, arcs — and an honest empty state.",
+      "bytes": 19702
+    },
+    {
+      "id": "J3",
+      "slug": "home",
+      "title": "Home",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The measured reference layout: hero, budget, arcs — and an honest empty state.",
+      "bytes": 19688
+    },
+    {
+      "id": "J3",
+      "slug": "home",
+      "title": "Home",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The measured reference layout: hero, budget, arcs — and an honest empty state.",
+      "bytes": 9338
+    },
+    {
+      "id": "J3",
+      "slug": "home",
+      "title": "Home",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The measured reference layout: hero, budget, arcs — and an honest empty state.",
+      "bytes": 9329
+    },
+    {
+      "id": "J4",
+      "slug": "insights",
+      "title": "Insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every score explains itself; no number appears without its parts.",
+      "bytes": 10693
+    },
+    {
+      "id": "J4",
+      "slug": "insights",
+      "title": "Insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every score explains itself; no number appears without its parts.",
+      "bytes": 10687
+    },
+    {
+      "id": "J4",
+      "slug": "insights",
+      "title": "Insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every score explains itself; no number appears without its parts.",
+      "bytes": 7537
+    },
+    {
+      "id": "J4",
+      "slug": "insights",
+      "title": "Insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every score explains itself; no number appears without its parts.",
+      "bytes": 7533
+    },
+    {
+      "id": "J5",
+      "slug": "journey",
+      "title": "Journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 16839
+    },
+    {
+      "id": "J5",
+      "slug": "journey",
+      "title": "Journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 16834
+    },
+    {
+      "id": "J5",
+      "slug": "journey",
+      "title": "Journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 16839
+    },
+    {
+      "id": "J5",
+      "slug": "journey",
+      "title": "Journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 16834
+    },
+    {
+      "id": "J6",
+      "slug": "sessions",
+      "title": "Sessions",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The user can annotate their own sessions; labels stay local.",
+      "bytes": 9594
+    },
+    {
+      "id": "J6",
+      "slug": "sessions",
+      "title": "Sessions",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The user can annotate their own sessions; labels stay local.",
+      "bytes": 9585
+    },
+    {
+      "id": "J6",
+      "slug": "sessions",
+      "title": "Sessions",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The user can annotate their own sessions; labels stay local.",
+      "bytes": 11843
+    },
+    {
+      "id": "J6",
+      "slug": "sessions",
+      "title": "Sessions",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "The user can annotate their own sessions; labels stay local.",
+      "bytes": 11831
+    },
+    {
+      "id": "J7",
+      "slug": "discovery",
+      "title": "Discovery",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Define \"rabbit hole\" in the UI, then report against that definition.",
+      "bytes": 8176
+    },
+    {
+      "id": "J7",
+      "slug": "discovery",
+      "title": "Discovery",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Define \"rabbit hole\" in the UI, then report against that definition.",
+      "bytes": 8170
+    },
+    {
+      "id": "J7",
+      "slug": "discovery",
+      "title": "Discovery",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Define \"rabbit hole\" in the UI, then report against that definition.",
+      "bytes": 10451
+    },
+    {
+      "id": "J7",
+      "slug": "discovery",
+      "title": "Discovery",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Define \"rabbit hole\" in the UI, then report against that definition.",
+      "bytes": 10442
+    },
+    {
+      "id": "J8",
+      "slug": "what-if",
+      "title": "What if",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 8442
+    },
+    {
+      "id": "J8",
+      "slug": "what-if",
+      "title": "What if",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 8439
+    },
+    {
+      "id": "J8",
+      "slug": "what-if",
+      "title": "What if",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 10709
+    },
+    {
+      "id": "J8",
+      "slug": "what-if",
+      "title": "What if",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 10703
+    },
+    {
+      "id": "J9",
+      "slug": "focus",
+      "title": "Focus windows",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Focus never blocks or shames; it repeats the choice you made.",
+      "bytes": 6689
+    },
+    {
+      "id": "J9",
+      "slug": "focus",
+      "title": "Focus windows",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Focus never blocks or shames; it repeats the choice you made.",
+      "bytes": 6684
+    },
+    {
+      "id": "J9",
+      "slug": "focus",
+      "title": "Focus windows",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Focus never blocks or shames; it repeats the choice you made.",
+      "bytes": 6689
+    },
+    {
+      "id": "J9",
+      "slug": "focus",
+      "title": "Focus windows",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Focus never blocks or shames; it repeats the choice you made.",
+      "bytes": 6684
+    },
+    {
+      "id": "J10",
+      "slug": "profile",
+      "title": "Behaviour profile",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 6334
+    },
+    {
+      "id": "J10",
+      "slug": "profile",
+      "title": "Behaviour profile",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 6331
+    },
+    {
+      "id": "J10",
+      "slug": "profile",
+      "title": "Behaviour profile",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 8601
+    },
+    {
+      "id": "J10",
+      "slug": "profile",
+      "title": "Behaviour profile",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 8595
+    },
+    {
+      "id": "J11",
+      "slug": "weekly-report",
+      "title": "Weekly report",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "A local document; sharing is an export you perform, not a sync.",
+      "bytes": 8435
+    },
+    {
+      "id": "J11",
+      "slug": "weekly-report",
+      "title": "Weekly report",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "A local document; sharing is an export you perform, not a sync.",
+      "bytes": 8428
+    },
+    {
+      "id": "J11",
+      "slug": "weekly-report",
+      "title": "Weekly report",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "A local document; sharing is an export you perform, not a sync.",
+      "bytes": 10694
+    },
+    {
+      "id": "J11",
+      "slug": "weekly-report",
+      "title": "Weekly report",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "A local document; sharing is an export you perform, not a sync.",
+      "bytes": 10684
+    },
+    {
+      "id": "J12",
+      "slug": "budget",
+      "title": "Attention budget",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 8127
+    },
+    {
+      "id": "J12",
+      "slug": "budget",
+      "title": "Attention budget",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 8124
+    },
+    {
+      "id": "J12",
+      "slug": "budget",
+      "title": "Attention budget",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 4270
+    },
+    {
+      "id": "J12",
+      "slug": "budget",
+      "title": "Attention budget",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 4266
+    },
+    {
+      "id": "J13",
+      "slug": "ask",
+      "title": "Ask Mirror",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Answer from local data or refuse — never guess, never call out.",
+      "bytes": 6276
+    },
+    {
+      "id": "J13",
+      "slug": "ask",
+      "title": "Ask Mirror",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Answer from local data or refuse — never guess, never call out.",
+      "bytes": 6270
+    },
+    {
+      "id": "J13",
+      "slug": "ask",
+      "title": "Ask Mirror",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Answer from local data or refuse — never guess, never call out.",
+      "bytes": 4877
+    },
+    {
+      "id": "J13",
+      "slug": "ask",
+      "title": "Ask Mirror",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Answer from local data or refuse — never guess, never call out.",
+      "bytes": 4873
+    },
+    {
+      "id": "J14",
+      "slug": "widgets",
+      "title": "Widgets",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Widgets can appear on a lock screen: show totals privately, topics publicly.",
+      "bytes": 6106
+    },
+    {
+      "id": "J14",
+      "slug": "widgets",
+      "title": "Widgets",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Widgets can appear on a lock screen: show totals privately, topics publicly.",
+      "bytes": 6103
+    },
+    {
+      "id": "J14",
+      "slug": "widgets",
+      "title": "Widgets",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Widgets can appear on a lock screen: show totals privately, topics publicly.",
+      "bytes": 8340
+    },
+    {
+      "id": "J14",
+      "slug": "widgets",
+      "title": "Widgets",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Widgets can appear on a lock screen: show totals privately, topics publicly.",
+      "bytes": 8334
+    },
+    {
+      "id": "J15",
+      "slug": "you",
+      "title": "You",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every source and every feature flag visible in one place.",
+      "bytes": 13086
+    },
+    {
+      "id": "J15",
+      "slug": "you",
+      "title": "You",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every source and every feature flag visible in one place.",
+      "bytes": 13074
+    },
+    {
+      "id": "J15",
+      "slug": "you",
+      "title": "You",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every source and every feature flag visible in one place.",
+      "bytes": 13086
+    },
+    {
+      "id": "J15",
+      "slug": "you",
+      "title": "You",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [
+        "D"
+      ],
+      "rule": "Every source and every feature flag visible in one place.",
+      "bytes": 13074
+    },
+    {
+      "id": "J16",
+      "slug": "privacy-centre",
+      "title": "Privacy centre",
+      "phase": "P5",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "Retention, deletion, receipt and capability matrix — all checkable in-app.",
+      "bytes": 8396
+    },
+    {
+      "id": "J16",
+      "slug": "privacy-centre",
+      "title": "Privacy centre",
+      "phase": "P5",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "requires": [],
+      "rule": "Retention, deletion, receipt and capability matrix — all checkable in-app.",
+      "bytes": 8389
+    },
+    {
+      "id": "J17",
+      "slug": "public-profile",
+      "title": "Public profile",
+      "phase": "P6",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show the user exactly what a match sees, including the never-shared list.",
+      "bytes": 8451
+    },
+    {
+      "id": "J17",
+      "slug": "public-profile",
+      "title": "Public profile",
+      "phase": "P6",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show the user exactly what a match sees, including the never-shared list.",
+      "bytes": 8443
+    },
+    {
+      "id": "J17",
+      "slug": "public-profile",
+      "title": "Public profile",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show the user exactly what a match sees, including the never-shared list.",
+      "bytes": 8312
+    },
+    {
+      "id": "J17",
+      "slug": "public-profile",
+      "title": "Public profile",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show the user exactly what a match sees, including the never-shared list.",
+      "bytes": 8304
+    },
+    {
+      "id": "J18",
+      "slug": "matches",
+      "title": "Matches",
+      "phase": "P6",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Social is off by default and says so instead of teasing engagement.",
+      "bytes": 7638
+    },
+    {
+      "id": "J18",
+      "slug": "matches",
+      "title": "Matches",
+      "phase": "P6",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Social is off by default and says so instead of teasing engagement.",
+      "bytes": 7631
+    },
+    {
+      "id": "J18",
+      "slug": "matches",
+      "title": "Matches",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Social is off by default and says so instead of teasing engagement.",
+      "bytes": 7638
+    },
+    {
+      "id": "J18",
+      "slug": "matches",
+      "title": "Matches",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "light",
+      "persona": "mei",
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Social is off by default and says so instead of teasing engagement.",
+      "bytes": 7631
+    }
+  ]
+}
