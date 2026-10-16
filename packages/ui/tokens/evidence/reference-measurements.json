@@ -1,0 +1,821 @@
+{
+  "source": {
+    "path": "public/art/reference.webp",
+    "width": 1200,
+    "height": 900,
+    "aspect": 1.3333,
+    "canonical_reference": [
+      1200,
+      900
+    ],
+    "analyzer": "scripts/design/analyze-reference-image.py"
+  },
+  "global": {
+    "mean_L": 80.95,
+    "p5_L": 26.86,
+    "p50_L": 89.45,
+    "p95_L": 99.7
+  },
+  "achromatism": {
+    "mean_chroma": 0.00011366883905691956,
+    "p50_chroma": 3.33412317923178e-08,
+    "p99_chroma": 0.0036759830898872147,
+    "max_chroma": 0.03824939174966212,
+    "share_pixels_chroma_gt_0.005": 0.006853703703703704,
+    "share_pixels_chroma_gt_0.01": 0.0008990740740740741,
+    "chroma_hotspot_pixels": 971,
+    "chroma_hotspot_bbox": [
+      120,
+      260,
+      939,
+      841
+    ],
+    "verdict": "achromatic"
+  },
+  "palette_kmeans_k7": [
+    {
+      "hex": "#FDFDFD",
+      "oklch": "oklch(99.4% 0.000 308.2)",
+      "oklab": [
+        0.99386,
+        6e-05,
+        -7e-05
+      ],
+      "share": 0.2489
+    },
+    {
+      "hex": "#DDDDDD",
+      "oklch": "oklch(89.8% 0.000 268.9)",
+      "oklab": [
+        0.89763,
+        -0.0,
+        -1e-05
+      ],
+      "share": 0.2234
+    },
+    {
+      "hex": "#CCCCCC",
+      "oklch": "oklch(84.5% 0.000 267.2)",
+      "oklab": [
+        0.84481,
+        -0.0,
+        -1e-05
+      ],
+      "share": 0.1489
+    },
+    {
+      "hex": "#252525",
+      "oklch": "oklch(26.6% 0.000 271.1)",
+      "oklab": [
+        0.26614,
+        0.0,
+        -0.00015
+      ],
+      "share": 0.14
+    },
+    {
+      "hex": "#EBEBEB",
+      "oklch": "oklch(94.0% 0.000 257.2)",
+      "oklab": [
+        0.94033,
+        -0.0,
+        -2e-05
+      ],
+      "share": 0.1099
+    },
+    {
+      "hex": "#B6B6B6",
+      "oklch": "oklch(77.7% 0.000 273.4)",
+      "oklab": [
+        0.77735,
+        0.0,
+        -6e-05
+      ],
+      "share": 0.1064
+    },
+    {
+      "hex": "#6F6F70",
+      "oklch": "oklch(54.3% 0.001 285.8)",
+      "oklab": [
+        0.54304,
+        0.00016,
+        -0.00056
+      ],
+      "share": 0.0224
+    }
+  ],
+  "surfaces": {
+    "backdrop_top_left": {
+      "role": "backdrop.base",
+      "hex": "#B4B4B4",
+      "oklch": "oklch(77.1% 0.000 326.0)",
+      "L_pct": 77.12
+    },
+    "backdrop_top_center": {
+      "role": "backdrop.base",
+      "hex": "#CCCCCC",
+      "oklch": "oklch(84.7% 0.000 89.9)",
+      "L_pct": 84.68
+    },
+    "backdrop_top_right": {
+      "role": "backdrop.base",
+      "hex": "#AEAEAE",
+      "oklch": "oklch(75.0% 0.000 89.9)",
+      "L_pct": 74.95
+    },
+    "backdrop_left_mid": {
+      "role": "backdrop.base",
+      "hex": "#CACACA",
+      "oklch": "oklch(83.8% 0.000 89.9)",
+      "L_pct": 83.83
+    },
+    "backdrop_bottom_left": {
+      "role": "backdrop.base",
+      "hex": "#D2D2D2",
+      "oklch": "oklch(86.5% 0.000 89.9)",
+      "L_pct": 86.52
+    },
+    "backdrop_bottom_center": {
+      "role": "backdrop.glow",
+      "hex": "#D7D7D7",
+      "oklch": "oklch(87.8% 0.000 89.9)",
+      "L_pct": 87.79
+    },
+    "backdrop_dark_wedge": {
+      "role": "backdrop.shadow",
+      "hex": "#8E8E8E",
+      "oklch": "oklch(64.5% 0.000 325.7)",
+      "L_pct": 64.54
+    },
+    "shell_glass_void": {
+      "role": "surface.glassSunk",
+      "hex": "#E3E3E3",
+      "oklch": "oklch(91.6% 0.000 89.9)",
+      "L_pct": 91.64
+    },
+    "shell_glass_void_left": {
+      "role": "surface.glassSunk",
+      "hex": "#E6E6E6",
+      "oklch": "oklch(92.5% 0.000 89.9)",
+      "L_pct": 92.51
+    },
+    "glass_card_sunk_edge": {
+      "role": "surface.glassSunk",
+      "hex": "#E8E8E8",
+      "oklch": "oklch(93.2% 0.000 89.9)",
+      "L_pct": 93.2
+    },
+    "solid_white_dock": {
+      "role": "surface.solidLight",
+      "hex": "#FDFDFD",
+      "oklch": "oklch(99.4% 0.000 89.9)",
+      "L_pct": 99.4
+    },
+    "solid_white_card": {
+      "role": "surface.solidLight",
+      "hex": "#FDFDFD",
+      "oklch": "oklch(99.4% 0.000 89.9)",
+      "L_pct": 99.4
+    },
+    "graphite_card": {
+      "role": "surface.solidDark",
+      "hex": "#262626",
+      "oklch": "oklch(26.9% 0.000 89.9)",
+      "L_pct": 26.92
+    },
+    "graphite_nav_pill": {
+      "role": "surface.solidDark",
+      "hex": "#262626",
+      "oklch": "oklch(26.9% 0.000 89.9)",
+      "L_pct": 26.87
+    },
+    "graphite_button": {
+      "role": "surface.solidDark",
+      "hex": "#262626",
+      "oklch": "oklch(26.9% 0.000 89.9)",
+      "L_pct": 26.92
+    },
+    "chip_on_graphite": {
+      "role": "surface.chipOnDark",
+      "hex": "#AFAFAF",
+      "oklch": "oklch(75.4% 0.000 327.0)",
+      "L_pct": 75.41
+    }
+  },
+  "inks": {
+    "greeting_on_glass": {
+      "polarity": "dark",
+      "hex": "#1A1A1A",
+      "oklch": "oklch(21.9% 0.000 89.9)",
+      "L_pct": 21.91
+    },
+    "title_on_light_card": {
+      "polarity": "dark",
+      "hex": "#020202",
+      "oklch": "oklch(8.5% 0.000 89.9)",
+      "L_pct": 8.46
+    },
+    "nav_item_on_dock": {
+      "polarity": "dark",
+      "hex": "#4F4F4F",
+      "oklch": "oklch(42.8% 0.000 89.9)",
+      "L_pct": 42.79
+    },
+    "muted_on_glass": {
+      "polarity": "dark",
+      "hex": "#292929",
+      "oklch": "oklch(27.9% 0.000 325.6)",
+      "L_pct": 27.91
+    },
+    "stat_on_dark_card": {
+      "polarity": "light",
+      "hex": "#FEFEFE",
+      "oklch": "oklch(99.8% 0.000 89.9)",
+      "L_pct": 99.84
+    },
+    "muted_on_dark_card": {
+      "polarity": "light",
+      "hex": "#747477",
+      "oklch": "oklch(56.0% 0.005 288.8)",
+      "L_pct": 56.0
+    },
+    "label_on_dark_pill": {
+      "polarity": "light",
+      "hex": "#E2E2E2",
+      "oklch": "oklch(91.3% 0.000 325.7)",
+      "L_pct": 91.34
+    }
+  },
+  "glass": {
+    "regression_slope": 0.5169,
+    "regression_intercept_255": 119.2,
+    "white_alpha_from_slope": 0.483,
+    "r_squared": 0.439,
+    "local_pairs": [
+      {
+        "name": "shell_top_strip",
+        "inside": "#C9C9C9",
+        "outside": "#BCBCBC",
+        "delta_L": 4.14,
+        "white_alpha_equivalent": 0.201
+      },
+      {
+        "name": "solid_white_dock",
+        "inside": "#EEEEEE",
+        "outside": "#E4E4E4",
+        "delta_L": 3.2,
+        "white_alpha_equivalent": 0.391
+      },
+      {
+        "name": "glass_card_sunk",
+        "inside": "#E9E9E9",
+        "outside": "#C6C6C6",
+        "delta_L": 10.73,
+        "white_alpha_equivalent": 0.619
+      },
+      {
+        "name": "solid_white_card",
+        "inside": "#FDFDFD",
+        "outside": "#DEDEDE",
+        "delta_L": 9.46,
+        "white_alpha_equivalent": 0.941
+      }
+    ]
+  },
+  "radii": {
+    "shell_outer": {
+      "radius_px": 20.43,
+      "radius_ratio_of_width": 0.017,
+      "samples": 44,
+      "rms_residual_px": 1.59,
+      "confidence": "low"
+    },
+    "dark_hero_card": {
+      "radius_px": 19.0,
+      "radius_ratio_of_width": 0.0158,
+      "samples": 43,
+      "rms_residual_px": 0.38,
+      "confidence": "high"
+    },
+    "white_month_progress": {
+      "radius_px": 35.46,
+      "radius_ratio_of_width": 0.0296,
+      "samples": 43,
+      "rms_residual_px": 0.71,
+      "confidence": "medium"
+    },
+    "white_month_goals": {
+      "radius_px": 116.72,
+      "radius_ratio_of_width": 0.0973,
+      "samples": 43,
+      "rms_residual_px": 0.49,
+      "confidence": "medium"
+    },
+    "dark_project_card": {
+      "radius_px": 32.48,
+      "radius_ratio_of_width": 0.0271,
+      "samples": 43,
+      "rms_residual_px": 0.82,
+      "confidence": "medium"
+    },
+    "dock_panel": {
+      "radius_px": 28.73,
+      "radius_ratio_of_width": 0.0239,
+      "samples": 39,
+      "rms_residual_px": 0.69,
+      "confidence": "medium"
+    }
+  },
+  "radii_manual_verified": {
+    "shell_outer": {
+      "radius_px": 28,
+      "rms": 0.9,
+      "points": 5,
+      "note": "outer silhouette of the glass shell"
+    },
+    "dark_hero_card": {
+      "radius_px": 20,
+      "rms": 0.5,
+      "points": 5,
+      "note": "graphite hero card"
+    },
+    "white_month_progress": {
+      "radius_px": 20,
+      "rms": 0.4,
+      "points": 4,
+      "note": "white card on shell glass"
+    },
+    "dock_panel": {
+      "radius_px": 18,
+      "rms": 1.1,
+      "points": 4,
+      "note": "left dock, low contrast"
+    },
+    "pills": {
+      "radius_px": "h/2",
+      "rms": null,
+      "points": null,
+      "note": "Create pill h=33px, nav pill h=35px -> fully rounded"
+    },
+    "icon_buttons": {
+      "radius_px": 21,
+      "rms": null,
+      "points": null,
+      "note": "circular buttons measured w=41..43px"
+    }
+  },
+  "type": {
+    "greeting_H": {
+      "kind": "cap",
+      "height_px": 19,
+      "width_px": 14
+    },
+    "card_title_M": {
+      "kind": "cap",
+      "height_px": 12,
+      "width_px": 12
+    },
+    "card_title_g_desc": {
+      "kind": "descender",
+      "height_px": 13,
+      "width_px": 15
+    },
+    "stat_digit_4": {
+      "kind": "cap",
+      "height_px": 40,
+      "width_px": 20
+    },
+    "body_T": null,
+    "nav_x_height": {
+      "kind": "x-height",
+      "height_px": 7,
+      "width_px": 16
+    }
+  },
+  "texture": {
+    "shell_void_gutter": {
+      "sd_pixel_255": 0.65,
+      "sd_laplacian_255": 0.6,
+      "sd_highpass_255": 0.22,
+      "mean_255": 227.2
+    },
+    "dock_empty": {
+      "sd_pixel_255": 28.31,
+      "sd_laplacian_255": 51.95,
+      "sd_highpass_255": 17.67,
+      "mean_255": 247.9
+    },
+    "glass_card_inside": {
+      "sd_pixel_255": 14.22,
+      "sd_laplacian_255": 1.47,
+      "sd_highpass_255": 0.51,
+      "mean_255": 213.6
+    },
+    "backdrop_top_strip": {
+      "sd_pixel_255": 24.11,
+      "sd_laplacian_255": 2.11,
+      "sd_highpass_255": 1.0,
+      "mean_255": 187.2
+    },
+    "backdrop_below_shell": {
+      "sd_pixel_255": 27.84,
+      "sd_laplacian_255": 20.26,
+      "sd_highpass_255": 11.15,
+      "mean_255": 210.5
+    },
+    "white_card_flat": {
+      "sd_pixel_255": 31.92,
+      "sd_laplacian_255": 24.03,
+      "sd_highpass_255": 12.98,
+      "mean_255": 247.6
+    }
+  },
+  "backdrop_field_L_pct": [
+    [
+      76.1,
+      77.9,
+      80.9,
+      83.4,
+      84.1,
+      86.8,
+      88.9,
+      88.2,
+      82.7,
+      79.1,
+      76.5,
+      81.2,
+      84.4,
+      54.8,
+      73.5,
+      81.4,
+      79.8,
+      78.0,
+      76.6,
+      75.4
+    ],
+    [
+      76.0,
+      86.4,
+      90.5,
+      92.5,
+      89.5,
+      88.3,
+      90.3,
+      92.8,
+      93.2,
+      85.3,
+      78.9,
+      78.3,
+      88.8,
+      76.4,
+      83.8,
+      88.9,
+      89.5,
+      85.7,
+      83.7,
+      76.1
+    ],
+    [
+      78.1,
+      93.2,
+      90.8,
+      94.3,
+      93.6,
+      80.8,
+      83.7,
+      90.9,
+      93.0,
+      91.3,
+      83.9,
+      79.2,
+      88.2,
+      81.9,
+      64.5,
+      79.7,
+      93.4,
+      84.9,
+      76.8,
+      72.5
+    ],
+    [
+      79.8,
+      86.3,
+      65.0,
+      63.4,
+      92.4,
+      32.0,
+      33.6,
+      33.2,
+      28.2,
+      54.7,
+      85.7,
+      78.2,
+      86.3,
+      91.0,
+      94.9,
+      91.2,
+      91.3,
+      96.2,
+      91.2,
+      72.5
+    ],
+    [
+      81.9,
+      95.1,
+      92.5,
+      98.4,
+      92.0,
+      35.5,
+      31.1,
+      28.4,
+      32.7,
+      52.7,
+      91.5,
+      91.1,
+      91.3,
+      81.2,
+      95.6,
+      96.9,
+      94.7,
+      90.7,
+      90.9,
+      74.7
+    ],
+    [
+      83.5,
+      95.4,
+      95.7,
+      98.9,
+      92.2,
+      46.2,
+      52.7,
+      56.6,
+      62.9,
+      58.9,
+      92.0,
+      93.1,
+      90.4,
+      88.3,
+      94.3,
+      95.0,
+      91.4,
+      87.9,
+      90.2,
+      85.3
+    ],
+    [
+      84.6,
+      95.7,
+      96.8,
+      98.4,
+      92.2,
+      55.5,
+      64.5,
+      68.0,
+      78.7,
+      62.5,
+      93.2,
+      93.1,
+      89.8,
+      79.2,
+      88.5,
+      83.8,
+      93.2,
+      92.7,
+      94.9,
+      90.4
+    ],
+    [
+      85.1,
+      96.1,
+      94.0,
+      98.6,
+      95.6,
+      80.0,
+      78.8,
+      78.0,
+      79.1,
+      85.7,
+      95.2,
+      94.2,
+      84.6,
+      81.7,
+      74.7,
+      81.3,
+      90.2,
+      93.2,
+      92.3,
+      89.7
+    ],
+    [
+      85.0,
+      96.1,
+      93.5,
+      97.3,
+      95.0,
+      92.3,
+      89.8,
+      98.4,
+      96.0,
+      93.6,
+      90.8,
+      86.6,
+      83.9,
+      88.9,
+      60.1,
+      63.2,
+      85.5,
+      88.4,
+      89.9,
+      89.1
+    ],
+    [
+      83.9,
+      96.2,
+      99.4,
+      99.4,
+      94.8,
+      97.6,
+      97.0,
+      98.4,
+      99.7,
+      96.5,
+      92.8,
+      95.8,
+      92.3,
+      90.3,
+      96.3,
+      88.1,
+      84.3,
+      87.3,
+      90.3,
+      88.4
+    ],
+    [
+      82.9,
+      96.0,
+      94.1,
+      99.4,
+      94.9,
+      98.2,
+      97.2,
+      97.4,
+      98.8,
+      95.7,
+      94.8,
+      82.2,
+      87.6,
+      94.0,
+      97.8,
+      87.5,
+      86.9,
+      89.7,
+      89.7,
+      87.2
+    ],
+    [
+      84.7,
+      95.3,
+      96.7,
+      98.6,
+      94.6,
+      88.5,
+      90.7,
+      95.4,
+      95.2,
+      86.8,
+      89.3,
+      77.8,
+      85.2,
+      90.3,
+      85.4,
+      82.8,
+      86.4,
+      87.5,
+      87.8,
+      86.0
+    ],
+    [
+      85.1,
+      95.7,
+      95.5,
+      99.6,
+      93.8,
+      53.9,
+      55.0,
+      49.9,
+      52.1,
+      69.8,
+      52.3,
+      53.8,
+      50.9,
+      59.1,
+      58.6,
+      51.3,
+      50.8,
+      50.5,
+      73.8,
+      85.3
+    ],
+    [
+      83.6,
+      91.4,
+      94.5,
+      94.7,
+      88.7,
+      31.4,
+      31.1,
+      30.0,
+      29.1,
+      61.1,
+      36.7,
+      34.4,
+      34.4,
+      46.4,
+      49.4,
+      35.9,
+      34.3,
+      34.5,
+      65.5,
+      82.3
+    ],
+    [
+      83.3,
+      86.7,
+      89.1,
+      89.7,
+      89.3,
+      70.4,
+      69.2,
+      66.6,
+      67.1,
+      88.7,
+      87.6,
+      87.1,
+      87.7,
+      88.6,
+      88.4,
+      88.2,
+      88.1,
+      87.1,
+      83.3,
+      78.6
+    ]
+  ],
+  "contrast_audit": [
+    {
+      "pair": "ink.onGlass / shell glass",
+      "fg": "#1A1A1A",
+      "bg": "#E3E3E3",
+      "contrast": 13.55,
+      "wcag_aa_body": true,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": true
+    },
+    {
+      "pair": "ink.onLight / solid white card",
+      "fg": "#020202",
+      "bg": "#FDFDFD",
+      "contrast": 20.4,
+      "wcag_aa_body": true,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": true
+    },
+    {
+      "pair": "ink.onGraphite / graphite",
+      "fg": "#FEFEFE",
+      "bg": "#262626",
+      "contrast": 15.04,
+      "wcag_aa_body": true,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": true
+    },
+    {
+      "pair": "ink.mutedOnGraphite / graphite",
+      "fg": "#747477",
+      "bg": "#262626",
+      "contrast": 3.24,
+      "wcag_aa_body": false,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": false
+    },
+    {
+      "pair": "ink.onLightMuted / dock",
+      "fg": "#4F4F4F",
+      "bg": "#FDFDFD",
+      "contrast": 8.04,
+      "wcag_aa_body": true,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": true
+    },
+    {
+      "pair": "ink.onGraphiteMuted / graphite",
+      "fg": "#E2E2E2",
+      "bg": "#262626",
+      "contrast": 11.68,
+      "wcag_aa_body": true,
+      "wcag_aa_large": true,
+      "wcag_aaa_body": true
+    }
+  ]
+}
