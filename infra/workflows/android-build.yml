@@ -23,6 +23,9 @@ jobs:
     name: Gradle debug + merged-manifest gate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
 
@@ -38,13 +41,29 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform and build-tools
+      - name: Use preinstalled Android SDK and install platforms
         run: |
-          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-          sdkmanager --list_installed
+          echo "Runner SDK at $ANDROID_HOME"
+          ls -la "$ANDROID_HOME/cmdline-tools/" || true
+          SDKMANAGER=""
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under $ANDROID_HOME"
+            exit 1
+          fi
+          echo "Using sdkmanager: $SDKMANAGER"
+          "$SDKMANAGER" --version
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          "$SDKMANAGER" --list_installed || true
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
 
       - name: Install node deps
         run: npm ci
@@ -52,15 +71,13 @@ jobs:
       - name: Expo prebuild (android)
         run: |
           cd apps/mobile
-          npx expo prebuild --platform android --non-interactive
+          npx expo prebuild --platform android --clean --non-interactive
           ls -la android/gradlew
+          chmod +x android/gradlew
           ./android/gradlew --version
 
       - name: Build + gate (make android-build)
         run: |
-          # This runs :app:assembleDebug and then the merged-manifest gate.
-          # Exit 0 = build + gate clean, 1 = build or gate failed, 2 = precondition missing.
-          # The workflow must fail on 1 or 2; only 0 is green.
           make android-build
 
       - name: Upload APK
@@ -85,7 +102,6 @@ jobs:
 
   release-preflight:
     name: Release Stage-1 preflight (no signing)
-    # Manual only — does not run on push to main, only via workflow_dispatch
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -103,8 +119,6 @@ jobs:
 
       - name: Run release Stage-1 preflight (no signing)
         run: |
-          # This checks package id, versionCode, EAS profiles, and that no keystore is committed.
-          # It never signs anything and never produces an artifact.
           make release-stage1
 
       - name: Upload preflight log
