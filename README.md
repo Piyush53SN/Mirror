@@ -8,12 +8,12 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** P-UI-0…P-UI-2 and **P0 are approved**. **P1a is delivered for
-> review:** the design system runs on React 19 / RN 0.88, `packages/ui` is linted,
-> plain `npm install` works, and a Metro production bundle proves that no
-> advisory-carrying dependency ships. There is still **no app binary beyond a
-> one-screen entry** — P1b adds the encrypted store, the UsageStats collector,
-> importers and embeddings. No build or store step has been run.
+> **Build status:** P-UI-0…P-UI-2, **P0** and **P1a are approved**. **P1b-1 is
+> delivered for review:** an encrypted SQLite store, the Android UsageStats
+> collector with its decision layer, a background collection task and a
+> merged-manifest gate. There is still **no app binary beyond a one-screen entry**,
+> and no UI is wired to the store — P1b-2 adds ingestion, importers and embeddings.
+> No build or store step has been run.
 
 ---
 
@@ -50,7 +50,10 @@ break.
 | [`packages/core-analytics/`](packages/core-analytics) | sessionisation with explicit drop reasons, phase summaries, and the deterministic synthetic dataset used by every later test |
 | [`packages/connectors/`](packages/connectors) | the OAuth connector registry, its scope allowlist, the refusal list (no official API → no connector), and the extension allowlist |
 | [`scripts/privacy/`](scripts/privacy) | the canary scanner, an end-to-end self-test, a mitmproxy addon, a Playwright runner and the emulator runbook |
-| [`scripts/security/`](scripts/security) | the secret scanner (patterns + entropy, placeholder-aware) and the dependency-audit gate |
+| [`scripts/security/`](scripts/security) | the secret scanner (patterns + entropy, placeholder-aware), the dependency-audit gate and the bundle reachability check |
+| [`packages/store/`](packages/store) | encrypted local storage: migrations, AEAD field encryption, consent enforcement, retention and delete-all |
+| [`scripts/android/`](scripts/android) | the merged-manifest gate and its fixtures |
+| [`docs/P1B.md`](docs/P1B.md) | storage crypto, threat model, collector rules and the manifest gate |
 | [`docs/ANDROID_PERMISSIONS.md`](docs/ANDROID_PERMISSIONS.md) | every Android permission that will ever exist, when it is requested, and why boot sync needs none |
 | [`docs/store/FAMILY_CONTROLS_REQUEST.md`](docs/store/FAMILY_CONTROLS_REQUEST.md) | the ready-to-submit iOS entitlement request text |
 | [`infra/workflows/`](infra/workflows) | CI (`ci.yml`) and the device/extension canary workflow (`privacy-canary.yml`); they live here because the pushing GitHub App cannot write `.github/workflows/` — activation command in that folder |
@@ -98,14 +101,15 @@ reintroduces a conflict, the fix is to resolve the versions — not to add
 
 ```bash
 npm install
-npm run verify            # all checks: 251 Node + 9 Python
+npm run verify            # all checks: 303 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
 make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
 ```
 
-Measured: **251** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
+Measured: **303** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
 event schema 23 · records 21 · preferences 22 · sessions 16 · connectors 20 ·
-config 17 · canary 18 · security 18) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
+store 19 · collector 21 · config 17 · merged manifest 12 · canary 18 · security 18)
+and **9** Python addon tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
 

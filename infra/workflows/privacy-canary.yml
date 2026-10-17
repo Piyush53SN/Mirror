@@ -43,6 +43,11 @@ jobs:
             echo "ready=no" >> "$GITHUB_OUTPUT"
             echo "::notice::No debug APK in builds/. Expected before P1; nothing to test yet."
           fi
+      - name: Merged AndroidManifest audit
+        if: steps.guard.outputs.ready == 'yes'
+        run: |
+          # app.json is intent; this reads what Gradle actually merged.
+          npm run android:manifest || { code=$?; [ "$code" = "2" ] && echo "::warning::merged manifest not built" && exit 0 || exit $code; }
       - name: Install mitmproxy
         if: steps.guard.outputs.ready == 'yes'
         run: pipx install mitmproxy

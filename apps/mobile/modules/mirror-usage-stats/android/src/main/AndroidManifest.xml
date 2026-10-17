@@ -1,0 +1,8 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    The module declares no permission of its own: PACKAGE_USAGE_STATS is declared
+    once, in app.json, and checked in the *merged* manifest by
+    scripts/android/check-merged-manifest.mjs. Declaring it here as well would
+    make the two sources disagree the moment one changes.
+  -->
+</manifest>

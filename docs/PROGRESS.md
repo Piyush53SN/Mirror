@@ -15,8 +15,9 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P-UI-1 | **accepted** | generated tokens (`packages/ui/tokens/`), single-file phone prototype (`prototype/index.html`) — commit `93e83cc` |
 | P-UI-2 | **approved with corrections** | React Native design system (`packages/ui/src`), all 28 Section J items (`packages/ui/screens`), mockup gallery (`packages/ui/mockups/gallery`), **96** tests. Corrections from review applied — see below |
 | P0 | **approved** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
-| P1a | **delivered for review** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
-| P1b | not started | encrypted local storage, Android UsageStats collector, ingestion, importers, embeddings |
+| P1a | **approved** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
+| P1b-1 | **delivered for review** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI |
+| P1b-2 | not started | ingestion (session attribution), importers, embeddings |
 | P2…P7 | not started | — |
 
 ---
@@ -214,6 +215,64 @@ module graph, and refuses an empty source map so it cannot pass vacuously.
   `node-forge`. The gate stays on critical + bundle reachability until it does.
 - iOS has not been bundled; only Android was, and both use the same Metro graph.
   The iOS export is a P1b CI addition if a native iOS build begins.
+
+
+
+### P1b-1 delivered (2026-10-17)
+
+**Split, as agreed:** P1b was too large for one review, so it is P1b-1 (store +
+collector + merged-manifest test) and P1b-2 (ingestion, importers, embeddings).
+This section covers P1b-1 only.
+
+- **`packages/store`** — real SQLite (node:sqlite in tests, expo-sqlite on device),
+  versioned migrations, XChaCha20-Poly1305 field encryption, HKDF-derived keys,
+  HMAC item hashes, consent enforcement inside the write transaction, retention
+  sweep, delete-all with WAL checkpoint + VACUUM, `PRAGMA secure_delete = ON`.
+- **Encryption boundary:** metadata columns (time, kind, tier, grant id) are
+  indexed; everything recognisable — app names, hosts, queries, subjects, vectors —
+  lives only inside the sealed `payload`. A test reads the **file bytes** and
+  asserts neither a canary query nor a host survives in the clear; another does the
+  same after `deleteAll()`.
+- **`packages/core-analytics/src/usage.ts`** — the collector's decision layer,
+  pure and property-tested: unclosed intervals dropped, orphans dropped, intervals
+  over 6 h dropped as implausible, system UI/launchers/Mirror ignored, deterministic
+  ids so an overlapping re-read inserts nothing.
+- **`collectUsage()`** — cursor → query → build → write → advance. The cursor only
+  advances after a successful write, so a crash re-reads a window that is then a
+  no-op.
+- **Android module** — `apps/mobile/modules/mirror-usage-stats` (Kotlin, Expo
+  Modules API): permission check, Settings deep link, raw `UsageEvents` rows. No
+  accessibility, no overlays, no `QUERY_ALL_PACKAGES`. **Not compiled here** — no
+  Android SDK in this environment; first compile belongs to P1b-2's device work.
+- **Background task** — one `expo-background-task` (WorkManager on Android),
+  registered at 24 h, safe at any interval.
+- **Merged-manifest gate** — `npm run android:manifest` reads the Gradle-merged
+  `AndroidManifest.xml`, not `app.json`: requires `PACKAGE_USAGE_STATS`, rejects the
+  forbidden list (accessibility, overlays, media projection, notification
+  listener, AD_ID, contacts, location, mic, camera, SMS, call log, phone state,
+  `QUERY_ALL_PACKAGES`, install packages), rejects any permission outside the
+  reviewed library allowlist, and rejects accessibility/notification-listener
+  services. Exit 2 = not built. Parser and policy tested against four fixtures.
+  `SYSTEM_ALERT_WINDOW`, `QUERY_ALL_PACKAGES` and `REQUEST_INSTALL_PACKAGES` were
+  added to `blockedPermissions` so a library cannot merge them in.
+- **Tests:** 303 Node + 9 Python (was 251). New: store 19, usage/collector 21,
+  merged manifest 12. `npm run verify` green; `npm run security:bundle` bundles
+  the store + collector (714 modules, 39 packages) and still finds **0** advisory
+  packages in the bundle. `npm run mockups` leaves `git status` clean.
+
+**P1b-1 limitations, recorded:**
+
+- **No UI and no ingestion.** Nothing calls the runtime; the store opens only when
+  P1b-2 wires navigation. `session_id` is stored only when a caller supplies it.
+- **The Kotlin module is uncompiled.** Written against the Expo Modules API and
+  typecheck-clean at the TS boundary; no Android SDK here to build it.
+- **The merged-manifest gate has not seen a real build** — it reports exit 2. Its
+  parser/policy are tested against fixtures, and the CI step is guarded by the
+  presence of `apps/mobile/android/`.
+- **Threat model:** encryption protects data at rest. It does not protect a rooted
+  device or a compromised OS while the app is installed — the app must be able to
+  read its own data. Stated in `docs/P1B.md` rather than implied away.
+- **iOS has no collector** until P5 (DeviceActivity + Family Controls entitlement).
 
 
 ## Approved decisions

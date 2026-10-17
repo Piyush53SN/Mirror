@@ -75,10 +75,15 @@ test('boot sync is documented as needing no permission of its own', () => {
   assert.match(permissionsDoc, /does \*\*not\*\* request it/);
 });
 
-test('no accessibility service, overlay, screen recording or notification-listener permission is ever declared', () => {
-  const declared = JSON.stringify([app.android.permissions, app.android.blockedPermissions, app.plugins, app.ios.infoPlist]);
+test('forbidden capabilities are never requested, only blocked', () => {
+  // `blockedPermissions` is the one list where a forbidden name legitimately
+  // appears: that is how a library is stopped from merging it in.
+  const requested = JSON.stringify([app.android.permissions, app.plugins, app.ios.infoPlist]);
   for (const forbidden of ['BIND_ACCESSIBILITY_SERVICE', 'SYSTEM_ALERT_WINDOW', 'MEDIA_PROJECTION', 'BIND_NOTIFICATION_LISTENER_SERVICE', 'READ_NOTIFICATION']) {
-    assert.ok(!declared.includes(forbidden), `${forbidden} must not appear in app configuration`);
+    assert.ok(!requested.includes(forbidden), `${forbidden} must never be requested`);
+  }
+  for (const forbidden of ['android.permission.SYSTEM_ALERT_WINDOW', 'android.permission.QUERY_ALL_PACKAGES', 'com.google.android.gms.permission.AD_ID']) {
+    assert.ok(app.android.blockedPermissions.includes(forbidden), `${forbidden} should be actively blocked, not merely unused`);
   }
 });
 

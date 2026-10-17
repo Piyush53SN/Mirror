@@ -9,5 +9,9 @@
  */
 import { registerRootComponent } from 'expo';
 import App from './App';
+// Imported for the bundle graph, not started: the encrypted store and the
+// collector are compiled into the app from P1b-1 so the release bundle check
+// covers them, but nothing opens the store until ingestion arrives in P1b-2.
+import './src/runtime';
 
 registerRootComponent(App);

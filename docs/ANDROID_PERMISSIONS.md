@@ -27,6 +27,7 @@ notice and says why — it never shows a made-up number.
 | --- | --- | --- | --- | --- |
 | `android.permission.POST_NOTIFICATIONS` | Runtime (Android 13+) | P4 | On the nudge opt-in screen only — never at launch, never after onboarding | Local weekly report and the opt-in nudge. If the person never enables a notification, this is never requested. Refusal keeps every other feature working. |
 | `android.permission.INTERNET` | Normal | P5, with the first connector | n/a (install-time) | OAuth token exchange and (P6) optional encrypted sync. The app is fully functional offline; Private mode makes no requests at all. |
+| `android.permission.WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | Normal | contributed by **WorkManager** (`expo-background-task`), P1b-1 | n/a | Scheduled collection survives reboots. These merge in from the library's manifest; the merged-manifest gate lists them as reviewed library permissions and fails on anything else. |
 
 ## 3. Boot sync: no permission is needed, and none is requested
 
@@ -80,5 +81,6 @@ the config test in the same change. It is not added "just in case".
 | The declared list is exactly the documented list | `tests/config.test.mjs` | AUTOMATED |
 | Forbidden permissions are blocked, not merely unused | `tests/config.test.mjs` | AUTOMATED |
 | Every declared permission appears on this page | `tests/config.test.mjs` | AUTOMATED |
+| The **merged** manifest matches this page (not just `app.json`) | `npm run android:manifest` (`scripts/android/check-merged-manifest.mjs`), fixtures in `scripts/android/fixtures` | **AUTOMATED** (policy + parser); needs a Gradle build to run against a real artifact — **MANUAL precondition** |
 | The Settings round-trip (grant → resume → detected) | emulator run, P1 | MANUAL until an emulator is wired into CI |
 | The notification prompt appears only on opt-in | P4 device test | MANUAL until then |

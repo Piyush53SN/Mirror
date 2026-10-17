@@ -1,0 +1,107 @@
+/**
+ * Ports.
+ *
+ * The store does not know what SQLite it is talking to, where the key comes from,
+ * or what time it is. Each of those is a small interface with an adapter per
+ * environment, so the same storage code runs in tests (Node's SQLite, fixed
+ * keys), on Android/iOS (expo-sqlite, platform keystore) and in a future sync
+ * layer without a rewrite.
+ */
+
+/** The subset of SQL both node:sqlite and expo-sqlite can answer. */
+export interface SqlDriver {
+  /** Execute one or more statements with no parameters (DDL, PRAGMA). */
+  exec(sql: string): Promise<void>;
+  /** Run a write. Returns the number of affected rows when the driver knows it. */
+  run(sql: string, params?: unknown[]): Promise<void>;
+  /** Read rows as plain objects. */
+  all<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+  /** Run `fn` inside a transaction; rolls back if it throws. */
+  transaction<T>(fn: () => Promise<T>): Promise<T>;
+}
+
+/**
+ * A 32-byte root key. On device it is created once and kept in the platform
+ * keystore (`expo-secure-store`, `requireAuthentication` not required because the
+ * app itself is the boundary; see docs/P1B.md). It never leaves the device and is
+ * never written to the database.
+ */
+export interface KeyProvider {
+  /** Stable id of the key, stored beside ciphertext so a rotation can be detected. */
+  keyId(): Promise<string>;
+  /** 32 bytes. Implementations must return a copy, not an internal buffer. */
+  rootKey(): Promise<Uint8Array>;
+}
+
+/** Injected so tests are deterministic and the store has no ambient clock. */
+export type Clock = () => number;
+
+/** Injected random source: `expo-crypto.getRandomBytes` on device, node:crypto in tests. */
+export type RandomBytes = (length: number) => Uint8Array;
+
+export type StoreOptions = {
+  driver: SqlDriver;
+  keys: KeyProvider;
+  clock?: Clock;
+  random?: RandomBytes;
+  /**
+   * Whether content-class events (titles, queries, URLs) may be written. This is
+   * the storage-side enforcement of the `collectContent` preference: when it is
+   * false, a content event is refused, not silently downgraded.
+   */
+  allowContent?: boolean;
+  /** Days of raw/imported events kept. Mirrors the retention policy. */
+  retentionDays?: 90 | 180 | 365;
+  /** Called for anything the store refuses or repairs. Never throws. */
+  onDiagnostic?: (message: string, detail?: unknown) => void;
+};
+
+export type AppendResult = {
+  inserted: number;
+  /** Already present (same id) — ingest is idempotent. */
+  duplicate: number;
+  /** Refused before reaching SQL. */
+  rejected: { id: string; reason: string }[];
+};
+
+export type StoredEvent = {
+  id: string;
+  at: number;
+  kind: string;
+  tier: string;
+  content: string;
+  session_id: string | null;
+  payload: Record<string, unknown>;
+};
+
+export type ConsentEntry = {
+  id: string;
+  at: string;
+  action: 'granted' | 'revoked' | 'updated';
+  subject: string;
+  tier: string;
+  scopes: string[];
+  promise: string;
+  method: string;
+  deletes_imported_events: boolean;
+};
+
+export type ConnectionRow = {
+  connector_id: string;
+  status: string;
+  scopes: string[];
+  token_ref: string;
+  connected_at: string | null;
+  last_sync_at: string | null;
+  items_imported: number;
+  revoked_at: string | null;
+};
+
+export type ImportRecord = {
+  id: string;
+  source_id: string;
+  export_format: string;
+  imported_at: string;
+  item_count: number;
+  consent_id: string;
+};

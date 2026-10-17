@@ -7,7 +7,7 @@
 NPM ?= npm
 NODE ?= node
 
-.PHONY: help install verify test typecheck lint security gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
+.PHONY: help install verify test typecheck lint security android-manifest gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
 
 help:
 	@echo "make install             install node deps"
@@ -16,6 +16,7 @@ help:
 	@echo "make typecheck           both TypeScript projects"
 	@echo "make lint                ESLint over the P0 packages, scripts and tests"
 	@echo "make security            lint + secret scan + dependency audit + bundle reachability"
+	@echo "make android-manifest    audit the merged AndroidManifest.xml (exit 2 if nothing is built)"
 	@echo "make gallery             regenerate the 96 mockup frames"
 	@echo "make privacy             privacy canary self-test + scanner tests + python addon tests"
 	@echo "make privacy-extension   Playwright extension canary (needs playwright + a built extension)"
@@ -42,6 +43,9 @@ lint:
 
 security:
 	$(NPM) run security
+
+android-manifest:
+	$(NPM) run android:manifest
 
 gallery:
 	$(NPM) run mockups

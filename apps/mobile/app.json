@@ -34,7 +34,10 @@
         "android.permission.READ_SMS",
         "android.permission.READ_CALL_LOG",
         "android.permission.READ_PHONE_STATE",
-        "com.google.android.gms.permission.AD_ID"
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.QUERY_ALL_PACKAGES",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.REQUEST_INSTALL_PACKAGES"
       ]
     },
     "extra": {

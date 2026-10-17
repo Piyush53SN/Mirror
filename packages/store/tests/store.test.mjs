@@ -1,0 +1,395 @@
+/**
+ * packages/store/tests/store.test.mjs
+ *
+ * Runs the real store against real SQLite (node:sqlite) in a real file, so the
+ * schema, indexes, PRAGMAs and crypto are the ones that ship.
+ *
+ * The tests are organised around the three promises the store makes: consent,
+ * content opt-in, and deletion that means deletion.
+ */
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import fc from 'fast-check';
+
+import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PKG = join(HERE, '..');
+const store = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.build', 'store.mjs'), external: [] });
+
+// The testing driver is plain TS too; bundle it alongside so it shares one copy
+// of the crypto module (two copies would derive different keys from the same root
+// only if the code differed — this keeps the comparison honest either way).
+const { NodeSqliteDriver, TEST_ROOT_KEY, counterRandom } = await bundleTs(join(PKG, 'testing/node-driver.ts'), {
+  outfile: join(HERE, '.build', 'driver.mjs'),
+});
+
+const { MirrorStore, seal, open, deriveKeys, itemHash, DecryptionError } = store;
+
+const keys = { keyId: async () => 'test-key-1', rootKey: async () => new Uint8Array(TEST_ROOT_KEY) };
+const T0 = Date.parse('2026-10-16T09:00:00Z');
+const iso = (offsetMs) => new Date(T0 + offsetMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+const foreground = (over = {}) => ({
+  schema_version: 1,
+  id: 'evt_fore_0001',
+  kind: 'app_foreground',
+  at: iso(0),
+  tier: 'D',
+  origin: 'os',
+  content: 'metadata',
+  app: 'com.google.android.youtube',
+  ...over,
+});
+
+const background = (over = {}) =>
+  foreground({ id: 'evt_back_0001', kind: 'app_background', at: iso(60_000), duration_ms: 60_000, ...over });
+
+const grant = (over = {}) => ({
+  id: 'cns_grant_0001',
+  at: iso(-86_400_000),
+  action: 'granted',
+  subject: 'os_usage',
+  tier: 'D',
+  scopes: [],
+  promise: 'Mirror reads which apps were in front, and for how long.',
+  method: 'in_app',
+  deletes_imported_events: false,
+  ...over,
+});
+
+async function makeStore(overrides = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-store-'));
+  const file = join(dir, 'mirror.db');
+  const driver = NodeSqliteDriver.file(file);
+  const s = new MirrorStore({ driver, keys, random: counterRandom(), clock: () => T0 + 3_600_000, ...overrides });
+  await s.open();
+  return { s, driver, dir, file, close: () => { driver.close(); rmSync(dir, { recursive: true, force: true }); } };
+}
+
+/* ----------------------------------------------------------------- open ----- */
+
+test('open migrates to the current schema version and is idempotent', async () => {
+  const { s, file, close } = await makeStore();
+  try {
+    assert.equal((await s.open()).schemaVersion, store.SCHEMA_VERSION);
+    const again = new MirrorStore({ driver: NodeSqliteDriver.file(file), keys, random: counterRandom() });
+    // A second open on the same file must not re-run migrations destructively.
+    assert.equal((await again.open()).schemaVersion, store.SCHEMA_VERSION);
+    assert.equal((await again.counts()).total, 0);
+  } finally {
+    close();
+  }
+});
+
+/* --------------------------------------------------------------- consent ----- */
+
+test('tier-A/B/C events are refused without a live grant, and accepted with one', async () => {
+  const { s, close } = await makeStore({ allowContent: true });
+  try {
+    const visit = {
+      schema_version: 1,
+      id: 'evt_web_00001',
+      kind: 'web_visit',
+      at: iso(0),
+      tier: 'C',
+      origin: 'extension',
+      content: 'content',
+      consent: 'grant_extension',
+      host: 'arxiv.org',
+      duration_ms: 1000,
+    };
+    const refused = await s.appendEvents([visit]);
+    assert.equal(refused.inserted, 0);
+    assert.match(refused.rejected[0].reason, /no live consent grant/);
+
+    await s.appendConsent(grant({ id: 'cns_ext_00001', subject: 'grant_extension', tier: 'C', scopes: ['hosts:arxiv.org'] }));
+    const accepted = await s.appendEvents([visit]);
+    assert.equal(accepted.inserted, 1);
+    assert.deepEqual(accepted.rejected, []);
+  } finally {
+    close();
+  }
+});
+
+test('content events are refused when the person has not opted in', async () => {
+  const { s, close } = await makeStore({ allowContent: false });
+  try {
+    await s.appendConsent(grant({ id: 'cns_ext_00002', subject: 'grant_extension', tier: 'C' }));
+    const result = await s.appendEvents([
+      { schema_version: 1, id: 'evt_web_00002', kind: 'web_visit', at: iso(0), tier: 'C', origin: 'extension', content: 'content', consent: 'grant_extension', host: 'a.com', duration_ms: 1 },
+    ]);
+    assert.equal(result.inserted, 0);
+    assert.match(result.rejected[0].reason, /content events are off/);
+  } finally {
+    close();
+  }
+});
+
+test('metadata events are accepted without any grant (tier D)', async () => {
+  const { s, close } = await makeStore();
+  try {
+    const result = await s.appendEvents([foreground(), background()]);
+    assert.equal(result.inserted, 2);
+  } finally {
+    close();
+  }
+});
+
+test('a revocation deletes the events its grant produced, and only those', async () => {
+  const { s, close } = await makeStore({ allowContent: true });
+  try {
+    await s.appendConsent(grant({ id: 'cns_ext_00003', subject: 'grant_extension', tier: 'C' }));
+    await s.appendConsent(grant({ id: 'cns_api_00004', subject: 'grant_reddit', tier: 'A' }));
+    await s.appendEvents([
+      { schema_version: 1, id: 'evt_web_00003', kind: 'web_visit', at: iso(1000), tier: 'C', origin: 'extension', content: 'content', consent: 'grant_extension', host: 'a.com', duration_ms: 1 },
+      { schema_version: 1, id: 'evt_api_00003', kind: 'api_item', at: iso(2000), tier: 'A', origin: 'api', content: 'content', consent: 'grant_reddit', source_id: 'reddit', action: 'saved' },
+      foreground({ id: 'evt_fore_0003', at: iso(3000) }),
+    ]);
+    const before = await s.counts();
+    assert.equal(before.total, 3);
+
+    const result = await s.revoke({ id: 'cns_rev_00003', at: iso(4000), subject: 'grant_extension', tier: 'C', scopes: ['hosts:a.com'], promise: 'Extension captures scroll depth on allow-listed sites.', method: 'in_app' });
+    assert.equal(result.deletedEvents, 1);
+    const after = await s.counts();
+    assert.equal(after.total, 2, 'the Reddit import and the OS event survive');
+    assert.equal(after.byTier.A, 1);
+    assert.equal(after.byTier.D, 1);
+  } finally {
+    close();
+  }
+});
+
+test('revoking the OS grant deletes tier-D events too', async () => {
+  const { s, close } = await makeStore();
+  try {
+    await s.appendConsent(grant({ id: 'cns_os_00001', subject: 'os_usage', tier: 'D' }));
+    await s.appendEvents([foreground(), background()]);
+    const result = await s.revoke({ id: 'cns_os_rev_1', at: iso(5000), subject: 'os_usage', tier: 'D', scopes: ['usage_access'], promise: 'Mirror reads which apps were in front, and for how long.', method: 'system_settings' });
+    assert.equal(result.deletedEvents, 2);
+    assert.equal((await s.counts()).total, 0);
+  } finally {
+    close();
+  }
+});
+
+test('a revocation with no live grant is refused', async () => {
+  const { s, close } = await makeStore();
+  try {
+    await assert.rejects(() => s.revoke({ id: 'cns_none_0001', at: iso(0), subject: 'nope', tier: 'D', scopes: [], promise: 'nothing was ever granted here.', method: 'in_app' }), /no live grant/);
+  } finally {
+    close();
+  }
+});
+
+/* ----------------------------------------------------------- idempotency ----- */
+
+test('re-ingesting the same window inserts nothing', async () => {
+  const { s, close } = await makeStore();
+  try {
+    const batch = [foreground(), background()];
+    assert.equal((await s.appendEvents(batch)).inserted, 2);
+    const again = await s.appendEvents(batch);
+    assert.equal(again.inserted, 0);
+    assert.equal(again.duplicate, 2);
+    assert.equal((await s.counts()).total, 2);
+  } finally {
+    close();
+  }
+});
+
+/* -------------------------------------------------------------- encryption -- */
+
+test('the payload is encrypted at rest: no plaintext of the app or subject is in the file', async () => {
+  const { s, file, close } = await makeStore({ allowContent: true });
+  try {
+    await s.appendConsent(grant({ id: 'cns_ext_00010', subject: 'grant_extension', tier: 'C' }));
+    await s.appendEvents([
+      {
+        schema_version: 1,
+        id: 'evt_web_00010',
+        kind: 'web_visit',
+        at: iso(0),
+        tier: 'C',
+        origin: 'extension',
+        content: 'content',
+        consent: 'grant_extension',
+        host: 'arxiv.org',
+        duration_ms: 1000,
+        query: 'MRRCANARY-plaintextcheck',
+      },
+    ]);
+    const bytes = [readFileSync(file), existsSync(`${file}-wal`) ? readFileSync(`${file}-wal`) : Buffer.alloc(0)].map(String).join('\u0000');
+    assert.ok(!bytes.includes('MRRCANARY-plaintextcheck'), 'a query must never appear in the database file');
+    assert.ok(!bytes.includes('arxiv.org'), 'the host must not appear in the clear either');
+    // The decrypted view does have it.
+    const [event] = await s.events();
+    assert.equal(event.payload.query, 'MRRCANARY-plaintextcheck');
+  } finally {
+    close();
+  }
+});
+
+test('a tampered payload fails authentication instead of returning garbage', async () => {
+  const { s, driver, close } = await makeStore();
+  try {
+    await s.appendEvents([foreground()]);
+    const row = await driver.all('SELECT payload FROM events');
+    const payload = new Uint8Array(row[0].payload);
+    payload[payload.length - 1] ^= 0x01;
+    await driver.run('UPDATE events SET payload = ? WHERE id = ?', [payload, 'evt_fore_0001']);
+    await assert.rejects(() => s.events(), (error) => error instanceof DecryptionError && /altered/.test(error.message));
+  } finally {
+    close();
+  }
+});
+
+test('a record sealed under another key is refused by key id', async () => {
+  const derived = deriveKeys(new Uint8Array(32).fill(9));
+  const envelope = seal({ a: 1 }, derived, 'other-key', counterRandom());
+  assert.throws(() => open(envelope, derived, 'test-key-1'), /sealed with key "other-key"/);
+});
+
+test('item hashes are stable, opaque and unique per key', () => {
+  const a = deriveKeys(new Uint8Array(32).fill(1));
+  const b = deriveKeys(new Uint8Array(32).fill(2));
+  assert.equal(itemHash('reddit:t3_abc', a), itemHash('reddit:t3_abc', a));
+  assert.notEqual(itemHash('reddit:t3_abc', a), itemHash('reddit:t3_def', a));
+  assert.notEqual(itemHash('reddit:t3_abc', a), itemHash('reddit:t3_abc', b));
+  assert.match(itemHash('x', a), /^[0-9a-f]{64}$/);
+  assert.ok(!itemHash('reddit:t3_abc', a).includes('reddit'));
+});
+
+test('property: sealing and opening any JSON value round-trips', () => {
+  const derived = deriveKeys(new Uint8Array(32).fill(3));
+  fc.assert(
+    fc.property(fc.jsonValue(), (value) => {
+      const envelope = seal(value, derived, 'k1', counterRandom());
+      return JSON.stringify(open(envelope, derived, 'k1')) === JSON.stringify(value);
+    }),
+    { numRuns: 100 },
+  );
+});
+
+test('property: flipping any ciphertext byte makes it unreadable', () => {
+  const derived = deriveKeys(new Uint8Array(32).fill(4));
+  fc.assert(
+    fc.property(fc.integer({ min: 0, max: 40 }), (index) => {
+      const envelope = seal({ hello: 'world' }, derived, 'k1', counterRandom());
+      const at = 2 + 'k1'.length + 24 + index;
+      if (at >= envelope.length) return true;
+      const copy = new Uint8Array(envelope);
+      copy[at] ^= 0xff;
+      try {
+        open(copy, derived, 'k1');
+        return false;
+      } catch (error) {
+        return error instanceof DecryptionError;
+      }
+    }),
+    { numRuns: 100 },
+  );
+});
+
+/* -------------------------------------------------------------- retention --- */
+
+test('sweepExpired deletes only rows older than the window', async () => {
+  const { s, close } = await makeStore({ retentionDays: 90 });
+  try {
+    const old = foreground({ id: 'evt_old_00001', at: new Date(T0 - 100 * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z') });
+    const recent = foreground({ id: 'evt_new_00001', at: iso(-86_400_000) });
+    await s.appendEvents([old, recent]);
+    const result = await s.sweepExpired(T0);
+    assert.equal(result.deleted, 1);
+    assert.equal((await s.counts()).total, 1);
+  } finally {
+    close();
+  }
+});
+
+test('sweepExpired on an empty store deletes nothing and does not throw', async () => {
+  const { s, close } = await makeStore();
+  try {
+    assert.deepEqual((await s.sweepExpired(T0)).deleted, 0);
+  } finally {
+    close();
+  }
+});
+
+/* ------------------------------------------------------------- delete all --- */
+
+test('deleteAll leaves nothing readable, and nothing recognisable in the file', async () => {
+  const { s, file, close } = await makeStore({ allowContent: true });
+  try {
+    await s.appendConsent(grant({ id: 'cns_ext_00020', subject: 'grant_extension', tier: 'C' }));
+    await s.appendEvents([
+      { schema_version: 1, id: 'evt_web_00020', kind: 'web_visit', at: iso(0), tier: 'C', origin: 'extension', content: 'content', consent: 'grant_extension', host: 'youtube.com', duration_ms: 5, query: 'MRRCANARY-deleteall' },
+    ]);
+    await s.recordImport({ id: 'imp_00000001', source_id: 'youtube', export_format: 'takeout', imported_at: iso(0), item_count: 1, consent_id: 'grant_extension' });
+    await s.deleteAll();
+
+    assert.equal((await s.counts()).total, 0);
+    assert.deepEqual(await s.consentLog(), []);
+    assert.deepEqual(await s.connections(), []);
+    assert.deepEqual(await s.imports(), []);
+
+    const bytes = [readFileSync(file), existsSync(`${file}-wal`) ? readFileSync(`${file}-wal`) : Buffer.alloc(0)].map(String).join('\u0000');
+    assert.ok(!bytes.includes('MRRCANARY-deleteall'), 'deleted content must not survive in the file');
+    assert.ok(!bytes.includes('youtube.com'), 'deleted host must not survive in the file');
+  } finally {
+    close();
+  }
+});
+
+/* ------------------------------------------------------------ connections --- */
+
+test('a connection stores a keystore reference, and refuses a credential field', async () => {
+  const { s, close } = await makeStore();
+  try {
+    await s.upsertConnection({
+      connector_id: 'reddit',
+      status: 'connected',
+      scopes: ['read', 'save'],
+      token_ref: 'keystore:mirror.reddit',
+      connected_at: iso(0),
+      last_sync_at: null,
+      items_imported: 3,
+      revoked_at: null,
+    });
+    const [row] = await s.connections();
+    assert.equal(row.token_ref, 'keystore:mirror.reddit');
+    assert.deepEqual(row.scopes, ['read', 'save']);
+
+    await assert.rejects(
+      () => s.upsertConnection({ connector_id: 'reddit', status: 'connected', scopes: [], token_ref: 'keystore:x.y', connected_at: iso(0), last_sync_at: null, items_imported: 0, revoked_at: null, access_token: 'abc' }),
+      /credential-shaped field/,
+    );
+    await assert.rejects(
+      () => s.upsertConnection({ connector_id: 'reddit', status: 'connected', scopes: [], token_ref: 'plain-token', connected_at: iso(0), last_sync_at: null, items_imported: 0, revoked_at: null }),
+      /keystore reference/,
+    );
+  } finally {
+    close();
+  }
+});
+
+/* ----------------------------------------------------------------- cursor --- */
+
+test('the ingest cursor survives a reopen and rejects nonsense', async () => {
+  const { s, dir, close } = await makeStore();
+  const file = join(dir, 'mirror.db');
+  try {
+    await s.setCursor('usage_stats', 1_700_000_000_000);
+    const reopened = new MirrorStore({ driver: NodeSqliteDriver.file(file), keys, random: counterRandom() });
+    await reopened.open();
+    assert.equal(await reopened.getCursor('usage_stats'), 1_700_000_000_000);
+    await assert.rejects(() => s.setCursor('usage_stats', Number.NaN), /invalid cursor/);
+    assert.equal(await s.getCursor('never_set'), null);
+  } finally {
+    close();
+  }
+});

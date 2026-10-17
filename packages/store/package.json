@@ -1,0 +1,14 @@
+{
+  "name": "@mirror/store",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Encrypted local storage: schema, migrations, AEAD field encryption, consent enforcement, retention sweep and delete-all.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "dependencies": {
+    "@mirror/shared-types": "0.0.0",
+    "@noble/ciphers": "^2.4.0",
+    "@noble/hashes": "^2.4.0"
+  }
+}
