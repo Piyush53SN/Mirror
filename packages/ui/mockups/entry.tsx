@@ -24,7 +24,7 @@ import {
   type ScreenState,
   type RenderedItem,
 } from '../screens/render';
-import { SECTION_J, PHASES, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index';
+import { SECTION_J, EXTRA_SCREENS, PHASES, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index';
 import type { MirrorTheme, ThemeName } from '../src/tokens';
 
 export {
@@ -38,6 +38,7 @@ export {
   renderToStaticMarkup,
   createTheme,
   SCREENS,
+  EXTRA_SCREENS,
   SECTION_J,
   PHASES,
   TAB_ITEMS,

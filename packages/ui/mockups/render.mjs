@@ -92,7 +92,7 @@ ${subtitle ? `<p data-review-chrome style="padding:0 32px 32px;color:#9D9D9D;fon
 // Bundled + imported through the shared seam, so the tests render exactly what
 // this script renders.
 const mod = await buildRenderer({ force: true });
-const { htmlFor, personaFor, SCREENS, SECTION_J, PHASES, createTheme } = mod;
+const { htmlFor, personaFor, SCREENS, EXTRA_SCREENS, SECTION_J, PHASES, createTheme } = mod;
 
 mkdirSync(OUT, { recursive: true });
 
@@ -103,7 +103,7 @@ for (const file of readdirSync(OUT)) {
 }
 for (const file of readdirSync(OUT)) {
   const slug = file.replace(/\.html$/, '');
-  if (file.endsWith('.html') && file !== 'index.html' && !SCREENS.some((sp) => sp.slug === slug)) rmSync(join(OUT, file));
+  if (file.endsWith('.html') && file !== 'index.html' && ![...SCREENS, ...EXTRA_SCREENS].some((sp) => sp.slug === slug)) rmSync(join(OUT, file));
 }
 
 const rendered = [];
@@ -113,7 +113,7 @@ const galleryFrame = new Map();
 const kindLabel = (kind) =>
   kind === 'screen' ? 'full screen' : kind === 'sheet' ? 'bottom sheet' : kind === 'state' ? 'state of a parent screen' : 'home-screen widget';
 
-for (const spec of SCREENS) {
+for (const spec of [...SCREENS, ...EXTRA_SCREENS]) {
   if (onlyScreen && spec.slug !== onlyScreen) continue;
   const frames = [];
   for (const state of spec.states) {
@@ -193,7 +193,21 @@ const gallery = page({
   subtitle: `All ${SCREENS.length} Section J items: screens, sheets, states and widgets, rendered from the design system. Dark is the default theme; light uses the same tokens.`,
   body: `<div class="gallery">
     ${rendered
-      .filter((r) => r.state === 'default' && r.theme === 'dark')
+      .filter((r) => r.state === 'default' && r.theme === 'dark' && r.id.startsWith('J'))
+      .map(
+        (r) => `<div class="cell" id="${r.slug}">
+          <h3>${r.id} · ${escapeHtml(r.title)}</h3>
+          <p>${escapeHtml(r.rule)}</p>
+          <p><span class="tag">${escapeHtml(kindLabel(r.kind))}</span><span class="tag">tier ${r.requires.length ? r.requires.join('/') : 'none'}</span><span class="tag">${r.phase}</span>${r.parent ? `<span class="tag">over ${escapeHtml(r.parent)}</span>` : ''}<a href="./${r.slug}.html">all states →</a></p>
+          ${galleryFrame.get(r.slug) ?? ''}
+        </div>`,
+      )
+      .join('')}
+  </div>
+  <h2 data-review-chrome style="padding: 0 32px; color: #ECECEC; font-size: 16px; letter-spacing: .04em; text-transform: uppercase;">P2 additions · not in Section J</h2>
+  <div class="gallery">
+    ${rendered
+      .filter((r) => r.state === 'default' && r.theme === 'dark' && !r.id.startsWith('J'))
       .map(
         (r) => `<div class="cell" id="${r.slug}">
           <h3>${r.id} · ${escapeHtml(r.title)}</h3>
@@ -215,7 +229,9 @@ writeFileSync(
       sectionJ: SECTION_J,
       phases: PHASES,
       items: SCREENS.length,
-      frames: rendered,
+      frames: rendered.filter((r) => r.id.startsWith('J')),
+      extraItems: EXTRA_SCREENS.length,
+      extras: rendered.filter((r) => !r.id.startsWith('J')),
     },
     null,
     2,

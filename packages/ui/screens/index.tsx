@@ -36,7 +36,9 @@ import {
   WhySheet,
 } from '../src/patterns';
 import { PERSONAS, type Persona } from './personas';
-import { Definition, NothingYet, ScoreBlock, TabFooter, canSupply, type ScreenProps, type ScreenState } from './kit';
+import { ConfidenceLine, Definition, NothingYet, ScoreBlock, TabFooter, canSupply, type ScreenProps, type ScreenState } from './kit';
+import { demoBands, demoScores } from './scores';
+import { DEMO_PREVIEW, IMPORT_MAX_MILLIONS, exportConsentSubject, monthRange } from './demoImport';
 
 /* ------------------------------------------------------------------ data ---- */
 
@@ -168,6 +170,7 @@ export function HomeScreen({ theme, persona, state, tab }: ScreenProps) {
   const [hero, setHero] = React.useState(0);
   const empty = state === 'empty';
   const slides = HERO(persona);
+  const signals = demoScores(persona);
   return (
     <Screen
       demo={persona.name}
@@ -217,6 +220,27 @@ export function HomeScreen({ theme, persona, state, tab }: ScreenProps) {
           </Card>
         ) : (
           <>
+            <Card theme={theme} elevated>
+              <SectionHeader theme={theme} title="Interest quality" caption="out of what Mirror can actually measure" />
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(2) }}>
+                <Text role="display" theme={theme}>
+                  {signals.iqs.value === null ? '—' : String(Math.round(signals.iqs.value))}
+                </Text>
+                <Text role="label" tone="muted" theme={theme}>
+                  {`/ ${signals.iqs.max}`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {signals.iqs.band}
+                </Text>
+              </View>
+              <ConfidenceLine theme={theme} confidence={signals.confidence} />
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+                {signals.iqs.caveat}
+              </Text>
+              <View style={{ marginTop: theme.space(3) }}>
+                <LinkButton theme={theme}>Why this score</LinkButton>
+              </View>
+            </Card>
             <HeroCarousel theme={theme} slides={slides} index={hero} onIndexChange={setHero} />
             <Card theme={theme}>
               <SectionHeader theme={theme} title="Last 7 days" caption={hedged(duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0)), 'D', 'duration')} />
@@ -1100,7 +1124,7 @@ export function DepthScreen({ theme, persona, state, tab }: ScreenProps) {
   // named after. Without a content-level signal it refuses rather than relabelling.
   const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
   const empty = state === 'empty' || !canMeasure;
-  const bands = persona.depthBands;
+  const bands = demoBands(persona);
   const under8 = bands[0]?.share ?? 0;
   return (
     <Screen
@@ -1205,8 +1229,16 @@ export function CuriosityHabitScreen({ theme, persona, state, tab }: ScreenProps
   // named after. Without a content-level signal it refuses rather than relabelling.
   const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
   const empty = state === 'empty' || !canMeasure;
-  const { deepHours, habitHours, switchesPerHour, note } = persona.curiosity;
+  const { note } = persona.curiosity;
+  // The split is engine output, not a persona literal: the same sessions and
+  // labels that produce the IQS produce this. A missing split is not "zero deep
+  // hours" — it is no measurement, and the empty state already says so.
+  const split = demoScores(persona).curiosity;
+  const deepHours = split ? Math.round((split.deepMs / 3_600_000) * 10) / 10 : 0;
+  const habitHours = split ? Math.round((split.habitMs / 3_600_000) * 10) / 10 : 0;
+  const switchesPerHour = split ? Math.round(split.switchesPerHour * 10) / 10 : 0;
   const total = deepHours + habitHours || 1;
+  const unlabeledHours = split ? Math.round((split.unlabeledMs / 3_600_000) * 10) / 10 : 0;
   return (
     <Screen
       demo={persona.name}
@@ -1253,7 +1285,7 @@ export function CuriosityHabitScreen({ theme, persona, state, tab }: ScreenProps
                 />
               </View>
               <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-                {`${switchesPerHour} app switches per hour.`}
+                {`${switchesPerHour} app switches per hour. ${unlabeledHours}h of attended time has no intent label yet and is counted, not guessed.`}
               </Text>
             </Card>
             <Card theme={theme}>
@@ -1290,8 +1322,8 @@ export function CuriosityHabitScreen({ theme, persona, state, tab }: ScreenProps
 
 /** J7 · IQS — the composite score, built only from parts that exist. */
 export function IqsScreen({ theme, persona, state, tab }: ScreenProps) {
-  const empty = state === 'empty';
-  const iqs = persona.iqs;
+  const empty = state === 'empty' || demoScores(persona).iqs.value === null;
+  const { iqs, confidence } = demoScores(persona);
   return (
     <Screen
       demo={persona.name}
@@ -1321,14 +1353,27 @@ export function IqsScreen({ theme, persona, state, tab }: ScreenProps) {
             <ScoreBlock
               theme={theme}
               title="Interest Quality Score"
-              score={iqs.value}
+              score={iqs.value ?? 0}
+              max={iqs.max}
               band={iqs.band}
-              parts={iqs.parts}
+              parts={iqs.factors.map((factor) => ({
+                label: factor.label,
+                points: factor.points,
+                max: factor.max,
+                tier: factor.tier,
+                detail: factor.detail,
+              }))}
               caveat={iqs.caveat}
               action={<LinkButton theme={theme}>Why this score</LinkButton>}
             />
+            <Divider theme={theme} />
+            <ConfidenceLine theme={theme} confidence={confidence} />
           </Card>
         )}
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="What this confidence means" />
+          <FactList theme={theme} items={confidence.reasons.map((reason) => ({ label: 'Reason', value: '', detail: reason }))} />
+        </Card>
         <Callout theme={theme} tone="limit">
           <Text role="label" theme={theme}>
             IQS is an estimate from behaviour on this device. It is not a diagnosis, not a personality test, and not comparable
@@ -1481,29 +1526,43 @@ export function ConnectionsScreen({ theme, persona, tab }: ScreenProps) {
 
 /** J17 · Why drawer — a sheet over whatever number the user is questioning. */
 export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
-  const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
+  const { iqs, confidence } = demoScores(persona);
+  const measured = iqs.factors.filter((factor) => factor.measurable);
+  const missing = iqs.factors.filter((factor) => !factor.measurable);
   return (
     <Sheet
       open
       theme={theme}
-      title="Why this number"
-      subtitle="Every part that produced yesterday's total"
+      title="Why this score"
+      subtitle="Every part that produced the number, including the parts that could not be measured"
       onClose={() => undefined}
     >
       <View style={{ gap: theme.space(3) }}>
         <WhySheet
           theme={theme}
-          score={sum}
-          maxScore={sum}
-          components={persona.whyParts.map((p) => ({ label: p.label, points: p.points, note: p.note, tier: p.tier }))}
-          caveat="The parts add up exactly, because a total you cannot take apart is not a measurement."
+          score={iqs.value ?? 0}
+          maxScore={iqs.max}
+          components={measured.map((factor) => ({ label: factor.label, points: factor.points, note: factor.detail, tier: factor.tier }))}
+          caveat={iqs.caveat}
         />
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="Confidence" caption="coverage, sample, labels and tiers" />
+          <ConfidenceLine theme={theme} confidence={confidence} />
+          <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>
+            {confidence.reasons.map((reason) => (
+              <Text key={reason} role="micro" tone="muted" theme={theme}>
+                {`· ${reason}`}
+              </Text>
+            ))}
+          </View>
+        </Card>
         <Card theme={theme}>
           <SectionHeader theme={theme} title="What is not in this number" />
           <FactList
             theme={theme}
             items={[
-              { label: 'Content you watched', value: 'not measured', detail: 'Mirror cannot read it and does not try.' },
+              ...missing.map((factor) => ({ label: factor.label, value: 'not measured', detail: factor.detail })),
+              { label: 'Content you watched', value: 'not measured', detail: 'It is content, so it stays on this device and is not scored by name.' },
               { label: 'Whether any of it was good for you', value: 'not measured' },
               { label: 'Anything on another device', value: 'not measured' },
             ]}
@@ -1511,7 +1570,8 @@ export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
         </Card>
         <Callout theme={theme} tone="limit">
           <Text role="label" theme={theme}>
-            If a part is missing from this list, the number is smaller. Mirror never re-weights the parts to hide a gap.
+            The measured parts add up exactly. If a part is missing it is listed, and the maximum is smaller — Mirror never
+            re-weights the parts to hide a gap.
           </Text>
         </Callout>
       </View>
@@ -1866,6 +1926,114 @@ export function WidgetItem({ theme, persona }: ScreenProps) {
   );
 }
 
+/* ============================================================ P2 import ==== */
+
+/**
+ * Import an export — the screen that makes the P1b importers usable.
+ *
+ * This is deliberately **not** a Section J item: the brief's 28 items do not name
+ * an import flow, and inventing a 29th entry would quietly change the inventory.
+ * It ships as a P2 addition and the gallery lists it separately.
+ *
+ * The note about large Takeout files is here because it is the first thing that
+ * goes wrong in real life: a decade of watch history is one enormous JSON file,
+ * and a reader that truncates it would produce a confident, wrong picture.
+ */
+export function ImportScreen({ theme, persona, state, tab }: ScreenProps) {
+  const empty = state === 'empty';
+  return (
+    <Screen
+      demo={persona.name}
+      title="Import an export"
+      theme={theme}
+      padded
+      header={<Toolbar theme={theme} title="Import an export" subtitle="Your file, read on this phone" />}
+      footer={<TabFooter theme={theme} active={tab ?? 'you'} />}
+    >
+      <View style={{ gap: theme.space(3) }}>
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="What an import can read" caption="tier B · user export · you choose the file" />
+          <FactList
+            theme={theme}
+            items={[
+              { label: 'Reddit data export', value: 'saved only', detail: 'saved_posts.csv and saved_comments.csv. Authored posts, comments and chat are never read.' },
+              { label: 'Google Takeout', value: 'watch history', detail: 'watch-history.json. Advertisement entries are skipped and counted.' },
+            ]}
+          />
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+            Nothing is uploaded. The file is read here, the preview is built here, and the import is written to the encrypted
+            local database.
+          </Text>
+        </Card>
+
+        <Card theme={theme} elevated>
+          <SectionHeader theme={theme} title="Large Takeout files" caption="read once, never truncated" />
+          <Text role="label" theme={theme}>
+            {`A decade of YouTube history can be 50–200 MB in one watch-history.json. Mirror reads one file at a time and refuses a file over ${IMPORT_MAX_MILLIONS} million characters (64 MiB) instead of cutting it short.`}
+          </Text>
+          <Text role="label" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+            If yours is larger, Mirror says so and asks you to request a shorter date range or split the archive. It will not
+            import part of a file and call the rest empty.
+          </Text>
+          <Callout theme={theme} tone="limit">
+            <Text role="micro" theme={theme}>
+              A partial import would make a quiet week look quiet. That is the one failure this screen exists to prevent.
+            </Text>
+          </Callout>
+        </Card>
+
+        {empty ? (
+          <NothingYet theme={theme} needs={[]} available={persona.tiers} feature="Import" actionLabel="Choose a file" />
+        ) : (
+          <>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Preview" caption="nothing has been written yet" />
+              <FactList
+                theme={theme}
+                items={[
+                  { label: 'Items in the file', value: DEMO_PREVIEW.total.toLocaleString('en-GB') },
+                  { label: 'New to Mirror', value: DEMO_PREVIEW.fresh.toLocaleString('en-GB') },
+                  { label: 'Already imported', value: String(DEMO_PREVIEW.duplicates), detail: 'Matched by a keyed hash; the original id is not stored.' },
+                  { label: 'Months covered', value: monthRange(DEMO_PREVIEW) ?? 'none yet' },
+                ]}
+              />
+              {DEMO_PREVIEW.warnings.length > 0 ? (
+                <View style={{ marginTop: theme.space(2) }}>
+                  <Callout theme={theme} tone="limit">
+                    <Text role="micro" theme={theme}>
+                      {`${DEMO_PREVIEW.warnings.length === 1 ? 'One row was' : `${DEMO_PREVIEW.warnings.length} rows were`} refused, not guessed at: ${DEMO_PREVIEW.warnings[0]!.reason}.`}
+                    </Text>
+                  </Callout>
+                </View>
+              ) : null}
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+                Nothing is kept until you confirm. The preview is a count, not a copy.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3), flexWrap: 'wrap' }}>
+                <Pill theme={theme} variant="secondary">Choose another file</Pill>
+                <Pill theme={theme} variant="quiet">Cancel</Pill>
+              </View>
+            </Card>
+
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Before you confirm" caption="one grant, revocable in one tap" />
+              <FactList
+                theme={theme}
+                items={[
+                  { label: 'Grant needed', value: exportConsentSubject(DEMO_PREVIEW.parserId), detail: 'Only this import. It does not connect an account.' },
+                  { label: 'If you revoke it', value: 'items are deleted', detail: 'Exactly the items this import produced; nothing else is touched.' },
+                  { label: 'What stays', value: 'counts, no titles', detail: 'Daily totals survive retention; titles expire with the raw events.' },
+                ]}
+              />
+            </Card>
+          </>
+        )}
+      </View>
+    </Screen>
+  );
+}
+
 /* ================================================================== J28 ===== */
 
 /** J28 · Update available — calm, non-blocking, and explicit about collection. */
@@ -1982,6 +2150,28 @@ export const SECTION_J: { id: string; title: string; kind: ScreenKind; parent?: 
   { id: 'J26', title: 'Private Share Card preview', kind: 'state', parent: 'weekly-report-goals' },
   { id: 'J27', title: 'Home-screen widget', kind: 'widget', parent: 'dashboard' },
   { id: 'J28', title: '"Update available / app version" state (calm, non-blocking)', kind: 'state', parent: 'dashboard' },
+];
+
+/**
+ * Screens that are **not** Section J items but ship in a phase.
+ *
+ * The P2 import flow is the first: the brief's 28 items are fixed, and adding a
+ * 29th to `SCREENS` would make the inventory test a lie. Extras are rendered by
+ * the gallery under their own heading and are listed in the manifest separately.
+ */
+export const EXTRA_SCREENS: ScreenSpec[] = [
+  {
+    id: 'X1',
+    slug: 'import-export',
+    title: 'Import an export',
+    kind: 'screen',
+    tab: 'you',
+    phase: 'P2',
+    requires: [],
+    states: ['default', 'empty'],
+    rule: 'Preview first, then confirm; read one file at a time and refuse a file too large to read whole.',
+    Component: ImportScreen,
+  },
 ];
 
 export const SCREENS: ScreenSpec[] = [

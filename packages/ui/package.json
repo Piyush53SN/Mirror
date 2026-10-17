@@ -15,7 +15,7 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "mockups": "node mockups/render.mjs",
-    "test": "node --test tests/ui.test.mjs tests/mockups.test.mjs"
+    "test": "node --test tests/ui.test.mjs tests/mockups.test.mjs tests/import.test.mjs"
   },
   "peerDependencies": {
     "react": ">=19",
@@ -29,5 +29,9 @@
     "react-native": "^0.88.0",
     "react-test-renderer": "^19.3.1",
     "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "@mirror/core-analytics": "0.0.0",
+    "@mirror/importers": "0.0.0"
   }
 }

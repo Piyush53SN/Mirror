@@ -500,7 +500,9 @@ export function FactList({ items, theme }: { items: { label: string; value: stri
   return (
     <View>
       {items.map((item, i) => (
-        <View key={item.label}>
+        // The index is part of the key on purpose: a reasons list legitimately
+        // repeats the label "Reason", and a label-only key would duplicate.
+        <View key={`${item.label}-${i}`}>
           <ListRow title={item.label} meta={item.detail} trailing={<Text role="label" theme={t}>{item.value}</Text>} theme={t} />
           {i < items.length - 1 ? <Divider theme={t} /> : null}
         </View>

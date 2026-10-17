@@ -28,14 +28,7 @@ export type Persona = {
   /** Session-length bands. Tier D is enough for these — they are the honest floor. */
   depthBands: { label: string; share: number; note: string }[];
   /** Curiosity vs habit: the two halves of the same week. */
-  curiosity: { deepHours: number; habitHours: number; switchesPerHour: number; note: string };
-  /** The composite score, with the parts that produce it. */
-  iqs: {
-    value: number;
-    band: string;
-    parts: { label: string; points: number; max: number; tier: DataTier; detail: string }[];
-    caveat: string;
-  };
+  curiosity: { deepHours: number; habitHours: number; switchesPerHour: number; lateNightShare: number; note: string };
   /** Learning arcs: a topic followed over months, with what came next. */
   arcs: { topic: string; stage: string; weeks: number[]; next: string; sourceTier: string }[];
   /** How a topic was reached, step by step. Empty without tier A/B/C. */
@@ -47,8 +40,6 @@ export type Persona = {
   intents: { label: string; ask: boolean; note: string }[];
   chat: { with: string; topic: string; messages: { from: 'you' | 'them'; text: string }[] } | null;
   update: { current: string; available: string; notes: string; bytes: number };
-  /** The dashboard's headline number, explained part by part. */
-  whyParts: { label: string; points: number; note: string; tier: DataTier }[];
 };
 
 const baseConnected = [
@@ -92,19 +83,7 @@ export const PERSONAS: Persona[] = [
       { label: '5 – 20 min', share: 0.08, note: 'longer sittings' },
       { label: 'over 20 min', share: 0.01, note: 'rare, and mostly one app' },
     ],
-    curiosity: { deepHours: 5.1, habitHours: 8.4, switchesPerHour: 38, note: 'Habit is the larger half. That is the whole finding, and no nudge was sent about it.' },
-    iqs: {
-      value: 41,
-      band: 'usage-only band',
-      parts: [
-        { label: 'Session length mix', points: 14, max: 30, tier: 'D', detail: '31% of opens end under 8 seconds.' },
-        { label: 'Deliberate share', points: 12, max: 25, tier: 'D', detail: 'From your own labels, not from content.' },
-        { label: 'Switching pressure', points: 8, max: 20, tier: 'D', detail: '38 switches per hour, evening-weighted.' },
-        { label: 'Late-night share', points: 7, max: 15, tier: 'D', detail: '36% after 11pm.' },
-        { label: 'Topic depth', points: 0, max: 10, tier: 'A', detail: 'Not measured: needs topic data.' },
-      ],
-      caveat: 'The band is capped at 75 while topic depth is unmeasured. A score without its parts would be a horoscope.',
-    },
+    curiosity: { deepHours: 5.1, habitHours: 8.4, switchesPerHour: 38, lateNightShare: 0.36, note: 'Habit is the larger half. That is the whole finding, and no nudge was sent about it.' },
     arcs: [],
     paths: [],
     rabbit: { sessions: 9, minutes: 118, lateNightShare: 0.38, example: 'Short-video sessions that restarted 5 times inside 20 minutes.' },
@@ -120,11 +99,6 @@ export const PERSONAS: Persona[] = [
     ],
     chat: null,
     update: { current: '0.1.0', available: '0.2.0', notes: 'Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.', bytes: 8_400_000 },
-    whyParts: [
-      { label: 'Yesterday, before 8pm', points: 52, note: 'from foreground time', tier: 'D' },
-      { label: 'Evening block', points: 41, note: 'after 8pm, 3 sessions', tier: 'D' },
-      { label: 'Late-night block', points: 33, note: 'after 11pm, 1 session', tier: 'D' },
-    ],
   },
   {
     id: 'rehan',
@@ -162,19 +136,7 @@ export const PERSONAS: Persona[] = [
       { label: '5 – 20 min', share: 0.16, note: 'sittings with a subject' },
       { label: 'over 20 min', share: 0.05, note: 'long reads and lectures' },
     ],
-    curiosity: { deepHours: 9.8, habitHours: 5.2, switchesPerHour: 21, note: 'Curiosity is ahead, and the shallow tail is concentrated in one app.' },
-    iqs: {
-      value: 67,
-      band: 'measured band',
-      parts: [
-        { label: 'Session length mix', points: 22, max: 30, tier: 'D', detail: 'Only 19% of opens end under 8 seconds.' },
-        { label: 'Deliberate share', points: 18, max: 25, tier: 'D', detail: 'From your labels.' },
-        { label: 'Switching pressure', points: 13, max: 20, tier: 'D', detail: '21 switches per hour.' },
-        { label: 'Late-night share', points: 6, max: 15, tier: 'D', detail: '23% after 11pm.' },
-        { label: 'Topic depth', points: 8, max: 10, tier: 'C', detail: 'Three topics above depth 40, two still growing.' },
-      ],
-      caveat: 'Computed only from parts that exist. The topic part uses tier B/C data and names which.',
-    },
+    curiosity: { deepHours: 9.8, habitHours: 5.2, switchesPerHour: 21, lateNightShare: 0.2, note: 'Curiosity is ahead, and the shallow tail is concentrated in one app.' },
     arcs: [
       { topic: 'Film photography', stage: 'practising', weeks: [8, 14, 21, 33, 44, 58, 71, 78], next: 'Darkroom printing — three sources followed, none opened yet.', sourceTier: 'B+C' },
       { topic: 'Rust programming', stage: 'learning', weeks: [3, 9, 18, 27, 38, 47, 58, 64], next: 'Ownership chapter, revisited twice.', sourceTier: 'C' },
@@ -223,11 +185,6 @@ export const PERSONAS: Persona[] = [
       ],
     },
     update: { current: '0.1.0', available: '0.2.0', notes: 'Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.', bytes: 8_400_000 },
-    whyParts: [
-      { label: 'Yesterday, before 8pm', points: 61, note: 'from foreground time', tier: 'D' },
-      { label: 'Evening block', points: 34, note: 'after 8pm, 2 sessions', tier: 'D' },
-      { label: 'Late-night block', points: 12, note: 'after 11pm, 1 session', tier: 'D' },
-    ],
   },
   {
     id: 'mei',
@@ -265,19 +222,7 @@ export const PERSONAS: Persona[] = [
       { label: '5 – 20 min', share: 0.28, note: 'papers, lectures, long reads' },
       { label: 'over 20 min', share: 0.12, note: 'sittings with a subject and a question' },
     ],
-    curiosity: { deepHours: 12.4, habitHours: 2.9, switchesPerHour: 14, note: 'Deep work dominates. Mirror says so once and then stays quiet.' },
-    iqs: {
-      value: 82,
-      band: 'measured band',
-      parts: [
-        { label: 'Session length mix', points: 27, max: 30, tier: 'D', detail: '11% of opens end under 8 seconds.' },
-        { label: 'Deliberate share', points: 21, max: 25, tier: 'D', detail: 'From your labels.' },
-        { label: 'Switching pressure', points: 17, max: 20, tier: 'D', detail: '14 switches per hour.' },
-        { label: 'Late-night share', points: 12, max: 15, tier: 'D', detail: '8% after 11pm.' },
-        { label: 'Topic depth', points: 5, max: 10, tier: 'A', detail: 'Four topics followed; two went past depth 60.' },
-      ],
-      caveat: 'The parts are all measured here. The band tops out at 85: the last points would need content quality, which Mirror cannot judge.',
-    },
+    curiosity: { deepHours: 12.4, habitHours: 2.9, switchesPerHour: 14, lateNightShare: 0.12, note: 'Deep work dominates. Mirror says so once and then stays quiet.' },
     arcs: [
       { topic: 'Astronomy', stage: 'deep', weeks: [18, 26, 34, 47, 55, 62, 74, 81], next: 'Stellar spectra — an instrument project, two sources opened.', sourceTier: 'A+C' },
       { topic: 'Urban gardening', stage: 'practising', weeks: [30, 36, 42, 50, 57, 61, 64, 66], next: 'Composting, read consistently for 6 weeks.', sourceTier: 'B' },
@@ -328,11 +273,6 @@ export const PERSONAS: Persona[] = [
       ],
     },
     update: { current: '0.1.0', available: '0.2.0', notes: 'Adds focus windows and a smaller widget. Nothing new is collected, and no permission is added.', bytes: 8_400_000 },
-    whyParts: [
-      { label: 'Yesterday, before 8pm', points: 74, note: 'from foreground time', tier: 'D' },
-      { label: 'Evening block', points: 52, note: 'after 8pm, 2 sessions', tier: 'D' },
-      { label: 'Late-night block', points: 8, note: 'after 11pm, 1 session', tier: 'D' },
-    ],
   },
 ];
 

@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 22572
+      "bytes": 25466
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 22556
+      "bytes": 25449
     },
     {
       "id": "J3",
@@ -471,7 +471,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16153
+      "bytes": 16223
     },
     {
       "id": "J5",
@@ -494,7 +494,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16143
+      "bytes": 16213
     },
     {
       "id": "J5",
@@ -563,7 +563,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13486
+      "bytes": 13563
     },
     {
       "id": "J6",
@@ -586,7 +586,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13478
+      "bytes": 13555
     },
     {
       "id": "J6",
@@ -651,7 +651,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 18272
+      "bytes": 23794
     },
     {
       "id": "J7",
@@ -670,7 +670,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 18259
+      "bytes": 23775
     },
     {
       "id": "J7",
@@ -689,7 +689,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 9045
+      "bytes": 13235
     },
     {
       "id": "J7",
@@ -708,7 +708,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 9038
+      "bytes": 13223
     },
     {
       "id": "J8",
@@ -1401,7 +1401,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 31960
+      "bytes": 40023
     },
     {
       "id": "J17",
@@ -1420,7 +1420,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 31941
+      "bytes": 40000
     },
     {
       "id": "J18",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 27109
+      "bytes": 30003
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 27093
+      "bytes": 29986
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 25457
+      "bytes": 28351
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 25443
+      "bytes": 28336
     },
     {
       "id": "J23",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 29739
+      "bytes": 32633
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 29721
+      "bytes": 32614
     },
     {
       "id": "J25",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 27389
+      "bytes": 30283
     },
     {
       "id": "J28",
@@ -2112,7 +2112,78 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 27369
+      "bytes": 30262
+    }
+  ],
+  "extraItems": 1,
+  "extras": [
+    {
+      "id": "X1",
+      "slug": "import-export",
+      "title": "Import an export",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
+      "bytes": 18301
+    },
+    {
+      "id": "X1",
+      "slug": "import-export",
+      "title": "Import an export",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
+      "bytes": 18285
+    },
+    {
+      "id": "X1",
+      "slug": "import-export",
+      "title": "Import an export",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
+      "bytes": 10157
+    },
+    {
+      "id": "X1",
+      "slug": "import-export",
+      "title": "Import an export",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
+      "bytes": 10151
     }
   ]
 }

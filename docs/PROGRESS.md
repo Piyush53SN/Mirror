@@ -17,8 +17,9 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P0 | **approved** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
 | P1a | **approved** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
 | P1b-1 | **approved** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI — commit `2753206` |
-| P1b-2 | **delivered for review** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL |
-| P2…P7 | not started | — |
+| P1b-2 | **approved** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL — commit `e3c9cd2` |
+| P2 | **delivered for review** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. Gradle build and signing remain MANUAL |
+| P3…P7 | not started | — |
 
 ---
 
@@ -362,6 +363,56 @@ clean; the bundle check is run last and its numbers are in the report.
   until a real Gradle build exists.
 - Android-only collection; iOS DeviceActivity is P5.
 
+
+
+### P2 delivered (2026-10-17)
+
+**P2 is the score and its reasons.** The ten-line plan is in `docs/P2.md`; the
+short version is: step 0 first, then the import screen, then the engine, then the
+screens that read it, then Release Stage 1 — with the bundle check last.
+
+1. **Step 0 is MANUAL, as reported before any code was written.**
+   `bash scripts/android/build-and-gate.sh` exits 2 because there is no JDK and
+   no Android SDK in this environment. It is the only route to a merged manifest:
+   it refuses a stale one, runs `prebuild` when needed, compiles, and then audits
+   the merged file. Six tests cover the refusal paths; twelve cover the audit.
+2. **One source of numbers.** `personas.ts` no longer contains `iqs` or
+   `whyParts`. `scores.ts` generates a deterministic week from the persona id and
+   calls `scoreIqs`/`sessionBands`/`curiositySplit`. The old `/126` denominator is
+   impossible now: the Why sheet takes `maxScore` from the engine (`/75` usage-only).
+3. **Missing data stays missing.** A factor that cannot be measured has
+   `value: null`, its maximum is deducted, and a reason says why. Zero sessions
+   returns `level: 'none'`, not "0 out of 75".
+4. **Confidence is an explanation.** Coverage (counted gaps), sample size, label
+   count and tier completeness produce four sentences; the Why sheet prints all
+   of them.
+5. **The import screen is real.** It renders a frozen `DEMO_PREVIEW` produced by
+   the actual `preview()`; `packages/ui/tests/import.test.mjs` recomputes the
+   preview and fails if the screen's numbers drift. It also proves `commit()` is
+   idempotent and refuses without a live grant.
+6. **Large Takeout files are refused, not truncated.** One file at a time,
+   `MAX_FILE_CHARS` = 64 Mi characters (67.1 M). The UI sentence comes from
+   `oversizedFileSentence()` and is tested.
+7. **The import screen is not J29.** Section J is fixed at 28 items; the screen is
+   `EXTRA_SCREENS` X1 and the gallery lists it under "P2 additions".
+8. **Release Stage 1 preflight is automated; signing is not.**
+   `scripts/android/release-preflight.mjs` checks package id, versionCode, AAB
+   profile, submit track and refuses a committed keystore; it prints the manual
+   steps and says "Built artifact: NOT FOUND".
+
+**Tests:** 386 Node tests (was 359), including 17 scoring tests (4 brief edges +
+fast-check properties) and 6 import-screen tests. Existing sessionisation property
+tests unchanged (3). `npm run verify` exit 0.
+
+**P2 limitations, recorded:**
+
+- No Gradle build and no signed artifact. Step 0 and Stage 1 remain MANUAL.
+- The demo week is synthetic; the device path is unit-tested but not run on a
+  phone in this environment.
+- Import parsing is in memory with a 64 Mi character cap; no ZIP reader, no
+  streaming parser.
+- Sessions are per app; cross-app sitting merging is P3.
+- No i18n/RTL pass yet.
 
 
 ## Approved decisions

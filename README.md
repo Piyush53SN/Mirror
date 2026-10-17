@@ -8,14 +8,14 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** P-UI-0…P-UI-2, **P0**, **P1a** and **P1b-1 are approved**.
-> **P1b-2 is delivered for review:** cursor-state collection with counted data
-> gaps, schema v2 with a v1→v2 migration, session attribution and daily rollups,
-> Reddit-export and Google Takeout importers, and a labelled placeholder embedder.
-> The first Android prebuild has run, but **the Kotlin module is still
-> uncompiled** — this environment has no JDK or Android SDK, so that step is
-> MANUAL. There is still **no app binary beyond a one-screen entry**, and no UI is
-> wired to the store.
+> **Build status:** P-UI-0…P-UI-2, **P0**, **P1a**, **P1b-1** and **P1b-2 are
+> approved**. **P2 is delivered for review:** the IQS scoring engine with signal
+> confidence, the dashboard, Why sheet, Depth, Curiosity vs habit, IQS and Sessions
+> screens reading engine output, and an import screen over the tier-B parsers.
+> **Step 0 (Gradle compile + merged-manifest gate) and Release Stage 1 (signed
+> APK/AAB) are MANUAL** — this environment has no JDK, no Android SDK and no
+> signing identity. `make release-stage1` runs every automated check and prints
+> the manual remainder.
 
 ---
 
@@ -105,16 +105,17 @@ reintroduces a conflict, the fix is to resolve the versions — not to add
 
 ```bash
 npm install
-npm run verify            # all checks: 359 Node + 9 Python
+npm run verify            # all checks: 386 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
-make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
+make android-build        # Gradle + merged-manifest gate — needs JDK/SDK (MANUAL precondition)
+make release-stage1       # Stage 1 preflight; signing itself is MANUAL
 ```
 
-Measured: **359** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
-event schema 23 · records 21 · preferences 22 · sessions 16 · ingestion 18 ·
-collector 25 · connectors 20 · store 22 · embeddings 12 · importers 19 ·
-config 17 · merged manifest 12 · canary 18 · security 18) and **9** Python addon
-tests. `npm run verify` is the CI target. The prototype
+Measured: **386** Node tests (tokens 24 · prototype 18 · ui 37 · import screen 6
+· mockups 17 · event schema 23 · records 21 · preferences 22 · sessions 16 ·
+ingestion 18 · collector 25 · connectors 20 · store 22 · embeddings 12 ·
+importers 19 · scoring 17 · config 17 · merged manifest 12 · release 4 · canary
+18 · security 18) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
 

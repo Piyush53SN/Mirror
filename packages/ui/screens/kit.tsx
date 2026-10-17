@@ -105,6 +105,56 @@ export type ScorePart = { label: string; points: number; max: number; tier: Data
  * score from being read as a verdict. `onWhy` is rendered by the caller (the
  * Why drawer), not here, so this stays presentational.
  */
+/**
+ * How much the number above it can be trusted.
+ *
+ * Not a badge for decoration: the level is derived from coverage, sample size,
+ * label count and tier completeness, and the detail line says which of those is
+ * weak. A screen that shows a score without this is hiding the caveat.
+ */
+export function ConfidenceLine({
+  theme,
+  confidence,
+  compact = false,
+}: {
+  theme: MirrorTheme;
+  confidence: { level: 'high' | 'medium' | 'low' | 'none'; score: number; sample: number; labels: number; coverage: number };
+  compact?: boolean;
+}) {
+  const label =
+    confidence.level === 'high'
+      ? 'High confidence'
+      : confidence.level === 'medium'
+        ? 'Medium confidence'
+        : confidence.level === 'low'
+          ? 'Low confidence'
+          : 'Not measured';
+  const detail = `${Math.round(confidence.score * 100)}% · ${confidence.sample} sitting${confidence.sample === 1 ? '' : 's'} · ${Math.round(
+    confidence.coverage * 100,
+  )}% of the window measured`;
+  return (
+    <View style={{ gap: theme.space(1) }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: theme.space(2) }}>
+        <Text role="label" theme={theme}>
+          {label}
+        </Text>
+        {compact ? null : (
+          <Text role="micro" tone="muted" theme={theme}>
+            {detail}
+          </Text>
+        )}
+      </View>
+      <Meter
+        theme={theme}
+        value={confidence.score}
+        label={`Confidence in this score: ${label.toLowerCase()}`}
+        caption={compact ? `${Math.round(confidence.score * 100)}%` : undefined}
+        tone="muted"
+      />
+    </View>
+  );
+}
+
 export function ScoreBlock({
   theme,
   title,
