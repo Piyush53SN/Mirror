@@ -1,0 +1,103 @@
+name: Privacy canary (device and extension)
+
+# Runs the canary against a real Android emulator and a real Chromium. Both need
+# artifacts that do not exist before P1 (an APK) and P5 (a built extension), so
+# the jobs check for them first and report "not applicable" instead of failing a
+# repository that has no app yet. When the artifact is present, a single canary in
+# any request, header, body, log line or error report fails the job.
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Which surface to test
+        type: choice
+        options: [both, android, extension]
+        default: both
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'android' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install
+        run: npm ci
+      - name: Is there an installable build?
+        id: guard
+        run: |
+          if [ -f builds/mirror-debug.apk ]; then
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+            echo "::notice::No debug APK in builds/. Expected before P1; nothing to test yet."
+          fi
+      - name: Merged AndroidManifest audit
+        if: steps.guard.outputs.ready == 'yes'
+        run: |
+          # app.json is intent; this reads what Gradle actually merged.
+          npm run android:manifest || { code=$?; [ "$code" = "2" ] && echo "::warning::merged manifest not built" && exit 0 || exit $code; }
+      - name: Install mitmproxy
+        if: steps.guard.outputs.ready == 'yes'
+        run: pipx install mitmproxy
+      - name: Run the canary on an emulator
+        if: steps.guard.outputs.ready == 'yes'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          script: bash scripts/privacy/android-emulator.sh
+      - name: Upload the canary report
+        if: always() && steps.guard.outputs.ready == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-canary-report
+          path: privacy/android-report.json
+          if-no-files-found: warn
+
+  extension:
+    if: ${{ inputs.platform == 'both' || inputs.platform == 'extension' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Is there a built extension?
+        id: guard
+        run: |
+          if [ -f apps/extension/dist/background.js ]; then
+            echo "ready=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=no" >> "$GITHUB_OUTPUT"
+            echo "::notice::No built extension in apps/extension/dist. Expected before P5."
+          fi
+      - name: Install Playwright and Chromium
+        if: steps.guard.outputs.ready == 'yes'
+        run: npx playwright install --with-deps chromium
+      - name: Run the canary in Chromium
+        if: steps.guard.outputs.ready == 'yes'
+        run: node scripts/privacy/extension-canary.mjs --extension apps/extension/dist
+      - name: Upload the canary report
+        if: always() && steps.guard.outputs.ready == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-canary-report
+          path: privacy/extension-report.json
+          if-no-files-found: warn
