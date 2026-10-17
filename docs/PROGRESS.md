@@ -14,8 +14,8 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P-UI-0 | **approved** | image analysis → design brief (`docs/design/00-image-analysis.md`), measurements (`docs/design/measurements.md`), reference copy + analyzer |
 | P-UI-1 | **accepted** | generated tokens (`packages/ui/tokens/`), single-file phone prototype (`prototype/index.html`) — commit `93e83cc` |
 | P-UI-2 | **approved with corrections** | React Native design system (`packages/ui/src`), all 28 Section J items (`packages/ui/screens`), mockup gallery (`packages/ui/mockups/gallery`), **96** tests. Corrections from review applied — see below |
-| P0 | **delivered for review** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
-| P1a | **next** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed. No new features |
+| P0 | **approved** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
+| P1a | **delivered for review** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
 | P1b | not started | encrypted local storage, Android UsageStats collector, ingestion, importers, embeddings |
 | P2…P7 | not started | — |
 
@@ -53,6 +53,11 @@ this document.
    React 19 / RN 0.88; npm's strict peer resolution rejects that tree. P1a removes
    the React 18 half, after which `npm install` must succeed **without** the flag
    and CI must fail if it does not.
+5a. **P1a must show that the 33 high advisories do not reach the app bundle.**
+   They are all in build-time tooling (Expo CLI, Metro, Jest, RN CLI), but "it is
+   dev-only" is a claim, not evidence: P1a packages the real UI through Metro with
+   a source map and checks the module graph against the audit list. The check and
+   its result are recorded in the P1a report.
 6. **The Family Controls request text is ready to submit** —
    `docs/store/FAMILY_CONTROLS_REQUEST.md`, with the two fields only the account
    holder can fill (Team ID, support email) marked. It is a **MANUAL** step and is
@@ -67,11 +72,17 @@ this document.
   identity, keyed by a per-install secret in the platform keystore. It allows
   dedupe and joins without storing a URL or title. Validator and schema both
   require it to ride on a `content: "content"` event.
-- `topic_vector` — exactly 32 finite numbers in [-1, 1] with a unit norm
+- `topic_vector` — exactly **384** finite numbers in [-1, 1] with a unit norm
   (0.97–1.03 tolerance for 4-decimal rounding). A direction, not a title. The
   validator rejects wrong dimensions, NaN, out-of-range values, the zero vector
   and non-unit vectors; the JSON Schema description carries the shape and the
   executable check carries the norm.
+  - **Dimension corrected (2026-10-17): 32 → 384.** The specification says 384;
+    the earlier value was my own choice, and it was wrong. 384 is also the output
+    width of the MiniLM-class encoders P1b will run on-device, so no projection
+    step is needed. Storage cost: float32 × 384 = **1,536 bytes per content
+    event**, which is why P1b stores vectors as BLOBs, not JSON numbers; the
+    schema is the wire shape, not the on-disk encoding.
 - `completion_ratio` — 0..1, replacing the earlier `completed` name; content
   signal, so it requires `content: "content"`.
 - **Naming decision:** the event schema is snake_case (`schema_version`,
@@ -99,12 +110,13 @@ this document.
 | --- | --- | --- | --- |
 | Lint | `npm run lint` | `verify` job, step *Lint (ESLint)* | ESLint 9 + typescript-eslint over the P0 packages, `scripts/` and the Node tests. `packages/ui` joins in P1a, when those files are already being edited. |
 | Secret scan | `npm run security:secrets` | `verify` job, step *Secret scan* | Scans every tracked and untracked-not-ignored file: private keys, AWS/GitHub/Slack/Stripe/Google keys, JWTs, bearer headers, `EXPO_TOKEN`, and high-entropy `key = "…"` assignments. Placeholders (`MRRCANARY-…`, `example`, `<your-key>`) are reported as allowed, never as findings. Zero findings is the only passing state. |
-| Dependency audit | `npm run security:deps` | `dependencies` job | Fails on any **critical** advisory. **High** advisories are reported and tracked; `--strict` turns them into failures and is enabled when P1a's Expo upgrade brings the count to zero. |
+| Dependency audit | `npm run security:deps` | `dependencies` job | Fails on any **critical** advisory. **High** advisories are reported and tracked; after P1a the count is 14, all propagated from `braces` / `node-forge`. |
+| Bundle reachability | `npm run security:bundle` | `bundle` job | Bundles the real app entry with Metro and fails if any package that **carries** an advisory is in the source map. Reports parents that are present. Refuses an empty map. |
 | Privacy canary | `npm run test:privacy` | `privacy-scanner` job | Unchanged from P0; exit 2 is "not run", never a pass. |
 
-Current dependency state (measured 2026-10-17): **0 critical, 33 high, 14
-moderate**, all in the Expo 58 / Metro / Jest / RN-CLI toolchain paths. P1a owns
-reducing this; until then the number is visible in the audit artifact and here.
+Current dependency state (measured 2026-10-17, after P1a): **0 critical, 14 high,
+7 moderate**. The three packages that carry advisories are `braces`, `node-forge`
+and `uuid`; the bundle check proves none of them ships. See the P1a section.
 
 
 
@@ -124,7 +136,11 @@ reducing this; until then the number is visible in the audit artifact and here.
    policy; every write appends to the `consent_log`.
 5. **P1b — UsageStats collector.** Kotlin module over `UsageEvents`: foreground
    intervals only, permission check with the Settings deep link, WorkManager
-   bounded daily job, collection off the UI thread, no content fields.
+   bounded daily job, collection off the UI thread, no content fields. Its
+   permission test reads the **final merged Android manifest** produced by the
+   build (`app/build/intermediates/merged_manifests/...` or `aapt2 dump
+   permissions` on the APK) — not `app.json` — so a transitive library cannot add
+   a permission between config and artifact.
 6. **P1b — ingestion.** Assign `session_id`, dedupe with `item_hash`, persist
    `topic_vector`, enforce tier/consent at write time, crash-safe batches.
 7. **P1b — importers.** Google Takeout and a connector export parser: streaming,
@@ -138,6 +154,66 @@ reducing this; until then the number is visible in the audit artifact and here.
    real store, and measured cold start / battery notes.
 10. **P1b — report.** The 8-part phase report; release impact: still no release,
     **stage 1 remains P2**.
+
+
+
+### P1a delivered (2026-10-17)
+
+**Scope was the toolchain, not the product.** No screen changed behaviour; the
+96-frame gallery is byte-identical before and after.
+
+- **React 19.3.1 / React Native 0.88 / `@types/react` 19.3** across the root, the
+  design system and the app. `react-test-renderer` was kept at 19.3.1: it is
+  deprecated but still the renderer these Node tests use, and it works. A move to
+  React Native Testing Library belongs with a Jest/JUnit runner in P1b, not in a
+  version-bump review.
+- **Tests needed a real change.** React 19 renders concurrently: a bare
+  `TestRenderer.create()` returns before commit, so `toJSON()` is null and 11
+  screen tests failed with "rendered nothing". Every render now goes through
+  `act` with `IS_REACT_ACT_ENVIRONMENT = true`. The tests assert the same things.
+- **Relative imports are extensionless** (24 files). Metro resolves `./tokens.js`
+  literally and does not substitute `.ts`, so the design system could not have
+  been bundled from source with the old specifiers. TypeScript (`bundler`
+  resolution) and esbuild are unaffected.
+- **A minimal app entry exists** — `apps/mobile/{index.js,App.tsx,babel.config.js,
+  metro.config.js,tsconfig.json}` — because the migration is not proven until the
+  real toolchain bundles it. It renders the first screen in the inventory and is
+  replaced by navigation in P1b.
+- **`packages/ui` is linted.** 21 findings, all dead code: unused imports and
+  destructured props in approved screens, a dead colour helper, unused locals in
+  the DOM binding. Removing them changed no rendered output.
+- **`--legacy-peer-deps` is gone** from README, Makefile and both CI workflows.
+  Verified: `npm install` and `npm ci --dry-run` both exit 0 without the flag.
+
+**Dependency and bundle evidence (the P1a requirement).**
+
+| Measurement | Before | After |
+| --- | --- | --- |
+| `npm audit` advisories | 47 (33 high, 14 moderate) | **21 (14 high, 7 moderate)** |
+| Actual advisory-carrying packages | braces, node-forge, uuid | braces (high), node-forge (high), uuid (moderate) |
+| Packages in the Metro production bundle | — | 642 modules / 31 npm packages |
+| Advisory-carrying packages in the bundle | — | **0 of 3** |
+
+Why the count moves from 33 to 14 but does not reach zero: npm reports a *parent*
+as high when a dependency is vulnerable, so `expo`, `react-native`, `@expo/cli`,
+`@expo/metro` and the Metro polyfills appear in the audit; the advisories
+themselves are in `braces` (DoS in micromatch globbing), `node-forge` (RSA
+signature check) and `uuid` (moderate). None of those three is in the bundle —
+verified from the production source map, not asserted. The five flagged parents
+that *are* present are the runtime itself plus Metro's ~100-line require shim and
+JS polyfills; their vulnerable dependencies are absent. The gate
+(`npm run security:bundle`) fails if any advisory-carrying package ever enters the
+module graph, and refuses an empty source map so it cannot pass vacuously.
+
+**P1a limitations, recorded:**
+
+- The bundle check covers the P1a entry (the design system + Expo runtime). As
+  P1b adds storage, the collector and navigation, the same command covers them —
+  the check is on the entry, not on a fixed file list.
+- `npm audit --strict` still cannot pass: Expo has not shipped patched `braces` /
+  `node-forge`. The gate stays on critical + bundle reachability until it does.
+- iOS has not been bundled; only Android was, and both use the same Metro graph.
+  The iOS export is a P1b CI addition if a native iOS build begins.
 
 
 ## Approved decisions

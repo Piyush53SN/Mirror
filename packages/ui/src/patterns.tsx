@@ -8,14 +8,14 @@
  * a marketing page.
  */
 import * as React from 'react';
-import { View, ScrollView } from './host.js';
-import { useTheme } from './theme.js';
-import type { MirrorTheme } from './tokens.js';
-import type { DataTier } from './tiers.js';
-import { IMPOSSIBLE, TIERS, degrade as computeDegrade } from './tiers.js';
-import { Pill, LinkButton, Chip } from './primitives/controls.js';
-import { Callout, ConfidenceChip, Divider, EmptyState, ListRow, Meter, SectionHeader, Stat, Text, TierBadge } from './primitives/text.js';
-import { Card } from './primitives/containers.js';
+import { View, ScrollView } from './host';
+import { useTheme } from './theme';
+import type { MirrorTheme } from './tokens';
+import type { DataTier } from './tiers';
+import { IMPOSSIBLE, TIERS, degrade as computeDegrade } from './tiers';
+import { Pill, LinkButton, Chip } from './primitives/controls';
+import { Callout, ConfidenceChip, Divider, EmptyState, ListRow, Meter, SectionHeader, Stat, Text, TierBadge } from './primitives/text';
+import { Card } from './primitives/containers';
 
 const withTheme = (theme: MirrorTheme | undefined) => theme ?? useTheme();
 
@@ -349,7 +349,7 @@ export function DataStanding({
 /* ------------------------------------------------------------- Demo chip ---- */
 
 /** Re-exported from containers, where it is defined (patterns already imports them). */
-export { DemoChip as DemoDataChip } from './primitives/containers.js';
+export { DemoChip as DemoDataChip } from './primitives/containers';
 
 /* ------------------------------------------------------------------ Ask ------ */
 

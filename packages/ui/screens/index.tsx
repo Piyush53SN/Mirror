@@ -17,14 +17,13 @@
  * picture of a screen: it is the screen.
  */
 import * as React from 'react';
-import { View } from '../src/host.js';
-import type { MirrorTheme } from '../src/tokens.js';
-import type { DataTier } from '../src/tiers.js';
-import { duration, hedged, tierSummary } from '../src/format.js';
-import { isOn, initialFlags } from '../src/flags.js';
-import { BoundaryToggle, Chip, IconButton, LinkButton, Pill, SegmentedControl, TabBar } from '../src/primitives/controls.js';
-import { Callout, ConfidenceChip, Divider, EmptyState, ListRow, Meter, SectionHeader, Stat, Text, TierBadge } from '../src/primitives/text.js';
-import { Card, HeroCarousel, Screen, Sparkline, Toolbar, Sheet, Ring } from '../src/primitives/containers.js';
+import { View } from '../src/host';
+import type { DataTier } from '../src/tiers';
+import { duration, hedged, tierSummary } from '../src/format';
+import { isOn, initialFlags } from '../src/flags';
+import { BoundaryToggle, Chip, IconButton, LinkButton, Pill, SegmentedControl } from '../src/primitives/controls';
+import { Callout, Divider, EmptyState, ListRow, Meter, SectionHeader, Stat, Text, TierBadge } from '../src/primitives/text';
+import { Card, HeroCarousel, Screen, Sparkline, Toolbar, Sheet } from '../src/primitives/containers';
 import {
   AskComposer,
   CapabilityMatrix,
@@ -35,9 +34,9 @@ import {
   PrivacyReceipt,
   WidgetPreview,
   WhySheet,
-} from '../src/patterns.js';
-import { PERSONAS, type Persona } from './personas.js';
-import { Definition, NothingYet, ScoreBlock, TabFooter, canSupply, type ScreenProps, type ScreenState } from './kit.js';
+} from '../src/patterns';
+import { PERSONAS, type Persona } from './personas';
+import { Definition, NothingYet, ScoreBlock, TabFooter, canSupply, type ScreenProps, type ScreenState } from './kit';
 
 /* ------------------------------------------------------------------ data ---- */
 
@@ -63,14 +62,11 @@ const HERO = (p: Persona) => [
   },
 ];
 
-import { TAB_ITEMS as TAB_SPECS } from './tabs.js';
-
-const TABS = TAB_SPECS;
 
 /* ------------------------------------------------------------------ J1 ------ */
 
 /** J1 · Onboarding + privacy promise — three promises, then the choice to skip. */
-export function OnboardingScreen({ theme, persona, tab }: ScreenProps) {
+export function OnboardingScreen({ theme }: ScreenProps) {
   const promises = [
     { title: 'Your history stays on this phone', body: 'Titles, searches and timestamps are stored and analysed locally, encrypted.' },
     { title: 'Two profiles, never merged', body: 'Private holds everything. Public holds only the topics you pick, one by one. Nothing is copied across.' },
@@ -110,7 +106,7 @@ export function OnboardingScreen({ theme, persona, tab }: ScreenProps) {
 /* ------------------------------------------------------------------ J2 ------ */
 
 /** J2 · Permission primer — explains before the OS asks, and the "not now" path. */
-export function PermissionPrimerScreen({ theme, persona, tab }: ScreenProps) {
+export function PermissionPrimerScreen({ theme, persona }: ScreenProps) {
   const [step, setStep] = React.useState<'usage' | 'notifications'>('usage');
   const primers = {
     usage: {
@@ -1484,7 +1480,7 @@ export function ConnectionsScreen({ theme, persona, tab }: ScreenProps) {
 /* ================================================================== J17 ===== */
 
 /** J17 · Why drawer — a sheet over whatever number the user is questioning. */
-export function WhyDrawerSheet({ theme, persona, tab }: ScreenProps) {
+export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
   const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
   return (
     <Sheet
@@ -1595,7 +1591,7 @@ export function LearningArcsScreen({ theme, persona, state, tab }: ScreenProps) 
 /* ================================================================== J22 ===== */
 
 /** J22 · Ask — a sheet that answers from local data or refuses, never guesses. */
-export function AskSheet({ theme, persona, state, tab }: ScreenProps) {
+export function AskSheet({ theme, persona, state }: ScreenProps) {
   const canAnswer = state !== 'empty' && persona.askable.length > 0;
   return (
     <Sheet open theme={theme} title="Ask Mirror" subtitle="Answers come from this device, or not at all" onClose={() => undefined}>
@@ -1619,7 +1615,7 @@ export function AskSheet({ theme, persona, state, tab }: ScreenProps) {
 /* ================================================================== J23 ===== */
 
 /** J23 · Privacy receipt — what left the device, in bytes, this month. */
-export function PrivacyReceiptSheet({ theme, persona, state, tab }: ScreenProps) {
+export function PrivacyReceiptSheet({ theme, persona, state }: ScreenProps) {
   const rows = persona.networkLog;
   const bytes = rows.reduce((total, r) => total + r.bytes, 0);
   const empty = state === 'empty' || rows.length === 0;
@@ -1653,7 +1649,7 @@ export function PrivacyReceiptSheet({ theme, persona, state, tab }: ScreenProps)
 /* ================================================================== J24 ===== */
 
 /** J24 · Demo persona picker — switches whose data is on screen, and says so. */
-export function PersonaPickerSheet({ theme, persona, tab }: ScreenProps) {
+export function PersonaPickerSheet({ theme, persona }: ScreenProps) {
   return (
     <Sheet open theme={theme} title="Demo persona" subtitle="Which data the screens are built from" onClose={() => undefined}>
       <View style={{ gap: theme.space(3) }}>
@@ -1762,7 +1758,7 @@ export function IntentCheckScreen({ theme, persona, tab }: ScreenProps) {
 /* ================================================================== J26 ===== */
 
 /** J26 · Private share card preview — the card, and what would not be on it. */
-export function ShareCardState({ theme, persona, tab }: ScreenProps) {
+export function ShareCardState({ theme, persona }: ScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.scrim, justifyContent: 'center', padding: theme.space(5), gap: theme.space(3) }}>
       <BoundaryToggle
@@ -1805,7 +1801,7 @@ export function ShareCardState({ theme, persona, tab }: ScreenProps) {
 /* ================================================================== J27 ===== */
 
 /** J27 · Home-screen widget — totals privately, topics only if you opt in. */
-export function WidgetItem({ theme, persona, tab }: ScreenProps) {
+export function WidgetItem({ theme, persona }: ScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.canvas, padding: theme.space(5), gap: theme.space(4) }}>
       <Text role="micro" tone="muted" theme={theme} style={{ paddingTop: theme.space(4) }}>
@@ -1873,7 +1869,7 @@ export function WidgetItem({ theme, persona, tab }: ScreenProps) {
 /* ================================================================== J28 ===== */
 
 /** J28 · Update available — calm, non-blocking, and explicit about collection. */
-export function UpdateState({ theme, persona, tab }: ScreenProps) {
+export function UpdateState({ theme, persona }: ScreenProps) {
   const { current, available, notes, bytes } = persona.update;
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.color.scrim, padding: theme.space(3) }}>
@@ -2019,7 +2015,7 @@ export const SCREENS: ScreenSpec[] = [
   { id: 'J28', slug: 'update-state', title: '"Update available / app version" state (calm, non-blocking)', kind: 'state', parent: 'dashboard', phase: 'P5', requires: [], states: ['default'], rule: 'Calm and non-blocking, and explicit that nothing new is collected.', Component: UpdateState },
 ];
 
-export { TAB_ITEMS, TAB_ITEMS as TABS } from './tabs.js';
+export { TAB_ITEMS, TAB_ITEMS as TABS } from './tabs';
 export { PERSONAS, NothingYet, Definition, ScoreBlock };
 export type { Persona, ScreenProps, ScreenState };
 

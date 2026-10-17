@@ -7,13 +7,13 @@
  * over 40px, so a hard drop shadow would be a lie).
  */
 import * as React from 'react';
-import { View, ScrollView } from '../host.js';
-import type { StyleProp, ViewStyle } from '../host.js';
-import { useLiveBlur, useTheme } from '../theme.js';
-import type { MirrorTheme } from '../tokens.js';
-import { useWindowDimensions } from '../host.js';
-import { layoutMetrics } from '../a11y.js';
-import { Text } from './text.js';
+import { View, ScrollView } from '../host';
+import type { StyleProp, ViewStyle } from '../host';
+import { useLiveBlur, useTheme } from '../theme';
+import type { MirrorTheme } from '../tokens';
+import { useWindowDimensions } from '../host';
+import { layoutMetrics } from '../a11y';
+import { Text } from './text';
 
 const withTheme = (theme: MirrorTheme | undefined) => theme ?? useTheme();
 

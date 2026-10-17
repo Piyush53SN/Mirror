@@ -24,6 +24,21 @@ const TOKENS = JSON.parse(readFileSync(join(UI, 'tokens/image-tokens.json'), 'ut
 
 let ui;
 
+/**
+ * React 19 renders concurrently: a bare `TestRenderer.create` returns before the
+ * tree commits, so `toJSON()` would see null. Every render goes through `act`
+ * (the React 19 API), and `IS_REACT_ACT_ENVIRONMENT` tells React this is a test.
+ * Without this, 11 of the screen tests fail with "rendered nothing".
+ */
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const create = (element) => {
+  let renderer;
+  TestRenderer.act(() => {
+    renderer = TestRenderer.create(element);
+  });
+  return renderer;
+};
+
 before(async () => {
   mkdirSync(OUT, { recursive: true });
   const entry = join(OUT, 'entry.tsx');
@@ -223,7 +238,7 @@ test('every screen renders in every persona, state and theme', () => {
     for (const persona of ui.PERSONAS) {
       for (const state of screen.states) {
         for (const themeName of ['dark', 'light']) {
-          const renderer = TestRenderer.create(ui.renderScreen(screen, persona, ui.createTheme(themeName), state));
+          const renderer = create(ui.renderScreen(screen, persona, ui.createTheme(themeName), state));
           const json = renderer.toJSON();
           assert.ok(json, `${screen.slug}/${persona.id}/${state}/${themeName} rendered nothing`);
           renderer.unmount();
@@ -237,7 +252,7 @@ test('every interactive element in every screen is at least 48dp', () => {
   const failures = [];
   for (const screen of ui.SCREENS) {
     for (const persona of ui.PERSONAS) {
-      const renderer = TestRenderer.create(ui.renderScreen(screen, persona, ui.createTheme('dark'), 'default'));
+      const renderer = create(ui.renderScreen(screen, persona, ui.createTheme('dark'), 'default'));
       for (const node of collectHost(renderer, 'button')) {
         const style = flattenStyle(node.props.style);
         const w = cssPx(style, 'width') || cssPx(style, 'minWidth');
@@ -258,7 +273,7 @@ test('every interactive element in every screen is at least 48dp', () => {
 test('every interactive element has an accessible name and a role', () => {
   const failures = [];
   for (const screen of ui.SCREENS) {
-    const renderer = TestRenderer.create(ui.renderScreen(screen, ui.PERSONAS[1], ui.createTheme('dark'), 'default'));
+    const renderer = create(ui.renderScreen(screen, ui.PERSONAS[1], ui.createTheme('dark'), 'default'));
     for (const node of collectHost(renderer, 'button')) {
       const label = node.props['aria-label'];
       const text = (node.children ?? [])
@@ -291,7 +306,7 @@ test('the live-blur budget is enforced at runtime, not just declared', () => {
 });
 
 test('boundary toggle states the consequence in the UI for both directions', () => {
-  const renderer = TestRenderer.create(
+  const renderer = create(
     React.createElement(ui.BoundaryToggle, {
       theme: ui.createTheme(),
       value: 'private',
@@ -307,7 +322,7 @@ test('boundary toggle states the consequence in the UI for both directions', () 
 });
 
 test('the privacy receipt renders real numbers, not reassurance', () => {
-  const renderer = TestRenderer.create(
+  const renderer = create(
     React.createElement(ui.PrivacyReceipt, {
       theme: ui.createTheme(),
       periodLabel: 'October',
@@ -327,7 +342,7 @@ test('the privacy receipt renders real numbers, not reassurance', () => {
 });
 
 test('the capability matrix names what Mirror cannot see, with the reason', () => {
-  const renderer = TestRenderer.create(
+  const renderer = create(
     React.createElement(ui.CapabilityMatrix, {
       theme: ui.createTheme(),
       available: ['D'],
@@ -347,7 +362,7 @@ test('the capability matrix names what Mirror cannot see, with the reason', () =
 
 test('the why-sheet refuses to hide a mismatch between its parts and its score', () => {
   const theme = ui.createTheme();
-  const consistent = TestRenderer.create(
+  const consistent = create(
     React.createElement(ui.WhySheet, {
       theme,
       score: 10,
@@ -362,7 +377,7 @@ test('the why-sheet refuses to hide a mismatch between its parts and its score',
   assert.match(JSON.stringify(consistent.toJSON()), /an estimate/);
   consistent.unmount();
 
-  const inconsistent = TestRenderer.create(
+  const inconsistent = create(
     React.createElement(ui.WhySheet, {
       theme,
       score: 10,
@@ -376,14 +391,14 @@ test('the why-sheet refuses to hide a mismatch between its parts and its score',
 });
 
 test('degraded states are rendered by the pattern, never by ad-hoc copy', () => {
-  const renderer = TestRenderer.create(
+  const renderer = create(
     React.createElement(ui.DegradedNotice, { theme: ui.createTheme(), needs: ['A', 'B', 'C'], available: ['D'], feature: 'Interest evolution' }),
   );
   const text = JSON.stringify(renderer.toJSON());
   assert.match(text, /Interest evolution is unavailable/);
   assert.match(text, /not on this device/);
   renderer.unmount();
-  const ok = TestRenderer.create(React.createElement(ui.DegradedNotice, { theme: ui.createTheme(), needs: ['D'], available: ['D'], feature: 'Insights' }));
+  const ok = create(React.createElement(ui.DegradedNotice, { theme: ui.createTheme(), needs: ['D'], available: ['D'], feature: 'Insights' }));
   assert.equal(ok.toJSON(), null, 'nothing renders when the data is there');
   ok.unmount();
 });
@@ -483,7 +498,7 @@ test('features that are not tier-D features say so', () => {
     for (const tier of spec.requiresAnyOf) assert.ok(['A', 'B', 'C'].includes(tier), `${slug}: unknown tier ${tier}`);
     // with only tier D, the screen must refuse rather than relabel session length
     const html = JSON.stringify(
-      TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON(),
+      create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON(),
     );
     assert.ok(html.includes('is unavailable'), `${slug} must refuse for a tier-D-only persona`);
     assert.ok(/at least one of tier/i.test(html), `${slug} must state that any one of A/B/C would do`);
@@ -495,7 +510,7 @@ test('a feature that genuinely runs on tier D alone still runs', () => {
   for (const slug of ['dashboard', 'sessions', 'attention-budget', 'ask-sheet']) {
     const spec = ui.specBySlug(slug);
     assert.ok(!spec.requiresAnyOf || spec.requiresAnyOf.length === 0, `${slug} should not need a content signal`);
-    const html = JSON.stringify(TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON());
+    const html = JSON.stringify(create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON());
     assert.ok(!html.includes(`${spec.title} is unavailable`), `${slug} must render for a tier-D user`);
   }
 });
@@ -579,7 +594,7 @@ test('the tab bar is the five sections, in order, on every tab screen', () => {
 });
 
 test('the demo-data chip is on screen whenever demo data is', () => {
-  const screen = TestRenderer.create(
+  const screen = create(
     ui.renderScreen(ui.specBySlug('dashboard'), ui.PERSONAS[0], ui.createTheme('dark'), 'default'),
   );
   const text = JSON.stringify(screen.toJSON());
@@ -589,7 +604,7 @@ test('the demo-data chip is on screen whenever demo data is', () => {
   screen.unmount();
 
   // Off when the app passes no persona (i.e. real data).
-  const plain = TestRenderer.create(
+  const plain = create(
     React.createElement(ui.Screen, { title: 'Real', theme: ui.createTheme('dark') }, React.createElement(ui.Text, { theme: ui.createTheme('dark') }, 'x')),
   );
   assert.ok(!JSON.stringify(plain.toJSON()).includes('DEMO DATA'), 'a screen without demo must not claim demo');
@@ -628,7 +643,7 @@ test('the Private | Public control shows both options and the consequence of eac
 test('every screen that can share renders the Private | Public control', () => {
   for (const slug of ['dashboard', 'connections', 'public-profile-editor', 'share-card-preview']) {
     const spec = ui.specBySlug(slug);
-    const html = JSON.stringify(TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[2], ui.createTheme('dark'), 'default')).toJSON());
+    const html = JSON.stringify(create(ui.renderScreen(spec, ui.PERSONAS[2], ui.createTheme('dark'), 'default')).toJSON());
     assert.match(html, /Private/, `${slug} must show the boundary`);
     assert.match(html, /Public/, `${slug} must show the boundary`);
   }

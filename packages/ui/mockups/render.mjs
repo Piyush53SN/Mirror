@@ -21,9 +21,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync
 import { join } from 'node:path';
 import { buildRenderer, paths } from './render-lib.mjs';
 
-const HERE = paths.here;
 const UI = paths.ui;
-const ROOT = paths.root;
 const OUT = paths.gallery;
 
 const args = process.argv.slice(2);

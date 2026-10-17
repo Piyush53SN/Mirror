@@ -9,7 +9,7 @@
  */
 import { Platform } from 'react-native';
 import type { ViewStyle } from 'react-native';
-import type { MirrorTheme } from './tokens.js';
+import type { MirrorTheme } from './tokens';
 
 export const MIN_TOUCH_DP = 48;
 

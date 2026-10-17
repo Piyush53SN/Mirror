@@ -14,8 +14,8 @@
  *      Components ask for `theme.glass.shell` / `theme.motion('base')` and get
  *      the correct thing for the current accessibility state.
  */
-import { tokens as raw } from '../tokens/index.js';
-import type { ThemeName } from '../tokens/index.js';
+import { tokens as raw } from '../tokens/index';
+import type { ThemeName } from '../tokens/index';
 
 export type { ThemeName };
 
@@ -30,7 +30,6 @@ const hexToRgb = (hex: string): [number, number, number] => {
 };
 
 const srgbToLinear = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
-const linearToSrgb = (c: number) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.max(0, c) ** (1 / 2.4) - 0.055);
 
 export const toHex = ([r, g, b]: [number, number, number]) =>
   '#' + [r, g, b].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, '0')).join('').toUpperCase();

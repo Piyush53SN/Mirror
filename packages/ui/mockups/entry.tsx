@@ -8,7 +8,7 @@
  */
 import * as React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { createTheme } from '../src/tokens.js';
+import { createTheme } from '../src/tokens';
 import {
   renderScreen,
   renderMatrix,
@@ -23,9 +23,9 @@ import {
   type ScreenSpec,
   type ScreenState,
   type RenderedItem,
-} from '../screens/render.js';
-import { SECTION_J, PHASES, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index.js';
-import type { MirrorTheme, ThemeName } from '../src/tokens.js';
+} from '../screens/render';
+import { SECTION_J, PHASES, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index';
+import type { MirrorTheme, ThemeName } from '../src/tokens';
 
 export {
   renderScreen,

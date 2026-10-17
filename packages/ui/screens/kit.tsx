@@ -6,15 +6,15 @@
  * and a definition block for the terms the product defines for itself.
  */
 import * as React from 'react';
-import { View } from '../src/host.js';
-import type { MirrorTheme } from '../src/tokens.js';
-import type { DataTier } from '../src/tiers.js';
-import { Callout, Divider, Meter, Text, TierBadge } from '../src/primitives/text.js';
-import { DegradedNotice } from '../src/patterns.js';
-import { TabBar, Pill } from '../src/primitives/controls.js';
-import { useLiveBlur } from '../src/theme.js';
-import { TAB_ITEMS } from './tabs.js';
-import type { Persona } from './personas.js';
+import { View } from '../src/host';
+import type { MirrorTheme } from '../src/tokens';
+import type { DataTier } from '../src/tiers';
+import { Callout, Divider, Meter, Text, TierBadge } from '../src/primitives/text';
+import { DegradedNotice } from '../src/patterns';
+import { TabBar, Pill } from '../src/primitives/controls';
+import { useLiveBlur } from '../src/theme';
+import { TAB_ITEMS } from './tabs';
+import type { Persona } from './personas';
 
 export type ScreenState = 'default' | 'empty';
 

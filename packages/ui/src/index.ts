@@ -12,14 +12,14 @@
  *
  * Screens live in ../screens and are exported from @mirror/ui/screens.
  */
-export * from './tokens.js';
-export { ThemeProvider, useTheme, useThemeControls, useLiveBlur, ThemeContext } from './theme.js';
-export * from './flags.js';
-export * from './tiers.js';
-export * from './a11y.js';
-export * from './format.js';
+export * from './tokens';
+export { ThemeProvider, useTheme, useThemeControls, useLiveBlur, ThemeContext } from './theme';
+export * from './flags';
+export * from './tiers';
+export * from './a11y';
+export * from './format';
 
-export * from './primitives/text.js';
-export * from './primitives/controls.js';
-export * from './primitives/containers.js';
-export * from './patterns.js';
+export * from './primitives/text';
+export * from './primitives/controls';
+export * from './primitives/containers';
+export * from './patterns';

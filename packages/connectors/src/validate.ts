@@ -4,8 +4,8 @@
  * These run in CI, not at runtime: a connector that fails here is a build
  * failure, so no user ever sees an over-broad permission request.
  */
-import type { Connector } from './types.js';
-import { CONNECTORS } from './registry.js';
+import type { Connector } from './types';
+import { CONNECTORS } from './registry';
 
 /**
  * Per-provider scope allowlist. A scope that is not here cannot be requested,

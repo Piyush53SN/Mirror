@@ -8,7 +8,7 @@
  */
 import * as React from 'react';
 import { AccessibilityInfo } from 'react-native';
-import { createTheme, DEFAULT_THEME, type MirrorTheme, type ThemeName, type ThemeOverrides } from './tokens.js';
+import { createTheme, DEFAULT_THEME, type MirrorTheme, type ThemeName, type ThemeOverrides } from './tokens';
 
 type ThemeContextValue = {
   theme: MirrorTheme;

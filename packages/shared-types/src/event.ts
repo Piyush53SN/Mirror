@@ -21,12 +21,21 @@
  * local, and an event that cannot be joined to a person is an event that cannot
  * be leaked as one.
  */
-import type { DataTier } from './tier.js';
+import type { DataTier } from './tier';
 
 export const SCHEMA_VERSION = 1;
 
-/** Dimensionality of an on-device topic embedding. Fixed so storage has one shape. */
-export const TOPIC_VECTOR_DIM = 32;
+/**
+ * Dimensionality of an on-device topic embedding.
+ *
+ * **384**, per the specification. This matches the output width of the
+ * MiniLM-class sentence encoders Mirror will use on-device in P1b, so the storage
+ * shape and the model output agree without a projection step. An earlier draft
+ * used 32; that was wrong and is corrected here. At float32 a vector is 1,536
+ * bytes, which informs the P1b decision to store vectors as BLOBs rather than as
+ * JSON numbers.
+ */
+export const TOPIC_VECTOR_DIM = 384;
 
 /** The only four mechanisms the brief allows. Nothing else validates. */
 export const ORIGINS = ['os', 'extension', 'api', 'export', 'user'] as const;
@@ -73,7 +82,7 @@ type Base<TKind extends EventKind> = {
  */
 export type ItemHash = string;
 
-/** A 32-dimensional, unit-length topic direction. Never a title, never a URL. */
+/** A 384-dimensional, unit-length topic direction. Never a title, never a URL. */
 export type TopicVector = number[];
 
 export type AppForegroundEvent = Base<'app_foreground'> & {

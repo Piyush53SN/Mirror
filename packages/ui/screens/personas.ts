@@ -10,7 +10,7 @@
  * In the app this file is demo data behind the `demoPersona` flag; the numbers
  * here are plausible, not measured, and the UI never presents them as real.
  */
-import type { DataTier } from '../src/tiers.js';
+import type { DataTier } from '../src/tiers';
 
 export type Persona = {
   id: string;

@@ -11,11 +11,11 @@
  * drawing of the product rather than the product.
  */
 import * as React from 'react';
-import { View } from '../src/host.js';
-import { ThemeProvider } from '../src/theme.js';
-import { createTheme, type MirrorTheme, type ThemeName } from '../src/tokens.js';
-import { SCREENS, specBySlug, type ScreenSpec, type ScreenState } from './index.js';
-import { PERSONAS, type Persona } from './personas.js';
+import { View } from '../src/host';
+import { ThemeProvider } from '../src/theme';
+import { createTheme, type MirrorTheme, type ThemeName } from '../src/tokens';
+import { SCREENS, specBySlug, type ScreenSpec, type ScreenState } from './index';
+import { PERSONAS, type Persona } from './personas';
 
 export { PERSONAS };
 
@@ -123,5 +123,5 @@ export function renderMatrix(
 }
 
 export { SCREENS, specBySlug };
-export type { ScreenSpec, ScreenState, ScreenKind } from './index.js';
-export type { Persona } from './personas.js';
+export type { ScreenSpec, ScreenState, ScreenKind } from './index';
+export type { Persona } from './personas';

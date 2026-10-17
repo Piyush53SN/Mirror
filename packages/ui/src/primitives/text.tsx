@@ -6,12 +6,12 @@
  * Nothing here reads a raw pixel value from anywhere except the token object.
  */
 import * as React from 'react';
-import { RNText, View } from '../host.js';
-import type { StyleProp, TextStyle, ViewStyle } from '../host.js';
-import { useTheme } from '../theme.js';
-import type { MirrorTheme, TypeRole } from '../tokens.js';
-import type { DataTier } from '../tiers.js';
-import { TIERS } from '../tiers.js';
+import { RNText, View } from '../host';
+import type { StyleProp, TextStyle, ViewStyle } from '../host';
+import { useTheme } from '../theme';
+import type { MirrorTheme, TypeRole } from '../tokens';
+import type { DataTier } from '../tiers';
+import { TIERS } from '../tiers';
 
 type BaseProps = {
   children?: React.ReactNode;

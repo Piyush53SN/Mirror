@@ -139,3 +139,59 @@ test('a malformed report degrades to zero counts rather than throwing', () => {
   assert.equal(result.counts.total, 0);
   assert.equal(result.ok, true);
 });
+
+/* ------------------------------------------------------------ bundle check -- */
+
+const { readSources, packagesInSources, advisoryPackages, checkBundle } = await import('../scripts/security/bundle-check.mjs');
+
+const auditWith = (vulnerabilities) => ({ metadata: { vulnerabilities: { total: Object.keys(vulnerabilities).length } }, vulnerabilities });
+const PARENT_AUDIT = auditWith({
+  expo: { name: 'expo', severity: 'high', via: ['node-forge'], effects: [] },
+  'node-forge': { name: 'node-forge', severity: 'high', via: [{ name: 'node-forge', title: 'RSA signature check', url: 'https://example.test' }], effects: ['expo'] },
+});
+
+test('source maps are read whether plain or indexed', () => {
+  assert.deepEqual(readSources({ sources: ['a.js'] }), ['a.js']);
+  assert.deepEqual(readSources({ sections: [{ map: { sources: ['a.js'] } }, { map: { sources: ['b.js'] } }] }), ['a.js', 'b.js']);
+  assert.deepEqual(readSources(null), []);
+});
+
+test('packages are extracted from module paths, scoped names included', () => {
+  const packages = packagesInSources([
+    '/node_modules/react/index.js',
+    '/node_modules/@expo/metro-config/src/x.js',
+    '/node_modules/@expo/metro-config/src/y.js',
+    '/app/App.tsx',
+  ]);
+  assert.equal(packages.get('react'), 1);
+  assert.equal(packages.get('@expo/metro-config'), 2);
+  assert.equal(packages.size, 2);
+});
+
+test('advisories are attributed to the package that carries them, not its parent', () => {
+  const advisories = advisoryPackages(PARENT_AUDIT);
+  assert.deepEqual(advisories.map((a) => a.package), ['node-forge']);
+  assert.equal(advisories[0].severity, 'high');
+});
+
+test('a vulnerable package in the bundle fails; a flagged parent alone does not', () => {
+  const parentOnly = checkBundle({ sources: ['/node_modules/expo/index.js'], audit: PARENT_AUDIT });
+  assert.equal(parentOnly.ok, true, 'expo is flagged only because of its dependency');
+  assert.deepEqual(parentOnly.inBundle, []);
+
+  const leaked = checkBundle({ sources: ['/node_modules/expo/index.js', '/node_modules/node-forge/lib/index.js'], audit: PARENT_AUDIT });
+  assert.equal(leaked.ok, false);
+  assert.deepEqual(leaked.blocking.map((a) => a.package), ['node-forge']);
+});
+
+test('a moderate advisory is reported but does not block', () => {
+  const audit = auditWith({ uuid: { name: 'uuid', severity: 'moderate', via: [{ name: 'uuid', title: 'bounds check', url: 'https://example.test' }] } });
+  const result = checkBundle({ sources: ['/node_modules/uuid/index.js'], audit });
+  assert.equal(result.ok, true);
+  assert.equal(result.inBundle.length, 1);
+  assert.equal(result.inBundle[0].severity, 'moderate');
+});
+
+test('an empty source map is an error, never a vacuous pass', () => {
+  assert.throws(() => checkBundle({ sources: [], audit: PARENT_AUDIT }), /vacuous pass/);
+});

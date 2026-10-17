@@ -18,9 +18,9 @@
  *   - `item_hash` is HMAC-SHA256 hex, so it is opaque and fixed-width.
  *   - Timestamps must be ISO-8601 UTC with a Z.
  */
-import type { DataTier } from './tier.js';
-import { TIERS } from './tier.js';
-import { CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, TOPIC_VECTOR_DIM, type MirrorEvent } from './event.js';
+import type { DataTier } from './tier';
+import { TIERS } from './tier';
+import { CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, TOPIC_VECTOR_DIM, type MirrorEvent } from './event';
 
 export type ValidationError = { path: string; message: string };
 export type ValidationResult = { ok: true; value: MirrorEvent } | { ok: false; errors: ValidationError[] };

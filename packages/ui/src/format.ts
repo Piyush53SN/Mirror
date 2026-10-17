@@ -6,7 +6,7 @@
  * numbers that deserve them: everything derived from tier D usage data is an
  * estimate, and the copy says so.
  */
-import type { DataTier } from './tiers.js';
+import type { DataTier } from './tiers';
 
 const pad = (n: number) => String(Math.floor(Math.abs(n))).padStart(2, '0');
 

@@ -11,7 +11,7 @@
  * is derived with `liveConsent()`; no second copy is stored, so the two cannot
  * disagree.
  */
-import { TIERS, type DataTier } from './tier.js';
+import { TIERS, type DataTier } from './tier';
 
 export const CONSENT_SCHEMA_VERSION = 1;
 

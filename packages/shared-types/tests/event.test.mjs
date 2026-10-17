@@ -56,7 +56,7 @@ const rejects = (event, path) => {
   );
 };
 
-/** A valid 32-d unit vector: a direction, rounded to 4 decimals. */
+/** A valid unit vector of the schema's dimension: a direction, rounded to 4 decimals. */
 function unitVector(seed = 1, dim = TOPIC_VECTOR_DIM) {
   const raw = Array.from({ length: dim }, (_, i) => Math.sin(seed * 12.9898 + i * 78.233));
   const norm = Math.sqrt(raw.reduce((a, b) => a + b * b, 0));
@@ -132,15 +132,15 @@ test('item_hash: exactly 64 lowercase hex characters, and only on content events
   rejects(base({ ...visit, item_hash: HASH, content: 'metadata' }), 'item_hash');
 });
 
-test('topic_vector: 32 dimensions, finite, in range, and a unit vector', () => {
+test('topic_vector: 384 dimensions, finite, in range, and a unit vector', () => {
   const visit = { id: 'evt_web_0004', kind: 'web_visit', tier: 'C', origin: 'extension', content: 'content', consent: 'g', app: undefined, host: 'a.com', duration_ms: 1 };
   assert.equal(validateEvent({ ...base(), ...visit, topic_vector: unitVector() }).ok, true);
   assert.equal(validateTopicVector(unitVector()).length, 0);
 
-  assert.ok(validateTopicVector(new Array(31).fill(0.1)).length > 0, 'wrong dimension must fail');
-  assert.ok(validateTopicVector([...new Array(31).fill(0), Number.NaN]).length > 0, 'NaN must fail');
-  assert.ok(validateTopicVector([...new Array(31).fill(0), 2]).length > 0, 'out of range must fail');
-  assert.ok(validateTopicVector(new Array(32).fill(0)).length > 0, 'the zero vector is not a direction');
+  assert.ok(validateTopicVector(new Array(TOPIC_VECTOR_DIM - 1).fill(0.1)).length > 0, 'wrong dimension must fail');
+  assert.ok(validateTopicVector([...new Array(TOPIC_VECTOR_DIM - 1).fill(0), Number.NaN]).length > 0, 'NaN must fail');
+  assert.ok(validateTopicVector([...new Array(TOPIC_VECTOR_DIM - 1).fill(0), 2]).length > 0, 'out of range must fail');
+  assert.ok(validateTopicVector(new Array(TOPIC_VECTOR_DIM).fill(0)).length > 0, 'the zero vector is not a direction');
   assert.ok(validateTopicVector(unitVector().map((v) => v * 3)).length > 0, 'a non-unit vector must fail');
 });
 
@@ -281,7 +281,7 @@ test('property: adding any unknown field makes the event invalid', () => {
 
 test('property: a random direction normalised to unit length always passes', () => {
   fc.assert(
-    fc.property(fc.array(fc.double({ min: -1, max: 1, noNaN: true }), { minLength: 32, maxLength: 32 }), (raw) => {
+    fc.property(fc.array(fc.double({ min: -1, max: 1, noNaN: true }), { minLength: TOPIC_VECTOR_DIM, maxLength: TOPIC_VECTOR_DIM }), (raw) => {
       const norm = Math.hypot(...raw);
       if (norm === 0) return true;
       const unit = raw.map((v) => Math.round((v / norm) * 10_000) / 10_000);

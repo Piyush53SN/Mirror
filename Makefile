@@ -10,12 +10,12 @@ NODE ?= node
 .PHONY: help install verify test typecheck lint security gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
 
 help:
-	@echo "make install             install node deps (legacy peer deps: the design system still targets React 18)"
+	@echo "make install             install node deps"
 	@echo "make verify              tokens, typechecks, all unit/property/privacy tests (CI target)"
 	@echo "make test                tests only"
 	@echo "make typecheck           both TypeScript projects"
 	@echo "make lint                ESLint over the P0 packages, scripts and tests"
-	@echo "make security            lint + secret scan + dependency audit (critical blocks)"
+	@echo "make security            lint + secret scan + dependency audit + bundle reachability"
 	@echo "make gallery             regenerate the 96 mockup frames"
 	@echo "make privacy             privacy canary self-test + scanner tests + python addon tests"
 	@echo "make privacy-extension   Playwright extension canary (needs playwright + a built extension)"
@@ -26,7 +26,7 @@ help:
 	@echo "make build-production    EAS production AAB (needs EXPO_TOKEN; MANUAL credential setup)"
 
 install:
-	$(NPM) install --legacy-peer-deps
+	$(NPM) install
 
 verify:
 	$(NPM) run verify

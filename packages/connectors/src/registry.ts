@@ -5,7 +5,7 @@
  * that would also work, the narrow one is used and the reason recorded, because
  * "it would also work" is how permission creep starts.
  */
-import type { Connector, RefusedSource } from './types.js';
+import type { Connector, RefusedSource } from './types';
 
 export const CONNECTORS: Connector[] = [
   {

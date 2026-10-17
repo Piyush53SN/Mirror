@@ -1,12 +1,10 @@
 /**
  * Lint configuration.
  *
- * Scope is deliberate: the P0 packages, the scripts and the Node tests. The
- * design system (`packages/ui`) is type-checked and covered by its own
- * source-rule tests today, and adding a linter to 28 approved screens at the
- * same time as the React 19 migration would mix two changes in one review — it
- * joins this config as the first step of P1a, when those files are being edited
- * anyway. Recorded in docs/PROGRESS.md rather than left as a silent gap.
+ * Scope: every hand-written source file — the packages, the design system, the
+ * scripts and the Node tests. Generated artefacts (the gallery, token output) are
+ * ignored: linting a generated file only ever reports the generator's choices.
+ * `packages/ui` joined in P1a, with the React 19 migration.
  *
  * Rules chosen for things TypeScript cannot see: a stray `console` in library
  * code, `==`, `var`, an unused import that survived a refactor.
@@ -28,12 +26,17 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
-    files: ['packages/{shared-types,core-analytics,connectors}/src/**/*.ts'],
+    files: ['packages/{shared-types,core-analytics,connectors}/src/**/*.ts', 'packages/ui/{src,screens,mockups}/**/*.{ts,tsx}', 'apps/mobile/**/*.{ts,tsx}'],
     rules: {
       'no-console': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
+  },
+  {
+    // Metro and Babel are loaded by CommonJS tooling; `require` is the API there.
+    files: ['apps/mobile/*.config.js'],
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
   {
     files: ['scripts/**/*.mjs', 'tests/**/*.mjs'],
@@ -41,14 +44,14 @@ export default tseslint.config(
       'no-console': 'off',
       'no-var': 'error',
       eqeqeq: ['error', 'smart'],
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
   {
     files: ['packages/**/tests/**/*.mjs'],
     rules: {
       'no-console': 'off',
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 );

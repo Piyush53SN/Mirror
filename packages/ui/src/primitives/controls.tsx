@@ -7,13 +7,13 @@
  * `size` prop only ever changes what you *see*, never what you can hit.
  */
 import * as React from 'react';
-import { Pressable, View } from '../host.js';
-import type { StyleProp, ViewStyle } from '../host.js';
-import { useTheme } from '../theme.js';
-import type { MirrorTheme } from '../tokens.js';
-import type { DataTier } from '../tiers.js';
-import { a11yTarget, hitSlopFor } from '../a11y.js';
-import { Text, TierBadge } from './text.js';
+import { Pressable, View } from '../host';
+import type { StyleProp, ViewStyle } from '../host';
+import { useTheme } from '../theme';
+import type { MirrorTheme } from '../tokens';
+import type { DataTier } from '../tiers';
+import { a11yTarget, hitSlopFor } from '../a11y';
+import { Text, TierBadge } from './text';
 
 type ControlBase = {
   onPress?: () => void;
@@ -362,7 +362,6 @@ export function TabBar({
   items,
   active,
   onChange,
-  liveBlur,
   theme,
 }: {
   items: TabItem[];

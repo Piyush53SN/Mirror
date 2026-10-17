@@ -33,7 +33,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Is there an installable build?
         id: guard
         run: |
@@ -73,7 +73,7 @@ jobs:
           node-version: '22.22.0'
           cache: npm
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Is there a built extension?
         id: guard
         run: |

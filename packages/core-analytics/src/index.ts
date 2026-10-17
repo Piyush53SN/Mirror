@@ -1,2 +1,2 @@
-export * from './sessionize.js';
-export * from './synthetic.js';
+export * from './sessionize';
+export * from './synthetic';

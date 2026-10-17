@@ -24,7 +24,7 @@ jobs:
           node-version: '22.22.0'
           cache: npm
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Lint (ESLint)
         run: npm run lint
       - name: Secret scan (patterns + entropy, tracked files)
@@ -54,7 +54,7 @@ jobs:
           node-version: '22.22.0'
           cache: npm
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       # Critical advisories block. High advisories are reported and tracked in
       # docs/PROGRESS.md; --strict turns them into failures once P1a upgrades the
       # Expo toolchain and the count reaches zero.
@@ -66,6 +66,32 @@ jobs:
         with:
           name: dependency-report
           path: .reports/dependencies.json
+          if-no-files-found: warn
+
+  bundle:
+    name: bundle reachability (no vulnerable package ships)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install
+        run: npm ci
+      # Metro bundles the real app entry; the source map is the authoritative
+      # module list. The check fails if any package that carries an advisory is
+      # in it. Build-time parents (expo, metro, the CLI shim) are reported, not
+      # treated as findings: the advisory belongs to a dependency they do not ship.
+      - name: Bundle and check reachability
+        run: npm run security:bundle
+      - name: Upload the bundle report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-report
+          path: .reports/bundle.json
           if-no-files-found: warn
 
   privacy-scanner:
@@ -82,6 +108,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install
-        run: npm ci --legacy-peer-deps
+        run: npm ci
       - name: Scanner tests, end-to-end self-test, mitmproxy addon tests
         run: npm run test:privacy

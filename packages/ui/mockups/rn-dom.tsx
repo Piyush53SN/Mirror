@@ -105,7 +105,7 @@ function ariaFrom(props: Common): Record<string, unknown> {
 }
 
 const domProps = (props: Common, { skipStyle = false }: { skipStyle?: boolean } = {}) => {
-  const { children, style, ...rest } = props;
+  const { children: _children, style, ...rest } = props;
   delete rest.hitSlop;
   delete rest.testID;
   delete rest.accessibilityState;

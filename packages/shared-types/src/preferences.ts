@@ -13,7 +13,7 @@
  *      and whether it is still live, so revoking one can delete exactly the
  *      events it covered.
  */
-import { TIERS, type DataTier } from './tier.js';
+import { TIERS, type DataTier } from './tier';
 
 export const PREFERENCES_VERSION = 1;
 

@@ -8,18 +8,37 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** P-UI-0, P-UI-1 and P-UI-2 (design system, 28 Section J items,
-> 96 mockup frames) are approved. **P0 (foundation) is delivered here for review:**
-> event and preference schemas, the connector registry, the synthetic dataset,
-> sessionisation, the privacy-canary harness, CI, EAS profiles and a store-readiness
-> draft. There is still **no app binary** — P1 adds the Expo shell, the encrypted
-> store and the UsageStats collector. No build or store step has been run.
+> **Build status:** P-UI-0…P-UI-2 and **P0 are approved**. **P1a is delivered for
+> review:** the design system runs on React 19 / RN 0.88, `packages/ui` is linted,
+> plain `npm install` works, and a Metro production bundle proves that no
+> advisory-carrying dependency ships. There is still **no app binary beyond a
+> one-screen entry** — P1b adds the encrypted store, the UsageStats collector,
+> importers and embeddings. No build or store step has been run.
 
 ---
 
 ---
 
-## Current phase — P0: the foundation
+## P1a (delivered for review) — React 19 migration
+
+- **React 19.3.1 / RN 0.88 / `@types/react` 19.3** in the root, `packages/ui` and
+  the app workspace. `react-test-renderer` 19.3.1 remains (deprecated upstream,
+  still correct here); tests now render through `act`, because React 19 commits
+  concurrently and a bare `create()` sees an empty tree.
+- **Extensionless relative imports** in every package: Metro resolves `./x.js`
+  literally and cannot fall back to `.ts`, so this was required to bundle the
+  design system from source. No build step was added for the UI.
+- **`packages/ui` is linted**, 21 dead-code findings removed, gallery byte-identical.
+- **`--legacy-peer-deps` removed**; `npm install` and `npm ci` run plain.
+- **Bundle evidence.** Metro production bundle: 642 modules / 31 npm packages.
+  Advisories dropped 47 → 21 (33 → 14 high). The three packages that actually
+  carry advisories — `braces`, `node-forge` (high), `uuid` (moderate) — are **not
+  in the bundle**. `npm run security:bundle` enforces this and writes
+  `.reports/bundle.json`.
+
+---
+
+## P0 (approved) — the foundation
 
 P0 is the layer everything else is written against. It ships no screens and no
 binary; it ships the contracts, and tests that make the contracts expensive to
@@ -44,9 +63,10 @@ break.
 - **The schema is closed.** An unknown field is rejected, because an unknown field
   is either a bug or a leak. `content: "content"` from `origin: "os"` is rejected
   as fabricated — the OS cannot produce titles or queries.
-- **The embedding is a direction, not a title.** `topic_vector` must be 32 finite
-  numbers in [-1, 1] with a unit norm; `item_hash` must be 64 hex characters and
-  `session_id` must be attributed, not guessed.
+- **The embedding is a direction, not a title.** `topic_vector` must be **384**
+  finite numbers in [-1, 1] with a unit norm (the spec's dimension, matching the
+  P1b encoder); `item_hash` must be 64 hex characters and `session_id` must be
+  attributed, not guessed.
 - **Consent is data.** A/B/C events must cite a grant; D events must not (the OS
   grant lives in settings). Revocation is a record, not a boolean.
 - **Telemetry cannot be added by deployment.** `applyOverrides` accepts a
@@ -67,25 +87,25 @@ break.
   file git would commit; `npm audit` blocks critical advisories and reports the
   rest. Both run in CI and locally.
 
-### Why `--legacy-peer-deps`
+### Install
 
-The root installs React 18 (the approved design system and its test renderer) while
-the app workspace pins React 19 / RN 0.88. npm 7+ refuses that tree unless peer
-resolution is relaxed. It is a **temporary bridge**: P1a migrates `packages/ui` to
-React 19, and from then on `npm install` must succeed without the flag.
+`npm install` is plain npm: the design system and the app are both on React 19 /
+RN 0.88 since P1a, so no peer-resolution flag is needed. If a future dependency
+reintroduces a conflict, the fix is to resolve the versions — not to add
+`--legacy-peer-deps` back.
 
 ### Run it
 
 ```bash
-npm install --legacy-peer-deps
-npm run verify            # all checks: 245 Node + 9 Python
+npm install
+npm run verify            # all checks: 251 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
 make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
 ```
 
-Measured: **245** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
+Measured: **251** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
 event schema 23 · records 21 · preferences 22 · sessions 16 · connectors 20 ·
-config 17 · canary 18 · security 12) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
+config 17 · canary 18 · security 18) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
 

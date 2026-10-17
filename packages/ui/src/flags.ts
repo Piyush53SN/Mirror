@@ -9,7 +9,7 @@
  *   - a flag can never add collection, a permission, or an outbound request.
  *     If a flag could do that, it does not belong here.
  */
-import type { DataTier } from './tiers.js';
+import type { DataTier } from './tiers';
 
 export type FlagName = keyof typeof FLAG_DEFAULTS;
 
