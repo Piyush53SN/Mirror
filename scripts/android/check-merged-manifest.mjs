@@ -171,6 +171,7 @@ if (isMain) {
   const arg = (name) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : null);
   const explicit = arg('manifest');
   const variant = arg('variant');
+  const jsonOut = arg('json');
 
   const manifestPath = explicit ? resolve(explicit) : findMergedManifest({ variant });
   if (!manifestPath || !existsSync(manifestPath)) {
@@ -181,8 +182,18 @@ if (isMain) {
   }
 
   const result = auditManifest(readFileSync(manifestPath, 'utf8'));
+  const payload = { manifest: manifestPath, variant: variant ?? null, ...result, parsed: result.parsed };
+  const defaultReport = join(ROOT, '.reports/merged-manifest.json');
+  // Always write default for backward compat and local `make android-build`
   mkdirSync(join(ROOT, '.reports'), { recursive: true });
-  writeFileSync(join(ROOT, '.reports/merged-manifest.json'), JSON.stringify({ manifest: manifestPath, ...result, parsed: result.parsed }, null, 2));
+  writeFileSync(defaultReport, JSON.stringify(payload, null, 2));
+  // If --json is provided, also write to that explicit path (used by CI to avoid overwriting debug/release)
+  if (jsonOut) {
+    const outPath = resolve(jsonOut);
+    mkdirSync(dirname(outPath), { recursive: true });
+    writeFileSync(outPath, JSON.stringify(payload, null, 2));
+    console.log(`merged-manifest: wrote JSON report to ${outPath}`);
+  }
 
   console.log(`merged-manifest: ${manifestPath}`);
   console.log(`  ${result.parsed.permissions.length} permissions, ${result.parsed.services.length} services`);

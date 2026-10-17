@@ -76,7 +76,7 @@ jobs:
           ls -la android/gradlew
           chmod +x android/gradlew
           ./android/gradlew --version
-          cd ../..
+          cd "${{ github.workspace }}"
           echo "Prebuild done, PWD=$(pwd)"
 
       - name: Build debug + gate (make android-build)
@@ -85,17 +85,21 @@ jobs:
           echo "=== Build debug + gate ==="
           echo "GITHUB_WORKSPACE=${{ github.workspace }}"
           echo "PWD start=$(pwd)"
+          # make android-build does: gradle assembleDebug + npm run android:manifest -- --variant debug
+          # It writes .reports/merged-manifest.json at repo root (ROOT = join(__dirname, ../..))
           make android-build
           echo "--- after make android-build, PWD=$(pwd) ---"
-          echo "Listing APK outputs:"
-          ls -R apps/mobile/android/app/build/outputs/apk/ || echo "no apk folder yet"
-          find apps/mobile/android/app/build -name "*.apk" -type f -exec ls -lh {} \; || echo "find apk: none"
-          echo "--- .reports at workspace root ---"
-          ls -lh "${{ github.workspace }}/.reports/" || echo ".reports missing at root"
-          cat "${{ github.workspace }}/.reports/merged-manifest.json" | head -n 30 || echo "no merged-manifest.json"
-          echo "--- copying debug report ---"
-          cp "${{ github.workspace }}/.reports/merged-manifest.json" "${{ github.workspace }}/.reports/merged-manifest-debug.json"
+          ls -lh "${{ github.workspace }}/.reports/" || echo ".reports missing at root after make"
+          # Now explicitly run gate with --json to get separate debug file and capture stdout via tee (no || true)
+          echo "--- Running debug gate with --json and tee ---"
+          mkdir -p "${{ github.workspace }}/.reports"
+          npm run android:manifest -- --variant debug --json "${{ github.workspace }}/.reports/merged-manifest-debug.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-debug.txt"
+          echo "--- debug gate outputs ---"
           ls -lh "${{ github.workspace }}/.reports/"
+          cat "${{ github.workspace }}/.reports/merged-manifest-debug.json" | head -n 20
+          cat "${{ github.workspace }}/.reports/merged-manifest-debug.txt" | head -n 30
+          echo "--- APKs ---"
+          find "${{ github.workspace }}/apps/mobile/android/app/build" -name "*.apk" -type f -exec ls -lh {} \;
           echo "--- merged manifest debug path from gate log above should be: apps/mobile/android/app/build/intermediates/merged_manifests/debug/AndroidManifest.xml ---"
 
       - name: Build release manifest (unsigned) + gate release variant
@@ -112,16 +116,14 @@ jobs:
           ls -lh app/build/intermediates/merged_manifests/release/ || true
           cd "${{ github.workspace }}"
           echo "PWD after cd back to workspace: $(pwd)"
-          echo "Step 2: gate release variant (must fail loudly if forbidden perms)"
-          npm run android:manifest -- --variant release
+          echo "Step 2: gate release variant (must fail loudly if forbidden perms) with --json and tee"
+          mkdir -p "${{ github.workspace }}/.reports"
+          npm run android:manifest -- --variant release --json "${{ github.workspace }}/.reports/merged-manifest-release.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-release.txt"
           echo "--- gate log above must show manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml ---"
-          echo "Step 3: verify .reports and copy"
+          echo "Step 3: verify .reports"
           ls -lh "${{ github.workspace }}/.reports/"
-          cp "${{ github.workspace }}/.reports/merged-manifest.json" "${{ github.workspace }}/.reports/merged-manifest-release.json"
-          echo "After copy:"
-          ls -lh "${{ github.workspace }}/.reports/"
-          echo "--- release gate JSONs ---"
-          cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 40 || echo "no release json"
+          cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 40
+          cat "${{ github.workspace }}/.reports/merged-manifest-release.txt" | head -n 40
           echo "Step 4: try assembleRelease (unsigned, may fail without signing config, but gate already passed)"
           cd "${{ github.workspace }}/apps/mobile/android"
           if ./gradlew :app:assembleRelease --no-daemon; then
@@ -171,6 +173,8 @@ jobs:
           path: |
             ${{ github.workspace }}/.reports/merged-manifest-debug.json
             ${{ github.workspace }}/.reports/merged-manifest-release.json
+            ${{ github.workspace }}/.reports/merged-manifest-debug.txt
+            ${{ github.workspace }}/.reports/merged-manifest-release.txt
             ${{ github.workspace }}/.reports/merged-manifest.json
             ${{ github.workspace }}/.reports/
           if-no-files-found: error

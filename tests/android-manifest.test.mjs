@@ -115,3 +115,29 @@ test('the allowlist is short and justified: every entry appears in the gate’s 
 test('with nothing built, the gate reports "not built" rather than passing', () => {
   assert.equal(findMergedManifest(), null);
 });
+
+test('--json writes a report to an explicit path (debug/release split)', async () => {
+  const { mkdtempSync, writeFileSync, readFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-manifest-test-'));
+  try {
+    const manifestPath = join(dir, 'AndroidManifest.xml');
+    const jsonPath = join(dir, 'custom-report.json');
+    writeFileSync(
+      manifestPath,
+      `<manifest><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" /><uses-permission android:name="android.permission.INTERNET" /></manifest>`,
+    );
+    const result = spawnSync(process.execPath, [join(ROOT, 'scripts/android/check-merged-manifest.mjs'), '--manifest', manifestPath, '--json', jsonPath], {
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, `CLI failed: ${result.stderr}\n${result.stdout}`);
+    const payload = JSON.parse(readFileSync(jsonPath, 'utf8'));
+    assert.equal(payload.manifest, manifestPath);
+    assert.ok(payload.ok);
+    assert.ok(payload.parsed.permissions.includes('android.permission.PACKAGE_USAGE_STATS'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
