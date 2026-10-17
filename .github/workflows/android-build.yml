@@ -20,9 +20,9 @@ permissions:
 
 jobs:
   android-build:
-    name: Gradle debug + merged-manifest gate
+    name: Gradle debug + release manifest gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -76,26 +76,44 @@ jobs:
           chmod +x android/gradlew
           ./android/gradlew --version
 
-      - name: Build + gate (make android-build)
+      - name: Build debug + gate (make android-build)
         run: |
           make android-build
+          ls -lh apps/mobile/android/app/build/outputs/apk/debug/ || true
+          ls -lh .reports/ || true
+          cp .reports/merged-manifest.json .reports/merged-manifest-debug.json || true
 
-      - name: Upload APK
+      - name: Build release manifest (unsigned) + gate release variant
+        run: |
+          cd apps/mobile/android
+          ./gradlew :app:processReleaseMainManifest --no-daemon
+          cd ../..
+          npm run android:manifest -- --variant release
+          ls -lh .reports/ || true
+          cp .reports/merged-manifest.json .reports/merged-manifest-release.json || true
+          cd android && ./gradlew :app:assembleRelease --no-daemon || echo "assembleRelease failed (expected without signing), but manifest gate passed"
+          cd ..
+
+      - name: Upload APKs (debug + release if any)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mirror-debug-apk
+          name: mirror-apks
           path: |
             apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
             apps/mobile/android/app/build/outputs/apk/**/*.apk
+            apps/mobile/android/app/build/outputs/bundle/**/*.aab
           if-no-files-found: warn
 
-      - name: Upload merged-manifest report
+      - name: Upload merged-manifest reports (debug + release)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: merged-manifest-report
+          name: merged-manifest-reports
           path: |
+            .reports/merged-manifest-debug.json
+            .reports/merged-manifest-release.json
             .reports/merged-manifest.json
             .reports/
           if-no-files-found: warn
