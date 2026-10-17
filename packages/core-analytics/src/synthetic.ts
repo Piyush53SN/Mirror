@@ -10,7 +10,7 @@
  * short-video habits and a long tail of reads. It is labelled demo data everywhere
  * it is rendered, and it never touches storage.
  */
-import { assertEvent } from '@mirror/shared-types';
+import { assertEvent, TOPIC_VECTOR_DIM } from '@mirror/shared-types';
 import type { MirrorEvent, DataTier } from '@mirror/shared-types';
 
 /** Deterministic PRNG (mulberry32). Same seed → same sequence, on every platform. */
@@ -75,6 +75,27 @@ export type GenerateOptions = {
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
+
+/**
+ * A deterministic 64-hex item identity for synthetic data.
+ *
+ * This is **not** the real HMAC the app uses (P1 derives that with a keystore
+ * key); it is a stable placeholder with the same shape, so storage, dedupe and
+ * schema tests see realistic values. It is labelled synthetic everywhere it is
+ * rendered, and no real item is ever hashed this way.
+ */
+function syntheticItemHash(random: () => number): string {
+  let out = '';
+  for (let i = 0; i < 64; i += 1) out += Math.floor(random() * 16).toString(16);
+  return out;
+}
+
+/** A 32-dimensional unit vector, rounded to 4 decimals, from the seeded PRNG. */
+export function syntheticTopicVector(random: () => number): number[] {
+  const raw = Array.from({ length: TOPIC_VECTOR_DIM }, () => random() * 2 - 1);
+  const norm = Math.sqrt(raw.reduce((sum, value) => sum + value * value, 0)) || 1;
+  return raw.map((value) => Math.round((value / norm) * 10_000) / 10_000);
+}
 const iso = (ms: number) => {
   const d = new Date(ms);
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}Z`;
@@ -122,14 +143,14 @@ export function generateEvents(options: GenerateOptions): MirrorEvent[] {
       const at = dayStart + (cursor - dayStart);
       const startIso = iso(at);
       const endIso = iso(at + duration);
-      events.push({ schemaVersion: 1, id: id('evt'), kind: 'app_foreground', at: startIso, tier: 'D', origin: 'os', content: 'metadata', app: entry.app });
-      events.push({ schemaVersion: 1, id: id('evt'), kind: 'app_background', at: endIso, tier: 'D', origin: 'os', content: 'metadata', app: entry.app, durationMs: duration });
+      events.push({ schema_version: 1, id: id('evt'), kind: 'app_foreground', at: startIso, tier: 'D', origin: 'os', content: 'metadata', app: entry.app });
+      events.push({ schema_version: 1, id: id('evt'), kind: 'app_background', at: endIso, tier: 'D', origin: 'os', content: 'metadata', app: entry.app, duration_ms: duration });
 
       // Tier C: a browser visit with a search, only for personas that have C.
       if (persona.tiers.includes('C') && entry.app === 'com.android.chrome' && random() < 0.7) {
         const hosts = ['arxiv.org', 'youtube.com', 'developer.mozilla.org', 'en.wikipedia.org'];
         events.push({
-          schemaVersion: 1,
+          schema_version: 1,
           id: id('evt'),
           kind: 'web_visit',
           at: startIso,
@@ -138,15 +159,18 @@ export function generateEvents(options: GenerateOptions): MirrorEvent[] {
           content: 'content',
           consent: `grant_extension_${persona.id}`,
           host: hosts[Math.floor(random() * hosts.length)]!,
-          durationMs: duration,
-          scrollDepth: Number(random().toFixed(2)),
+          duration_ms: duration,
+          scroll_depth: Number(random().toFixed(2)),
+          completion_ratio: Number(random().toFixed(2)),
+          item_hash: syntheticItemHash(random),
+          topic_vector: syntheticTopicVector(random),
           ...(random() < 0.5 ? { query: ['borrow checker', 'zone system', 'stellar spectra', 'composting ratio'][Math.floor(random() * 4)]! } : {}),
         });
       }
       // Tier B: an imported item, only for personas that have B.
       if (persona.tiers.includes('B') && random() < 0.12) {
         events.push({
-          schemaVersion: 1,
+          schema_version: 1,
           id: id('evt'),
           kind: 'import_item',
           at: startIso,
@@ -154,15 +178,17 @@ export function generateEvents(options: GenerateOptions): MirrorEvent[] {
           origin: 'export',
           content: 'content',
           consent: `grant_takeout_${persona.id}`,
-          sourceId: 'youtube',
-          exportFormat: 'takeout',
+          source_id: 'youtube',
+          export_format: 'takeout',
           subject: ['film photography', 'rust programming', 'urban gardening'][Math.floor(random() * 3)]!,
+          item_hash: syntheticItemHash(random),
+          topic_vector: syntheticTopicVector(random),
         });
       }
       // Tier A: an API item, only for personas that have A.
       if (persona.tiers.includes('A') && random() < 0.08) {
         events.push({
-          schemaVersion: 1,
+          schema_version: 1,
           id: id('evt'),
           kind: 'api_item',
           at: startIso,
@@ -170,16 +196,18 @@ export function generateEvents(options: GenerateOptions): MirrorEvent[] {
           origin: 'api',
           content: 'content',
           consent: `grant_reddit_${persona.id}`,
-          sourceId: 'reddit',
+          source_id: 'reddit',
           action: 'saved',
           subject: 'astronomy',
+          item_hash: syntheticItemHash(random),
+          topic_vector: syntheticTopicVector(random),
         });
       }
       cursor += duration;
     }
     // A couple of unlocks, tier D.
     for (let u = 0; u < 3; u++) {
-      events.push({ schemaVersion: 1, id: id('evt'), kind: 'device_unlock', at: iso(dayStart + (7 + random() * 16) * 3_600_000), tier: 'D', origin: 'os', content: 'metadata' });
+      events.push({ schema_version: 1, id: id('evt'), kind: 'device_unlock', at: iso(dayStart + (7 + random() * 16) * 3_600_000), tier: 'D', origin: 'os', content: 'metadata' });
     }
   }
 

@@ -19,7 +19,7 @@ const core = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.b
 const { sessionize, summarise, SHORT_SESSION_MS, generateEvents } = core;
 
 const ev = (kind, at, app = 'com.a') => ({
-  schemaVersion: 1,
+  schema_version: 1,
   id: `evt_${kind}_${at.replace(/\D/g, '')}`.slice(0, 40),
   kind,
   at,

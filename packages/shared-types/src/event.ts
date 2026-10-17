@@ -3,8 +3,14 @@
  *
  * One event type, discriminated by `kind`, because the storage layer, the
  * ingestion pipeline, the synthetic generator and the privacy canary all have to
- * agree on exactly one shape. Every event carries:
+ * agree on exactly one shape.
  *
+ * Field naming: **snake_case**. These objects are persisted and (in P6) may be
+ * serialised by the sync layer, so the wire format is the name of record; the
+ * TypeScript type names stay PascalCase. `session_id`, `item_hash`,
+ * `topic_vector` and `completion_ratio` are named exactly as the brief requires.
+ *
+ * Every event carries:
  *   - `tier`    which of the four allowed data sources produced it,
  *   - `origin`  the mechanism (used to prove no forbidden source ever appears),
  *   - `content` whether the payload is metadata (safe to aggregate) or content
@@ -18,6 +24,9 @@
 import type { DataTier } from './tier.js';
 
 export const SCHEMA_VERSION = 1;
+
+/** Dimensionality of an on-device topic embedding. Fixed so storage has one shape. */
+export const TOPIC_VECTOR_DIM = 32;
 
 /** The only four mechanisms the brief allows. Nothing else validates. */
 export const ORIGINS = ['os', 'extension', 'api', 'export', 'user'] as const;
@@ -38,7 +47,7 @@ export type EventKind =
   | 'focus_window';
 
 type Base<TKind extends EventKind> = {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schema_version: typeof SCHEMA_VERSION;
   /** Local-only identifier. Any UUID works; it is never sent anywhere. */
   id: string;
   kind: TKind;
@@ -49,7 +58,23 @@ type Base<TKind extends EventKind> = {
   content: ContentClass;
   /** Required for A/B/C events: the grant that makes the event lawful to record. */
   consent?: string;
+  /**
+   * The sitting this event was attributed to, assigned at ingest.
+   * Optional on raw events (attribution happens later); required on labels.
+   */
+  session_id?: string;
 };
+
+/**
+ * An opaque item identity: HMAC-SHA256, hex, keyed with a per-install secret held
+ * in the platform keystore. It lets two events about the same item be joined
+ * without storing the URL or title they came from. Without the key — which never
+ * leaves the device — the hash is not reversible.
+ */
+export type ItemHash = string;
+
+/** A 32-dimensional, unit-length topic direction. Never a title, never a URL. */
+export type TopicVector = number[];
 
 export type AppForegroundEvent = Base<'app_foreground'> & {
   /** Android package name, e.g. `com.google.android.youtube`. */
@@ -61,7 +86,7 @@ export type AppForegroundEvent = Base<'app_foreground'> & {
 export type AppBackgroundEvent = Base<'app_background'> & {
   app: string;
   /** Milliseconds the app was in the foreground. Derived, then checked. */
-  durationMs: number;
+  duration_ms: number;
 };
 
 export type DeviceUnlockEvent = Base<'device_unlock'>;
@@ -69,38 +94,44 @@ export type DeviceUnlockEvent = Base<'device_unlock'>;
 export type WebVisitEvent = Base<'web_visit'> & {
   /** Host only — never a full URL with a query string. */
   host: string;
-  durationMs: number;
+  duration_ms: number;
   /** 0..1, from the extension. Absent means "not measured", never 0. */
-  scrollDepth?: number;
-  /** Share of a video watched, 0..1. */
-  completed?: number;
+  scroll_depth?: number;
+  /** Share of a video or audio item watched, 0..1. */
+  completion_ratio?: number;
   /** The query, when the visit began with a search. Content, by definition. */
   query?: string;
+  item_hash?: ItemHash;
+  topic_vector?: TopicVector;
 };
 
 export type ApiItemEvent = Base<'api_item'> & {
   /** Connector id from @mirror/connectors, e.g. `reddit`. */
-  sourceId: string;
+  source_id: string;
   action: 'saved' | 'subscribed' | 'followed' | 'liked';
   /** What the item was about, when the API says so. Content. */
   subject?: string;
+  item_hash?: ItemHash;
+  topic_vector?: TopicVector;
 };
 
 export type ImportItemEvent = Base<'import_item'> & {
-  sourceId: string;
+  source_id: string;
   /** Which export produced it, e.g. `takeout`. */
-  exportFormat: string;
+  export_format: string;
   subject?: string;
+  item_hash?: ItemHash;
+  topic_vector?: TopicVector;
 };
 
 export type IntentLabelEvent = Base<'intent_label'> & {
   /** The session this label belongs to; labels never travel without it. */
-  sessionId: string;
+  session_id: string;
   label: 'intentional' | 'mindless' | 'unsure';
 };
 
 export type FocusWindowEvent = Base<'focus_window'> & {
-  windowId: string;
+  window_id: string;
   /** `start`, `end`, or `left` when the user returned early. */
   phase: 'start' | 'end' | 'left';
 };

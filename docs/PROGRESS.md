@@ -15,9 +15,130 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P-UI-1 | **accepted** | generated tokens (`packages/ui/tokens/`), single-file phone prototype (`prototype/index.html`) — commit `93e83cc` |
 | P-UI-2 | **approved with corrections** | React Native design system (`packages/ui/src`), all 28 Section J items (`packages/ui/screens`), mockup gallery (`packages/ui/mockups/gallery`), **96** tests. Corrections from review applied — see below |
 | P0 | **delivered for review** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
-| P1…P7 | not started | — |
+| P1a | **next** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed. No new features |
+| P1b | not started | encrypted local storage, Android UsageStats collector, ingestion, importers, embeddings |
+| P2…P7 | not started | — |
 
 ---
+
+## Pre-P1 corrections accepted (2026-10-17)
+
+Six items were raised when P0 was approved. Each changed the repository, not just
+this document.
+
+1. **The P-UI-2 corrections are in this file.** They are the section *"Review
+   corrections accepted on P-UI-2"* above: tier labels for the four features
+   (with `requiresAnyOf` and the refusal for a D-only device), and the phase map
+   taken from SPEC §5 (Share Cards = P6, scoring screens = P2, Intent Check = P3,
+   privacy surfaces = P5). The interpretation note about "feature 23" stays: the
+   rule applied is SPEC §2.7/§2.9 (every feature declares its tier and degrades),
+   because Section J item 23 is the Privacy Receipt.
+2. **Lint, secret scanning and dependency scanning now run in CI** — and locally,
+   through the same commands. Details and thresholds are in *"Security gates"*
+   below. Dependency scanning reports 33 high advisories in the Expo toolchain
+   today; that number is recorded here rather than hidden by a threshold.
+3. **The event schema now carries the four named fields**, and the three record
+   schemas exist: `consent_log`, `retention`, `connections`. The event schema was
+   moved to **snake_case** as part of this, so `session_id` is the same name in
+   TypeScript, JSON and storage. See *"P0 schema additions"* below.
+4. **Android permissions are answered on paper and in a test.**
+   `docs/ANDROID_PERMISSIONS.md` lists every permission that will ever exist,
+   what triggers it and what is never requested. Boot sync uses WorkManager, so
+   Mirror does **not** request `RECEIVE_BOOT_COMPLETED`; notifications are
+   declared and requested in P4 when the feature exists. `app.json` is unchanged,
+   and `tests/config.test.mjs` fails if a declared permission is undocumented or a
+   future permission is declared before its phase.
+5. **`--legacy-peer-deps` is a temporary bridge, not a habit.** The root installs
+   React 18 (design system, `react-test-renderer`) while the app workspace needs
+   React 19 / RN 0.88; npm's strict peer resolution rejects that tree. P1a removes
+   the React 18 half, after which `npm install` must succeed **without** the flag
+   and CI must fail if it does not.
+6. **The Family Controls request text is ready to submit** —
+   `docs/store/FAMILY_CONTROLS_REQUEST.md`, with the two fields only the account
+   holder can fill (Team ID, support email) marked. It is a **MANUAL** step and is
+   submitted before the P5 build.
+
+### P0 schema additions (2026-10-17)
+
+- `session_id` — optional on raw events, required on `intent_label`; assigned at
+  ingest, format `ses_…`. Sessions stay derived; the field says which sitting an
+  event was attributed to.
+- `item_hash` — 64 lowercase hex characters: HMAC-SHA256 of a canonical item
+  identity, keyed by a per-install secret in the platform keystore. It allows
+  dedupe and joins without storing a URL or title. Validator and schema both
+  require it to ride on a `content: "content"` event.
+- `topic_vector` — exactly 32 finite numbers in [-1, 1] with a unit norm
+  (0.97–1.03 tolerance for 4-decimal rounding). A direction, not a title. The
+  validator rejects wrong dimensions, NaN, out-of-range values, the zero vector
+  and non-unit vectors; the JSON Schema description carries the shape and the
+  executable check carries the norm.
+- `completion_ratio` — 0..1, replacing the earlier `completed` name; content
+  signal, so it requires `content: "content"`.
+- **Naming decision:** the event schema is snake_case (`schema_version`,
+  `duration_ms`, `scroll_depth`, `source_id`, `export_format`, `window_id`). It is
+  the persisted wire format and the brief names four of its fields in snake_case;
+  a mixed convention would be worse. Storage-facing record schemas match. The
+  preferences object remains camelCase — it is an in-process settings API, not a
+  persisted payload — and this is the only mixed boundary in the codebase.
+- `consent_log` — append-only entries (`granted` / `updated` / `revoked`), ordered,
+  with unique ids; a revocation must reference a preceding grant and must set
+  `deletes_imported_events: true`. `liveConsent()` derives current state;
+  `eventsCoveredBy()` names what a revocation deletes.
+- `retention` — per-class day counts, `diagnostics: 0` (there are none),
+  `on_revoke: delete_imported_events`, `on_uninstall: delete_everything`, and a
+  hard-delete bound no class may exceed.
+- `connections` — status, granted scopes, `token_ref: keystore:…`, timestamps,
+  import count. **No credential field exists**, and the validator rejects any key
+  that looks like one (`access_token`, `refreshToken`, `client_secret`,
+  `password`, `authorization`, …). Error records carry an uppercase code, never
+  provider text.
+
+### Security gates (2026-10-17)
+
+| Gate | Command | Where in CI | Rule |
+| --- | --- | --- | --- |
+| Lint | `npm run lint` | `verify` job, step *Lint (ESLint)* | ESLint 9 + typescript-eslint over the P0 packages, `scripts/` and the Node tests. `packages/ui` joins in P1a, when those files are already being edited. |
+| Secret scan | `npm run security:secrets` | `verify` job, step *Secret scan* | Scans every tracked and untracked-not-ignored file: private keys, AWS/GitHub/Slack/Stripe/Google keys, JWTs, bearer headers, `EXPO_TOKEN`, and high-entropy `key = "…"` assignments. Placeholders (`MRRCANARY-…`, `example`, `<your-key>`) are reported as allowed, never as findings. Zero findings is the only passing state. |
+| Dependency audit | `npm run security:deps` | `dependencies` job | Fails on any **critical** advisory. **High** advisories are reported and tracked; `--strict` turns them into failures and is enabled when P1a's Expo upgrade brings the count to zero. |
+| Privacy canary | `npm run test:privacy` | `privacy-scanner` job | Unchanged from P0; exit 2 is "not run", never a pass. |
+
+Current dependency state (measured 2026-10-17): **0 critical, 33 high, 14
+moderate**, all in the Expo 58 / Metro / Jest / RN-CLI toolchain paths. P1a owns
+reducing this; until then the number is visible in the audit artifact and here.
+
+
+
+### P1 plan (10 lines)
+
+1. **P1a — toolchain only.** Migrate `packages/ui` to React 19 / RN 0.88: peer
+   and dev dependencies, `@types/react`, and the deprecated
+   `react-test-renderer` replaced with the renderer that ships with the new stack.
+2. **P1a — gates.** Add `packages/ui` to ESLint, regenerate the 96-frame gallery,
+   prove every UI/mockup/token test passes unchanged, remove
+   `--legacy-peer-deps` from README, Makefile and CI, and require a clean plain
+   `npm install`.
+3. **P1a — checkpoint.** Short report (changes, tests, `npm audit` before/after),
+   then stop for approval before touching features.
+4. **P1b — encrypted store.** SQLite with a key held in the platform keystore;
+   versioned migrations; delete-all; retention expiry driven by the `retention`
+   policy; every write appends to the `consent_log`.
+5. **P1b — UsageStats collector.** Kotlin module over `UsageEvents`: foreground
+   intervals only, permission check with the Settings deep link, WorkManager
+   bounded daily job, collection off the UI thread, no content fields.
+6. **P1b — ingestion.** Assign `session_id`, dedupe with `item_hash`, persist
+   `topic_vector`, enforce tier/consent at write time, crash-safe batches.
+7. **P1b — importers.** Google Takeout and a connector export parser: streaming,
+   dry-run preview of what would be imported, dedupe against existing hashes,
+   revoke deletes exactly what the import produced.
+8. **P1b — embeddings.** `packages/ml`: an on-device, network-free embedder
+   (versioned model id) producing 32-d unit vectors, with a golden-vector test and
+   a cold-start budget.
+9. **P1b — tests and budgets.** Property tests for store invariants and retention,
+   import edge cases (empty, huge, malformed), canary run on an emulator with the
+   real store, and measured cold start / battery notes.
+10. **P1b — report.** The 8-part phase report; release impact: still no release,
+    **stage 1 remains P2**.
+
 
 ## Approved decisions
 

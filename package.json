@@ -16,20 +16,25 @@
     "tokens": "node scripts/generate-tokens.mjs",
     "typecheck": "tsc -p packages/ui/tsconfig.json --noEmit && tsc -p tsconfig.packages.json",
     "mockups": "node packages/ui/mockups/render.mjs",
-    "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups && npm run test:packages && npm run test:config && npm run test:privacy",
+    "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups && npm run test:packages && npm run test:config && npm run test:privacy && npm run test:security",
     "test:tokens": "node --test tests/tokens.test.mjs",
     "test:prototype": "node --test tests/prototype.test.mjs",
     "test:ui": "node --test packages/ui/tests/ui.test.mjs",
     "test:mockups": "npm run mockups && node --test packages/ui/tests/mockups.test.mjs",
     "check:prototype": "node scripts/check-prototype.mjs",
-    "verify": "npm run tokens && npm run typecheck && npm test",
+    "verify": "npm run tokens && npm run typecheck && npm run lint && npm test && npm run security:secrets",
     "test:packages": "node --test packages/shared-types/tests/*.test.mjs packages/core-analytics/tests/*.test.mjs packages/connectors/tests/*.test.mjs",
     "test:config": "node --test tests/config.test.mjs",
     "test:privacy": "node --test tests/privacy.test.mjs && npm run privacy:self-test && npm run privacy:addon",
     "privacy:self-test": "node scripts/privacy/self-test.mjs",
     "privacy:addon": "python3 -m unittest discover -s tests -p \"privacy_addon_test.py\"",
     "privacy:extension": "node scripts/privacy/extension-canary.mjs",
-    "privacy:android": "bash scripts/privacy/android-emulator.sh"
+    "privacy:android": "bash scripts/privacy/android-emulator.sh",
+    "lint": "eslint packages/shared-types/src packages/core-analytics/src packages/connectors/src scripts tests",
+    "test:security": "node --test tests/security.test.mjs",
+    "security:secrets": "node scripts/security/secret-scan.mjs",
+    "security:deps": "node scripts/security/dependency-scan.mjs",
+    "security": "npm run lint && npm run security:secrets && npm run security:deps"
   },
   "keywords": [
     "privacy",
@@ -41,12 +46,14 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.1",
     "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
     "fast-check": "^4.10.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-native": "^0.74.7",
     "react-test-renderer": "^18.3.1",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.71.2"
   },
   "imports": {}
 }

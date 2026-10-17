@@ -19,6 +19,7 @@ const read = (...parts) => JSON.parse(readFileSync(join(ROOT, ...parts), 'utf8')
 const app = read('apps/mobile/app.json').expo;
 const eas = read('apps/mobile/eas.json');
 const manifest = read('apps/extension/manifest.json');
+const permissionsDoc = readFileSync(join(ROOT, 'docs/ANDROID_PERMISSIONS.md'), 'utf8');
 const connectors = await bundleTs(join(ROOT, 'packages/connectors/src/index.ts'), { outfile: join(ROOT, 'tests/.build/connectors.mjs') });
 
 /* ------------------------------------------------------------------ app ids -- */
@@ -55,6 +56,23 @@ test('advertising id, contacts, location, mic, camera, SMS and phone state are b
   ]) {
     assert.ok(blocked.has(permission), `${permission} must be blocked, not merely unused`);
   }
+});
+
+test('every declared permission is documented, and nothing is declared before its feature exists', () => {
+  for (const permission of app.android.permissions) {
+    assert.ok(permissionsDoc.includes(permission), `${permission} must be explained in docs/ANDROID_PERMISSIONS.md`);
+  }
+  // Notifications are P4, OAuth/INTERNET is P5: neither is in the manifest yet.
+  assert.ok(!app.android.permissions.includes('android.permission.POST_NOTIFICATIONS'));
+  assert.ok(!app.android.permissions.includes('android.permission.INTERNET'));
+  assert.ok(permissionsDoc.includes('POST_NOTIFICATIONS'), 'the planned notification permission must still be documented');
+});
+
+test('boot sync is documented as needing no permission of its own', () => {
+  assert.ok(!app.android.permissions.includes('android.permission.RECEIVE_BOOT_COMPLETED'));
+  assert.ok(permissionsDoc.includes('RECEIVE_BOOT_COMPLETED'));
+  assert.match(permissionsDoc, /WorkManager/);
+  assert.match(permissionsDoc, /does \*\*not\*\* request it/);
 });
 
 test('no accessibility service, overlay, screen recording or notification-listener permission is ever declared', () => {

@@ -25,8 +25,12 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci --legacy-peer-deps
-      - name: Verify (tokens, both TypeScript projects, all tests)
-        run: npm run verify
+      - name: Lint (ESLint)
+        run: npm run lint
+      - name: Secret scan (patterns + entropy, tracked files)
+        run: npm run security:secrets
+      - name: Typecheck and tests (tokens, types, 200+ checks)
+        run: npm run tokens && npm run typecheck && npm test
 
       # Deliberately not part of `verify`: measuring the prototype needs a real
       # browser, which is not available on every runner. A skipped measurement is
@@ -38,6 +42,31 @@ jobs:
       - name: Note if measurements were skipped
         if: steps.measure.outcome == 'failure'
         run: echo "::warning::Prototype measurement did not run (no browser). Tokens are unchanged and reviewed."
+
+  dependencies:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      # Critical advisories block. High advisories are reported and tracked in
+      # docs/PROGRESS.md; --strict turns them into failures once P1a upgrades the
+      # Expo toolchain and the count reaches zero.
+      - name: Audit the lockfile
+        run: npm run security:deps
+      - name: Upload the audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-report
+          path: .reports/dependencies.json
+          if-no-files-found: warn
 
   privacy-scanner:
     name: privacy canary scanner

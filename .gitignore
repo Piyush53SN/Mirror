@@ -31,6 +31,8 @@ packages/ui/tests/.build/
 packages/*/tests/.build/
 tests/.build/
 
-# canary reports and debug builds
+# canary reports, scan reports and debug builds
 privacy/
 builds/
+.reports/
+.reports/

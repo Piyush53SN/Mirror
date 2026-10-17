@@ -14,11 +14,13 @@
  *   - `content: 'content'` events may not use origin `os`: the OS never yields
  *     titles, queries or URLs, so such an event is a fabricated signal.
  *   - `web_visit.host` is a hostname, never a URL with a path or query.
+ *   - `topic_vector` is a unit vector, 32 dimensions: a direction, not a title.
+ *   - `item_hash` is HMAC-SHA256 hex, so it is opaque and fixed-width.
  *   - Timestamps must be ISO-8601 UTC with a Z.
  */
 import type { DataTier } from './tier.js';
 import { TIERS } from './tier.js';
-import { CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, type MirrorEvent } from './event.js';
+import { CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, TOPIC_VECTOR_DIM, type MirrorEvent } from './event.js';
 
 export type ValidationError = { path: string; message: string };
 export type ValidationResult = { ok: true; value: MirrorEvent } | { ok: false; errors: ValidationError[] };
@@ -34,38 +36,62 @@ const KINDS = [
   'focus_window',
 ] as const;
 
-const COMMON = ['schemaVersion', 'id', 'kind', 'at', 'tier', 'origin', 'content', 'consent'] as const;
+const COMMON = ['schema_version', 'id', 'kind', 'at', 'tier', 'origin', 'content', 'consent', 'session_id'] as const;
 
 /** Fields each kind may carry, beyond the common ones. */
 export const KIND_FIELDS: Record<string, readonly string[]> = {
   app_foreground: ['app', 'activity'],
-  app_background: ['app', 'durationMs'],
+  app_background: ['app', 'duration_ms'],
   device_unlock: [],
-  web_visit: ['host', 'durationMs', 'scrollDepth', 'completed', 'query'],
-  api_item: ['sourceId', 'action', 'subject'],
-  import_item: ['sourceId', 'exportFormat', 'subject'],
-  intent_label: ['sessionId', 'label'],
-  focus_window: ['windowId', 'phase'],
+  web_visit: ['host', 'duration_ms', 'scroll_depth', 'completion_ratio', 'query', 'item_hash', 'topic_vector'],
+  api_item: ['source_id', 'action', 'subject', 'item_hash', 'topic_vector'],
+  import_item: ['source_id', 'export_format', 'subject', 'item_hash', 'topic_vector'],
+  intent_label: ['label'],
+  focus_window: ['window_id', 'phase'],
 };
 
 /** Fields a kind must carry (beyond the three every event carries). */
 export const KIND_REQUIRED: Record<string, readonly string[]> = {
   app_foreground: ['app'],
-  app_background: ['app', 'durationMs'],
+  app_background: ['app', 'duration_ms'],
   device_unlock: [],
-  web_visit: ['host', 'durationMs'],
-  api_item: ['sourceId', 'action'],
-  import_item: ['sourceId', 'exportFormat'],
-  intent_label: ['sessionId', 'label'],
-  focus_window: ['windowId', 'phase'],
+  web_visit: ['host', 'duration_ms'],
+  api_item: ['source_id', 'action'],
+  import_item: ['source_id', 'export_format'],
+  intent_label: ['session_id', 'label'],
+  focus_window: ['window_id', 'phase'],
 };
 
 const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/;
 const HOST = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const ID = /^[A-Za-z0-9_-]{8,64}$/;
+const SESSION_ID = /^ses_[A-Za-z0-9_-]{6,40}$/;
+const ITEM_HASH = /^[0-9a-f]{64}$/;
 const MAX_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
+/** Unit-vector tolerance: rounding to 4 decimals keeps ‖v‖ within this. */
+const NORM_MIN = 0.97;
+const NORM_MAX = 1.03;
+
 const fail = (path: string, message: string): ValidationError => ({ path, message });
+
+/** Validate a topic embedding. Exported because embeddings arrive in P1. */
+export function validateTopicVector(value: unknown, path = 'topic_vector'): ValidationError[] {
+  if (!Array.isArray(value)) return [fail(path, 'must be an array of numbers')];
+  if (value.length !== TOPIC_VECTOR_DIM) return [fail(path, `must have exactly ${TOPIC_VECTOR_DIM} dimensions`)];
+  let sumSquares = 0;
+  for (let i = 0; i < value.length; i++) {
+    const n = value[i];
+    if (typeof n !== 'number' || !Number.isFinite(n)) return [fail(`${path}[${i}]`, 'must be a finite number')];
+    if (n < -1 || n > 1) return [fail(`${path}[${i}]`, 'must be between -1 and 1')];
+    sumSquares += n * n;
+  }
+  const norm = Math.sqrt(sumSquares);
+  if (norm < NORM_MIN || norm > NORM_MAX) {
+    return [fail(path, `must be a unit vector (norm ${norm.toFixed(3)} is outside ${NORM_MIN}–${NORM_MAX})`)];
+  }
+  return [];
+}
 
 export function validateEvent(input: unknown): ValidationResult {
   const errors: ValidationError[] = [];
@@ -74,7 +100,7 @@ export function validateEvent(input: unknown): ValidationResult {
   }
   const e = input as Record<string, unknown>;
 
-  if (e.schemaVersion !== SCHEMA_VERSION) errors.push(fail('schemaVersion', `must be ${SCHEMA_VERSION}`));
+  if (e.schema_version !== SCHEMA_VERSION) errors.push(fail('schema_version', `must be ${SCHEMA_VERSION}`));
   if (typeof e.id !== 'string' || !ID.test(e.id)) errors.push(fail('id', 'must be 8-64 chars of [A-Za-z0-9_-]'));
   if (typeof e.kind !== 'string' || !KINDS.includes(e.kind as (typeof KINDS)[number])) {
     errors.push(fail('kind', `must be one of ${KINDS.join(', ')}`));
@@ -115,9 +141,17 @@ export function validateEvent(input: unknown): ValidationResult {
     errors.push(fail('content', 'the OS produces metadata only; a content event from origin "os" is fabricated'));
   }
 
-  if (e.durationMs !== undefined) {
-    if (typeof e.durationMs !== 'number' || !Number.isFinite(e.durationMs) || e.durationMs < 0 || e.durationMs > MAX_INTERVAL_MS) {
-      errors.push(fail('durationMs', 'must be a finite number between 0 and 24h'));
+  if (e.session_id !== undefined && (typeof e.session_id !== 'string' || !SESSION_ID.test(e.session_id))) {
+    errors.push(fail('session_id', 'must look like ses_<6-40 chars>'));
+  }
+  if (e.item_hash !== undefined && (typeof e.item_hash !== 'string' || !ITEM_HASH.test(e.item_hash))) {
+    errors.push(fail('item_hash', 'must be 64 lowercase hex characters (HMAC-SHA256)'));
+  }
+  if (e.topic_vector !== undefined) errors.push(...validateTopicVector(e.topic_vector));
+
+  if (e.duration_ms !== undefined) {
+    if (typeof e.duration_ms !== 'number' || !Number.isFinite(e.duration_ms) || e.duration_ms < 0 || e.duration_ms > MAX_INTERVAL_MS) {
+      errors.push(fail('duration_ms', 'must be a finite number between 0 and 24h'));
     }
   }
   if (e.app !== undefined && (typeof e.app !== 'string' || !/^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(e.app))) {
@@ -127,11 +161,21 @@ export function validateEvent(input: unknown): ValidationResult {
     if (typeof e.host !== 'string' || !HOST.test(e.host)) errors.push(fail('host', 'must be a bare hostname'));
     else if (e.host.includes('/') || e.host.includes('?')) errors.push(fail('host', 'must not contain a path or query'));
   }
-  for (const ratio of ['scrollDepth', 'completed'] as const) {
+  for (const ratio of ['scroll_depth', 'completion_ratio'] as const) {
     const v = e[ratio];
-    if (v !== undefined && (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1)) {
+    if (v === undefined) continue;
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1) {
       errors.push(fail(ratio, 'must be a number between 0 and 1'));
     }
+  }
+  if (e.completion_ratio !== undefined && e.content !== 'content') {
+    errors.push(fail('completion_ratio', 'is a content signal; the event must be marked content'));
+  }
+  if (e.topic_vector !== undefined && e.content !== 'content') {
+    errors.push(fail('topic_vector', 'is derived from content; the event must be marked content'));
+  }
+  if (e.item_hash !== undefined && e.content !== 'content') {
+    errors.push(fail('item_hash', 'identifies a content item; the event must be marked content'));
   }
   if (e.action !== undefined && !['saved', 'subscribed', 'followed', 'liked'].includes(String(e.action))) {
     errors.push(fail('action', 'must be saved, subscribed, followed or liked'));

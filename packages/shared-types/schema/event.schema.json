@@ -2,12 +2,12 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://mirror.example/schema/event-1.json",
   "title": "Mirror event",
-  "description": "One on-device behaviour event. Closed schema: unknown fields are rejected, because an unknown field is either a bug or a leak. Enforcement lives in src/validate.ts; this file is the interop description and the two are kept in step by a test.",
+  "description": "One on-device behaviour event. Closed schema: unknown fields are rejected, because an unknown field is either a bug or a leak. Enforcement lives in src/validate.ts; this file is the interop description and the two are kept in step by a test. Field names are snake_case because this is the persisted wire format.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "id", "kind", "at", "tier", "origin", "content"],
+  "required": ["schema_version", "id", "kind", "at", "tier", "origin", "content"],
   "properties": {
-    "schemaVersion": { "const": 1 },
+    "schema_version": { "const": 1 },
     "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
     "kind": {
       "enum": ["app_foreground", "app_background", "device_unlock", "web_visit", "api_item", "import_item", "intent_label", "focus_window"]
@@ -17,20 +17,28 @@
     "origin": { "enum": ["os", "extension", "api", "export", "user"] },
     "content": { "enum": ["metadata", "content"] },
     "consent": { "type": "string", "minLength": 1, "description": "Grant id. Required for A/B/C events, forbidden on D." },
+    "session_id": { "type": "string", "pattern": "^ses_[A-Za-z0-9_-]{6,40}$", "description": "Sitting this event was attributed to, assigned at ingest." },
+    "item_hash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "HMAC-SHA256 of a canonical item identity, keyed by a per-install secret. Opaque and not reversible without the key." },
+    "topic_vector": {
+      "type": "array",
+      "minItems": 32,
+      "maxItems": 32,
+      "items": { "type": "number", "minimum": -1, "maximum": 1 },
+      "description": "32-dimensional unit vector: a topic direction, never a title or URL. Norm is enforced by the validator."
+    },
+    "completion_ratio": { "type": "number", "minimum": 0, "maximum": 1, "description": "Share of a media item watched, 0..1. Content signal." },
     "app": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$" },
     "activity": { "type": "string" },
-    "durationMs": { "type": "number", "minimum": 0, "maximum": 86400000 },
+    "duration_ms": { "type": "number", "minimum": 0, "maximum": 86400000 },
     "host": { "type": "string", "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$" },
-    "scrollDepth": { "type": "number", "minimum": 0, "maximum": 1 },
-    "completed": { "type": "number", "minimum": 0, "maximum": 1 },
+    "scroll_depth": { "type": "number", "minimum": 0, "maximum": 1 },
     "query": { "type": "string", "maxLength": 512 },
-    "sourceId": { "type": "string" },
+    "source_id": { "type": "string" },
     "action": { "enum": ["saved", "subscribed", "followed", "liked"] },
     "subject": { "type": "string" },
-    "exportFormat": { "type": "string" },
-    "sessionId": { "type": "string" },
+    "export_format": { "type": "string" },
     "label": { "enum": ["intentional", "mindless", "unsure"] },
-    "windowId": { "type": "string" },
+    "window_id": { "type": "string" },
     "phase": { "enum": ["start", "end", "left"] }
   },
   "allOf": [
@@ -40,27 +48,27 @@
     },
     {
       "if": { "properties": { "kind": { "const": "app_background" } }, "required": ["kind"] },
-      "then": { "required": ["app", "durationMs"] }
+      "then": { "required": ["app", "duration_ms"] }
     },
     {
       "if": { "properties": { "kind": { "const": "web_visit" } }, "required": ["kind"] },
-      "then": { "required": ["host", "durationMs"] }
+      "then": { "required": ["host", "duration_ms"] }
     },
     {
       "if": { "properties": { "kind": { "const": "api_item" } }, "required": ["kind"] },
-      "then": { "required": ["sourceId", "action"] }
+      "then": { "required": ["source_id", "action"] }
     },
     {
       "if": { "properties": { "kind": { "const": "import_item" } }, "required": ["kind"] },
-      "then": { "required": ["sourceId", "exportFormat"] }
+      "then": { "required": ["source_id", "export_format"] }
     },
     {
       "if": { "properties": { "kind": { "const": "intent_label" } }, "required": ["kind"] },
-      "then": { "required": ["sessionId", "label"] }
+      "then": { "required": ["session_id", "label"] }
     },
     {
       "if": { "properties": { "kind": { "const": "focus_window" } }, "required": ["kind"] },
-      "then": { "required": ["windowId", "phase"] }
+      "then": { "required": ["window_id", "phase"] }
     },
     {
       "if": { "properties": { "tier": { "enum": ["A", "B", "C"] } }, "required": ["tier"] },
@@ -76,6 +84,11 @@
         "required": ["content", "origin"],
         "properties": { "content": { "const": "content" }, "origin": { "const": "os" } }
       }
+    },
+    {
+      "description": "completion_ratio, topic_vector and item_hash are content-derived, so the event must be marked content.",
+      "if": { "anyOf": [{ "required": ["completion_ratio"] }, { "required": ["topic_vector"] }, { "required": ["item_hash"] }] },
+      "then": { "properties": { "content": { "const": "content" } } }
     }
   ]
 }

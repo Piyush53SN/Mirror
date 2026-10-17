@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-this-alias -- the DOM stub must capture `this` for accessor closures */
 /**
  * tests/dom-stub.mjs — a deliberately tiny DOM + CSS-layout stub.
  *
@@ -113,7 +114,6 @@ function matchesCompound(node, part) {
   const lastParts = segments[segments.length - 1].split(/\s+/).filter(Boolean);
   // tokens in the final segment form an ancestor chain of their own
   const chain = [];
-  const lastCompoundSeq = [];
   let node0 = lastParts.pop();
   let cursor = node;
   if (!matchesSimple(cursor, node0)) return false;
@@ -402,7 +402,6 @@ export class StubElement {
     let maxChildH = 0;
     let sumChildW = 0;
     let sumChildH = 0;
-    let growCount = 0;
 
     for (const child of this.children) {
       if (child.tag === '#text') {
@@ -415,7 +414,6 @@ export class StubElement {
         continue;
       }
       const m = child.measure(viewport);
-      if (m.grow) growCount++;
       maxChildW = Math.max(maxChildW, m.w);
       maxChildH = Math.max(maxChildH, m.h);
       sumChildW += m.w + resolvePx(m.marginLeft, viewport) + resolvePx(m.marginRight, viewport);

@@ -32,12 +32,6 @@ const allHex = (obj, path = '') => {
   return out;
 };
 
-const rgbaAlpha = (str) => {
-  const m = /rgba?\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)/.exec(str);
-  if (m) return parseFloat(m[1]);
-  if (typeof str === 'number') return str;
-  return NaN;
-};
 
 /* ------------------------------------------------------------ contrast ----- */
 

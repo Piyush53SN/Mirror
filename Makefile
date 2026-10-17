@@ -7,13 +7,15 @@
 NPM ?= npm
 NODE ?= node
 
-.PHONY: help install verify test typecheck gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
+.PHONY: help install verify test typecheck lint security gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
 
 help:
 	@echo "make install             install node deps (legacy peer deps: the design system still targets React 18)"
 	@echo "make verify              tokens, typechecks, all unit/property/privacy tests (CI target)"
 	@echo "make test                tests only"
 	@echo "make typecheck           both TypeScript projects"
+	@echo "make lint                ESLint over the P0 packages, scripts and tests"
+	@echo "make security            lint + secret scan + dependency audit (critical blocks)"
 	@echo "make gallery             regenerate the 96 mockup frames"
 	@echo "make privacy             privacy canary self-test + scanner tests + python addon tests"
 	@echo "make privacy-extension   Playwright extension canary (needs playwright + a built extension)"
@@ -34,6 +36,12 @@ test:
 
 typecheck:
 	$(NPM) run typecheck
+
+lint:
+	$(NPM) run lint
+
+security:
+	$(NPM) run security
 
 gallery:
 	$(NPM) run mockups
@@ -63,4 +71,4 @@ build-production:
 	cd apps/mobile && npx eas-cli build --platform android --profile production --non-interactive
 
 clean:
-	rm -rf packages/ui/tests/.build tests/.build packages/*/tests/.build privacy
+	rm -rf packages/ui/tests/.build tests/.build packages/*/tests/.build privacy .reports

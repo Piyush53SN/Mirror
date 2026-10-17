@@ -27,10 +27,13 @@ break.
 
 | artifact | what it is |
 | --- | --- |
-| [`packages/shared-types/`](packages/shared-types) | **the event schema** (`src/event.ts`), a hand-written validator with field-level errors (`src/validate.ts`), the JSON Schema description (`schema/event.schema.json`), the four-tier model, and preferences/flags/consent grants (`src/preferences.ts`) |
+| [`packages/shared-types/`](packages/shared-types) | **the event schema** (`src/event.ts`) with `session_id`, `item_hash`, `topic_vector` and `completion_ratio`, a hand-written validator with field-level errors (`src/validate.ts`), the JSON Schema descriptions, the four-tier model, preferences/flags, and the **`consent_log` / `retention` / `connections`** record schemas |
 | [`packages/core-analytics/`](packages/core-analytics) | sessionisation with explicit drop reasons, phase summaries, and the deterministic synthetic dataset used by every later test |
 | [`packages/connectors/`](packages/connectors) | the OAuth connector registry, its scope allowlist, the refusal list (no official API → no connector), and the extension allowlist |
 | [`scripts/privacy/`](scripts/privacy) | the canary scanner, an end-to-end self-test, a mitmproxy addon, a Playwright runner and the emulator runbook |
+| [`scripts/security/`](scripts/security) | the secret scanner (patterns + entropy, placeholder-aware) and the dependency-audit gate |
+| [`docs/ANDROID_PERMISSIONS.md`](docs/ANDROID_PERMISSIONS.md) | every Android permission that will ever exist, when it is requested, and why boot sync needs none |
+| [`docs/store/FAMILY_CONTROLS_REQUEST.md`](docs/store/FAMILY_CONTROLS_REQUEST.md) | the ready-to-submit iOS entitlement request text |
 | [`infra/workflows/`](infra/workflows) | CI (`ci.yml`) and the device/extension canary workflow (`privacy-canary.yml`); they live here because the pushing GitHub App cannot write `.github/workflows/` — activation command in that folder |
 | [`apps/mobile/app.json`](apps/mobile/app.json) + [`eas.json`](apps/mobile/eas.json) | app identity, the permission surface, and the three build profiles |
 | [`docs/privacy/CANARY.md`](docs/privacy/CANARY.md) | how a canary run works, and which parts are automated |
@@ -41,6 +44,9 @@ break.
 - **The schema is closed.** An unknown field is rejected, because an unknown field
   is either a bug or a leak. `content: "content"` from `origin: "os"` is rejected
   as fabricated — the OS cannot produce titles or queries.
+- **The embedding is a direction, not a title.** `topic_vector` must be 32 finite
+  numbers in [-1, 1] with a unit norm; `item_hash` must be 64 hex characters and
+  `session_id` must be attributed, not guessed.
 - **Consent is data.** A/B/C events must cite a grant; D events must not (the OS
   grant lives in settings). Revocation is a record, not a boolean.
 - **Telemetry cannot be added by deployment.** `applyOverrides` accepts a
@@ -57,19 +63,29 @@ break.
 - **Release config is tested like code.** The only Android permission requested is
   usage access; AD ID, contacts, location, mic, camera and SMS are explicitly
   *blocked*; the extension asks for `storage` and five hosts, never `<all_urls>`.
+- **Secrets and dependencies are gated.** A pattern + entropy scanner reads every
+  file git would commit; `npm audit` blocks critical advisories and reports the
+  rest. Both run in CI and locally.
+
+### Why `--legacy-peer-deps`
+
+The root installs React 18 (the approved design system and its test renderer) while
+the app workspace pins React 19 / RN 0.88. npm 7+ refuses that tree unless peer
+resolution is relaxed. It is a **temporary bridge**: P1a migrates `packages/ui` to
+React 19, and from then on `npm install` must succeed without the flag.
 
 ### Run it
 
 ```bash
 npm install --legacy-peer-deps
-npm run verify            # 213 checks: 204 Node + 9 Python
+npm run verify            # all checks: 245 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
 make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
 ```
 
-Measured: **204** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
-schema 17 · preferences 22 · sessions 16 · connectors 20 · config 15 · canary 18)
-and **9** Python addon tests. `npm run verify` is the CI target. The prototype
+Measured: **245** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
+event schema 23 · records 21 · preferences 22 · sessions 16 · connectors 20 ·
+config 17 · canary 18 · security 12) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
 

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mirror.example/schema/consent_log-1.json",
+  "title": "Consent log",
+  "description": "Append-only history of grants, updates and revocations. The live state is derived, never stored twice. Enforcement lives in src/consent.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["schema_version", "id", "at", "action", "subject", "tier", "scopes", "promise", "method", "deletes_imported_events"],
+        "properties": {
+          "schema_version": { "const": 1 },
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+          "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$" },
+          "action": { "enum": ["granted", "revoked", "updated"] },
+          "subject": { "type": "string", "minLength": 1 },
+          "tier": { "enum": ["A", "B", "C", "D"] },
+          "scopes": { "type": "array", "items": { "type": "string" } },
+          "promise": { "type": "string", "minLength": 20 },
+          "method": { "enum": ["in_app", "system_settings", "oauth", "extension_install"] },
+          "deletes_imported_events": { "type": "boolean" }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "action": { "const": "revoked" } }, "required": ["action"] },
+            "then": { "properties": { "deletes_imported_events": { "const": true } } }
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mirror.example/schema/retention-1.json",
+  "title": "Retention policy",
+  "description": "How long each class of record is kept. Fixed at build time; a person may choose one of three windows. Enforcement lives in src/retention.ts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "default_days", "classes", "on_revoke", "on_uninstall", "hard_delete_after_days"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "default_days": { "enum": [90, 180, 365] },
+    "classes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raw_events", "derived_daily", "derived_weekly", "imported_events", "exports", "diagnostics"],
+      "properties": {
+        "raw_events": { "type": "integer", "minimum": 0, "maximum": 1825 },
+        "derived_daily": { "type": "integer", "minimum": 0, "maximum": 1825 },
+        "derived_weekly": { "type": "integer", "minimum": 0, "maximum": 1825 },
+        "imported_events": { "type": "integer", "minimum": 0, "maximum": 1825 },
+        "exports": { "type": "integer", "minimum": 0, "maximum": 1825 },
+        "diagnostics": { "const": 0 }
+      }
+    },
+    "on_revoke": { "const": "delete_imported_events" },
+    "on_uninstall": { "const": "delete_everything" },
+    "hard_delete_after_days": { "type": "integer", "minimum": 1, "maximum": 1825 }
+  }
+}

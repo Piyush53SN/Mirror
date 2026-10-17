@@ -15,7 +15,6 @@
  * If neither browser library is installed the script says so and exits 2 —
  * it never reports success it did not measure.
  */
-import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 

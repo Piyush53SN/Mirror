@@ -16,11 +16,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import vm from 'node:vm';
 
-import { parseHTML, StubElement, resolvePx } from './dom-stub.mjs';
+import { parseHTML, StubElement,  } from './dom-stub.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const HTML = readFileSync(join(ROOT, 'prototype/index.html'), 'utf8');
-const TOKENS = JSON.parse(readFileSync(join(ROOT, 'packages/ui/tokens/image-tokens.json'), 'utf8'));
 
 /* ------------------------------------------------------------- harness ----- */
 
@@ -162,8 +161,6 @@ function collectRootVars(html) {
   }
   return vars;
 }
-
-const px = (v, vp) => resolvePx(v, vp);
 
 /** The page's own stylesheet — the generated token block is excluded. */
 function pageCssFlat() {
