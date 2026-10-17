@@ -94,7 +94,7 @@ ${subtitle ? `<p data-review-chrome style="padding:0 32px 32px;color:#9D9D9D;fon
 // Bundled + imported through the shared seam, so the tests render exactly what
 // this script renders.
 const mod = await buildRenderer({ force: true });
-const { htmlFor, personaFor, SCREENS, SECTION_J, createTheme } = mod;
+const { htmlFor, personaFor, SCREENS, SECTION_J, PHASES, createTheme } = mod;
 
 mkdirSync(OUT, { recursive: true });
 
@@ -120,7 +120,7 @@ for (const spec of SCREENS) {
   const frames = [];
   for (const state of spec.states) {
     const persona = personaFor(spec, state);
-    const degraded = spec.requires.some((tier) => !persona.tiers.includes(tier));
+    const degraded = mod.isDegraded(spec, persona);
     for (const theme of ['dark', 'light']) {
       const themeObj = createTheme(theme);
       const markup = htmlFor({ spec, persona, state, theme: themeObj, element: mod.renderScreen(spec, persona, themeObj, state) });
@@ -152,6 +152,7 @@ for (const spec of SCREENS) {
         persona: persona.id,
         degraded,
         requires: spec.requires,
+        requiresAnyOf: spec.requiresAnyOf ?? [],
         rule: spec.rule,
         bytes: html.length,
       });
@@ -214,6 +215,7 @@ writeFileSync(
     {
       generatedFrom: 'packages/ui/screens/index.tsx',
       sectionJ: SECTION_J,
+      phases: PHASES,
       items: SCREENS.length,
       frames: rendered,
     },

@@ -283,19 +283,22 @@ export function PrivacyReceipt({
  */
 export function DegradedNotice({
   needs,
+  anyOf,
   available,
   feature,
   actions,
   theme,
 }: {
   needs: DataTier[];
+  /** When set, at least one of these tiers is also required (e.g. a content signal). */
+  anyOf?: DataTier[];
   available: DataTier[];
   feature: string;
   actions?: React.ReactNode;
   theme?: MirrorTheme;
 }) {
   const t = withTheme(theme);
-  const result = computeDegrade(available, needs, feature);
+  const result = computeDegrade(available, needs, feature, anyOf ?? []);
   if (result.ok) return null;
   return (
     <Card theme={t}>
@@ -305,13 +308,16 @@ export function DegradedNotice({
         action={<View style={{ flexDirection: 'row', gap: t.space(2), flexWrap: 'wrap', justifyContent: 'center' }}>{actions}</View>}
         theme={t}
       />
-      <View style={{ flexDirection: 'row', gap: t.space(1), justifyContent: 'center' }}>
-        {result.missing.map((tier) => (
+      {/* The badges name what is missing. For an anyOf requirement the whole set is
+          shown, because "one of A/B/C" is the actual condition — showing only the
+          first would misstate what the user would have to connect. */}
+      <View style={{ flexDirection: 'row', gap: t.space(1), justifyContent: 'center', flexWrap: 'wrap' }}>
+        {[...result.missing, ...result.missingAny].map((tier) => (
           <TierBadge key={tier} tier={tier} theme={t} />
         ))}
       </View>
       <Text role="micro" tone="muted" theme={t} center style={{ marginTop: t.space(2) }}>
-        {`${TIERS[result.missing[0] as DataTier].name}: ${TIERS[result.missing[0] as DataTier].how}`}
+        {(result.missing[0] ? TIERS[result.missing[0]] : TIERS[result.missingAny[0] as DataTier]).how}
       </Text>
     </Card>
   );
@@ -339,6 +345,11 @@ export function DataStanding({
     </View>
   );
 }
+
+/* ------------------------------------------------------------- Demo chip ---- */
+
+/** Re-exported from containers, where it is defined (patterns already imports them). */
+export { DemoChip as DemoDataChip } from './primitives/containers.js';
 
 /* ------------------------------------------------------------------ Ask ------ */
 

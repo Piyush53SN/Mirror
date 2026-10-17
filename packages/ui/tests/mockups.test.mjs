@@ -155,6 +155,39 @@ test('sheets, states and widgets are rendered over their parent, not as pages', 
   assert.equal(kindsOf('share-card-preview'), 'state', 'the share card is a state');
 });
 
+test('the tier labels in the gallery match the inventory, and the four content features degrade', () => {
+  const contentFeatures = ['depth', 'curiosity-vs-habit', 'rabbit-hole', 'focus-windows'];
+  for (const slug of contentFeatures) {
+    const frames = manifest.frames.filter((f) => f.slug === slug);
+    assert.ok(frames.length > 0, `${slug} has no frames`);
+    assert.deepEqual(frames[0].requires, ['D'], `${slug}: tier D is still required`);
+    assert.deepEqual(frames[0].requiresAnyOf, ['A', 'B', 'C'], `${slug}: and so is a content-level signal`);
+    const empty = frames.find((f) => f.state === 'empty' && f.theme === 'dark');
+    assert.ok(empty?.degraded, `${slug}: the empty frame must be a real degraded render`);
+    const page = read(`${slug}.html`);
+    assert.ok(/is unavailable/.test(page), `${slug}.html must say the feature is unavailable`);
+    assert.ok(/at least one of tier/i.test(page), `${slug}.html must say one of A/B/C would do`);
+  }
+  // The tab bar and the demo chip are on every tab screen in the gallery.
+  for (const slug of ['dashboard', 'interest-evolution', 'depth', 'sessions', 'behavior-profile']) {
+    const page = read(`${slug}.html`);
+    for (const label of ['Home', 'Insights', 'Journey', 'Sessions', 'You']) {
+      assert.ok(new RegExp(`>${label}<`).test(page), `${slug}.html must render the ${label} tab`);
+    }
+    assert.ok(/DEMO DATA/.test(page), `${slug}.html must label demo data on the screen`);
+  }
+});
+
+test('the gallery records the phase plan it was rendered against', () => {
+  assert.equal(manifest.phases.length, 7, 'P1..P7 are recorded');
+  const covered = manifest.phases.flatMap((p) => p.items).sort();
+  assert.deepEqual(covered, manifest.sectionJ.map((i) => i.id).sort());
+  const phaseOf = (slug) => manifest.frames.find((f) => f.slug === slug).phase;
+  assert.equal(phaseOf('share-card-preview'), 'P6', 'share cards ship in P6');
+  assert.equal(phaseOf('why-drawer'), 'P2');
+  assert.equal(phaseOf('privacy-receipt'), 'P5');
+});
+
 test('the gallery shows all 28 items, in the order the brief lists them', () => {
   const gallery = read('index.html');
   for (const file of SCREEN_FILES()) {

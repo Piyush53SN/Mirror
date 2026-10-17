@@ -1050,14 +1050,20 @@ var IMPOSSIBLE = [
   { label: "Content inside other apps on this phone", tier: "\u2014", reason: "Impossible without accessibility services or screen capture, which Mirror never uses." },
   { label: "Notification contents", tier: "\u2014", reason: "Would require notification access. Mirror counts nothing here." }
 ];
-function degrade(available, needs, featureLabel) {
+function degrade(available, needs, featureLabel, anyOf = []) {
   const missing = needs.filter((t) => !available.includes(t));
-  if (missing.length === 0) return { ok: true };
-  return {
-    ok: false,
-    missing,
-    message: `${featureLabel} is unavailable: it needs tier ${missing.join(" and ")} data, which is not on this device. Mirror will not estimate it.`
-  };
+  const missingAny = anyOf.length > 0 && !anyOf.some((t) => available.includes(t)) ? [...anyOf] : [];
+  if (missing.length === 0 && missingAny.length === 0) return { ok: true };
+  const because = "which is not on this device. Mirror will not estimate it.";
+  let requirement;
+  if (missing.length > 0 && missingAny.length > 0) {
+    requirement = `it needs tier ${missing.join(" and ")} data and at least one of tier ${missingAny.join("/")} (topics, searches or scroll depth), none of ${because}`;
+  } else if (missingAny.length > 0) {
+    requirement = `it needs at least one of tier ${missingAny.join("/")} (topics, searches or scroll depth), none of ${because}`;
+  } else {
+    requirement = `it needs tier ${missing.join(" and ")} data, ${because}`;
+  }
+  return { ok: false, missing, missingAny, message: `${featureLabel} is unavailable: ${requirement}` };
 }
 var tierLabel = (t) => `${t} \xB7 ${TIERS[t].name}`;
 
@@ -1885,7 +1891,35 @@ function Card({
     }
   );
 }
-function Screen({ children, header, footer, overlay, padded = true, theme, title }) {
+function DemoChip({ persona, theme }) {
+  const t = withTheme3(theme);
+  return /* @__PURE__ */ jsx5(
+    View,
+    {
+      accessible: true,
+      accessibilityRole: "text",
+      accessibilityLabel: `Demo data from ${persona}. Not your data.`,
+      style: { paddingHorizontal: t.space(4), paddingTop: t.space(2) },
+      children: /* @__PURE__ */ jsx5(
+        View,
+        {
+          style: {
+            alignSelf: "flex-start",
+            minHeight: t.size.chipHeight,
+            justifyContent: "center",
+            paddingHorizontal: t.space(3),
+            borderRadius: t.radius.pill,
+            backgroundColor: t.glass.chip.fill,
+            borderWidth: 1,
+            borderColor: t.color.borderCard
+          },
+          children: /* @__PURE__ */ jsx5(Text2, { role: "micro", tone: "muted", theme: t, style: { fontWeight: "700" }, children: `DEMO DATA \xB7 ${persona.toUpperCase()}` })
+        }
+      )
+    }
+  );
+}
+function Screen({ children, header, footer, overlay, padded = true, theme, title, demo }) {
   const t = withTheme3(theme);
   const metrics = layoutMetrics(t);
   return /* @__PURE__ */ jsxs3(
@@ -1896,6 +1930,7 @@ function Screen({ children, header, footer, overlay, padded = true, theme, title
       children: [
         /* @__PURE__ */ jsx5(Backdrop, { theme: t }),
         /* @__PURE__ */ jsx5(StatusStrip, { theme: t }),
+        demo ? /* @__PURE__ */ jsx5(DemoChip, { persona: demo, theme: t }) : null,
         header,
         /* @__PURE__ */ jsx5(
           ScrollView,
@@ -2261,13 +2296,14 @@ function PrivacyReceipt({
 }
 function DegradedNotice({
   needs,
+  anyOf,
   available,
   feature,
   actions,
   theme
 }) {
   const t = withTheme4(theme);
-  const result = degrade(available, needs, feature);
+  const result = degrade(available, needs, feature, anyOf ?? []);
   if (result.ok) return null;
   return /* @__PURE__ */ jsxs4(Card, { theme: t, children: [
     /* @__PURE__ */ jsx6(
@@ -2279,8 +2315,8 @@ function DegradedNotice({
         theme: t
       }
     ),
-    /* @__PURE__ */ jsx6(View, { style: { flexDirection: "row", gap: t.space(1), justifyContent: "center" }, children: result.missing.map((tier) => /* @__PURE__ */ jsx6(TierBadge, { tier, theme: t }, tier)) }),
-    /* @__PURE__ */ jsx6(Text2, { role: "micro", tone: "muted", theme: t, center: true, style: { marginTop: t.space(2) }, children: `${TIERS[result.missing[0]].name}: ${TIERS[result.missing[0]].how}` })
+    /* @__PURE__ */ jsx6(View, { style: { flexDirection: "row", gap: t.space(1), justifyContent: "center", flexWrap: "wrap" }, children: [...result.missing, ...result.missingAny].map((tier) => /* @__PURE__ */ jsx6(TierBadge, { tier, theme: t }, tier)) }),
+    /* @__PURE__ */ jsx6(Text2, { role: "micro", tone: "muted", theme: t, center: true, style: { marginTop: t.space(2) }, children: (result.missing[0] ? TIERS[result.missing[0]] : TIERS[result.missingAny[0]]).how })
   ] });
 }
 function DataStanding({
@@ -2675,11 +2711,40 @@ var PERSONAS = [
   }
 ];
 
+// packages/ui/screens/tabs.ts
+var TAB_ITEMS = [
+  { id: "home", label: "Home" },
+  { id: "insights", label: "Insights" },
+  { id: "journey", label: "Journey" },
+  { id: "sessions", label: "Sessions" },
+  { id: "you", label: "You" }
+];
+
 // packages/ui/screens/kit.tsx
-import { jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+import { Fragment, jsx as jsx7, jsxs as jsxs5 } from "react/jsx-runtime";
+function TabFooter({ theme, active }) {
+  const liveBlur = useLiveBlur(`tabbar:${active}`, true);
+  return /* @__PURE__ */ jsxs5(Fragment, { children: [
+    /* @__PURE__ */ jsx7(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+    /* @__PURE__ */ jsx7(
+      TabBar,
+      {
+        items: TAB_ITEMS.map((t) => ({ id: t.id, label: t.label })),
+        active,
+        onChange: () => void 0,
+        liveBlur,
+        theme
+      }
+    )
+  ] });
+}
+function canSupply(persona, needs, anyOf = []) {
+  return needs.every((t) => persona.tiers.includes(t)) && (anyOf.length === 0 || anyOf.some((t) => persona.tiers.includes(t)));
+}
 function NothingYet({
   theme,
   needs,
+  anyOf,
   available,
   feature,
   actionLabel = "Explain what Mirror needs"
@@ -2689,6 +2754,7 @@ function NothingYet({
     {
       theme,
       needs,
+      anyOf,
       available,
       feature,
       actions: /* @__PURE__ */ jsx7(Pill, { theme, variant: "quiet", children: actionLabel })
@@ -2750,7 +2816,7 @@ function Definition({ theme, term, children }) {
 }
 
 // packages/ui/screens/index.tsx
-import { Fragment, jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
+import { Fragment as Fragment2, jsx as jsx8, jsxs as jsxs6 } from "react/jsx-runtime";
 var HERO = (p) => [
   {
     id: "week",
@@ -2772,14 +2838,7 @@ var HERO = (p) => [
     body: "38% of habit minutes fall after 11pm. Neutral observation, no streak, no reminder unless you ask for one."
   }
 ];
-var TABS = [
-  { id: "home", label: "Home" },
-  { id: "insights", label: "Insights" },
-  { id: "journey", label: "Journey" },
-  { id: "sessions", label: "Sessions" },
-  { id: "you", label: "You" }
-];
-function OnboardingScreen({ theme }) {
+function OnboardingScreen({ theme, persona, tab }) {
   const promises = [
     { title: "Your history stays on this phone", body: "Titles, searches and timestamps are stored and analysed locally, encrypted." },
     { title: "Two profiles, never merged", body: "Private holds everything. Public holds only the topics you pick, one by one. Nothing is copied across." },
@@ -2797,7 +2856,7 @@ function OnboardingScreen({ theme }) {
     /* @__PURE__ */ jsx8(View, { style: { alignItems: "center" }, children: /* @__PURE__ */ jsx8(LinkButton, { theme, children: "Explore with demo data" }) })
   ] }) });
 }
-function PermissionPrimerScreen({ theme }) {
+function PermissionPrimerScreen({ theme, persona, tab }) {
   const [step, setStep] = React2.useState("usage");
   const primers = {
     usage: {
@@ -2816,6 +2875,7 @@ function PermissionPrimerScreen({ theme }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Permission primers",
       theme,
       padded: true,
@@ -2827,7 +2887,7 @@ function PermissionPrimerScreen({ theme }) {
           subtitle: step === "usage" ? "Step 1 of 2 \xB7 usage access" : "Step 2 of 2 \xB7 notifications"
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.space(6) } }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(
           SegmentedControl,
@@ -2848,13 +2908,14 @@ function PermissionPrimerScreen({ theme }) {
     }
   );
 }
-function HomeScreen({ theme, persona, state = "default" }) {
+function HomeScreen({ theme, persona, state, tab }) {
   const [hero, setHero] = React2.useState(0);
   const empty = state === "empty";
   const slides = HERO(persona);
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Dashboard",
       theme,
       padded: false,
@@ -2864,13 +2925,13 @@ function HomeScreen({ theme, persona, state = "default" }) {
           theme,
           title: `Good evening, ${persona.name}`,
           subtitle: empty ? "Nothing collected yet" : `Week of ${tierSummary(persona.tiers)} data`,
-          actions: /* @__PURE__ */ jsxs6(Fragment, { children: [
+          actions: /* @__PURE__ */ jsxs6(Fragment2, { children: [
             /* @__PURE__ */ jsx8(IconButton, { label: "Search your own data", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u2315" }) }),
             /* @__PURE__ */ jsx8(IconButton, { label: "Profile and settings", theme, badge: true, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: persona.name.slice(0, 1) }) })
           ] })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { paddingHorizontal: theme.space(4), gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(
           BoundaryToggle,
@@ -2895,7 +2956,7 @@ function HomeScreen({ theme, persona, state = "default" }) {
             action: /* @__PURE__ */ jsx8(Pill, { theme, children: "Explain what it can see" }),
             theme
           }
-        ) }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+        ) }) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
           /* @__PURE__ */ jsx8(HeroCarousel, { theme, slides, index: hero, onIndexChange: setHero }),
           /* @__PURE__ */ jsxs6(Card, { theme, children: [
             /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Last 7 days", caption: hedged(duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0)), "D", "duration") }),
@@ -2935,10 +2996,11 @@ function HomeScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function JourneyScreen({ theme, persona }) {
+function JourneyScreen({ theme, persona, tab }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Interest Evolution",
       theme,
       padded: true,
@@ -2951,7 +3013,7 @@ function JourneyScreen({ theme, persona }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Journey options: range and sources", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         persona.topics.length === 0 ? /* @__PURE__ */ jsx8(
@@ -3005,15 +3067,16 @@ function JourneyScreen({ theme, persona }) {
     }
   );
 }
-function SessionsScreen({ theme, persona, state = "default" }) {
+function SessionsScreen({ theme, persona, state, tab }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Sessions",
       theme,
       padded: true,
       header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Sessions", subtitle: "Longest first. Labels train the local model." }),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Sessions", actionLabel: "Grant usage access" }) : null,
@@ -3038,12 +3101,13 @@ function SessionsScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function DiscoveryScreen({ theme, persona, state = "default" }) {
+function DiscoveryScreen({ theme, persona, state, tab }) {
   const rabbit = persona.sessions.filter((s) => s.kind === "habit");
   const minutes = rabbit.reduce((a, s) => a + s.minutes, 0);
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Discovery Journey",
       theme,
       padded: true,
@@ -3056,7 +3120,7 @@ function DiscoveryScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Discovery options: what counts as a rabbit hole", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Rabbit-hole detection", actionLabel: "Grant usage access" }) : null,
@@ -3064,7 +3128,7 @@ function DiscoveryScreen({ theme, persona, state = "default" }) {
           /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Rabbit holes", caption: "definition shown, not implied" }),
           /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "A rabbit hole here is three or more consecutive short sessions on the same app with no search, no save and no cross-app follow-up." }),
           /* @__PURE__ */ jsx8(Divider, { theme }),
-          rabbit.length === 0 ? /* @__PURE__ */ jsx8(EmptyState, { theme, title: "No rabbit holes this week", body: "Nothing met the definition. That is a real result, not a missing signal." }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+          rabbit.length === 0 ? /* @__PURE__ */ jsx8(EmptyState, { theme, title: "No rabbit holes this week", body: "Nothing met the definition. That is a real result, not a missing signal." }) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
             /* @__PURE__ */ jsx8(Stat, { theme, value: duration(minutes), label: "in habit loops this week", hint: `${rabbit.length} sessions met the definition` }),
             /* @__PURE__ */ jsx8(View, { style: { flexDirection: "row", marginTop: theme.space(3) }, children: /* @__PURE__ */ jsxs6(LinkButton, { theme, children: [
               "Show the ",
@@ -3091,7 +3155,7 @@ function DiscoveryScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function WhatIfScreen({ theme, persona, state = "default" }) {
+function WhatIfScreen({ theme, persona, state, tab }) {
   const baseline = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
   const scenarios = [
     { label: "Remove short video", delta: -0.18, note: "Assumes the minutes are not replaced by another app \u2014 they usually are, partially." },
@@ -3101,6 +3165,7 @@ function WhatIfScreen({ theme, persona, state = "default" }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "What if",
       theme,
       padded: true,
@@ -3113,7 +3178,7 @@ function WhatIfScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "What-if options: change the scenarios", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "What-if scenarios", actionLabel: "Grant usage access" }) : null,
@@ -3130,46 +3195,77 @@ function WhatIfScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function FocusScreen({ theme }) {
+function FocusScreen({ theme, persona, state, tab }) {
+  const canMeasure = canSupply(persona, ["D"], ["A", "B", "C"]);
+  const empty = state === "empty" || !canMeasure;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Focus",
       theme,
       padded: true,
       header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Focus windows", subtitle: "You choose; Mirror only reminds you of your own choice" }),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
-        /* @__PURE__ */ jsxs6(Card, { theme, children: [
-          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Scheduled", caption: "local notifications only" }),
-          /* @__PURE__ */ jsx8(
-            FactList,
-            {
-              theme,
-              items: [
-                { label: "Weekday deep work", value: "09:00\u201311:30", detail: "Announces at the start; never counts down, never nags." },
-                { label: "Quiet hours", value: "22:30\u201307:00", detail: "Notifications are suppressed; collection continues locally." }
-              ]
-            }
-          )
-        ] }),
-        /* @__PURE__ */ jsxs6(Card, { theme, children: [
-          /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "How it behaves" }),
-          /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "A focus window does not block apps and does not shame you when you leave it. It shows one line when you return and nothing else. You can delete the window in one tap." }),
-          /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: [
-            /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Add a window" }),
-            /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Remove all" })
-          ] })
-        ] }),
-        /* @__PURE__ */ jsx8(Callout, { theme, children: "Focus windows are tier D only: they need nothing but timestamps, and work with no network and no account." })
+        /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
+        empty ? /* @__PURE__ */ jsx8(
+          NothingYet,
+          {
+            theme,
+            needs: ["D"],
+            anyOf: ["A", "B", "C"],
+            available: persona.tiers,
+            feature: "Focus windows",
+            actionLabel: "Connect a source"
+          }
+        ) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Scheduled", caption: "local notifications only" }),
+            /* @__PURE__ */ jsx8(
+              FactList,
+              {
+                theme,
+                items: [
+                  { label: "Weekday deep work", value: "09:00\u201311:30", detail: "Announces at the start; never counts down, never nags." },
+                  { label: "Quiet hours", value: "22:30\u201307:00", detail: "Notifications are suppressed; collection continues locally." }
+                ]
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Did the window hold?", caption: "measured, not assumed" }),
+            /* @__PURE__ */ jsx8(
+              FactList,
+              {
+                theme,
+                items: [
+                  { label: "Times you returned early", value: "2 of 5", detail: "Counted from launches inside the window, tier D." },
+                  { label: "What you returned to", value: "a feed, twice", detail: "Needs a tier A/B/C signal; shown only because you have one." },
+                  { label: "Prompts sent", value: "0", detail: "A window reminder is a local notification you scheduled, not a nudge." }
+                ]
+              }
+            )
+          ] }),
+          /* @__PURE__ */ jsxs6(Card, { theme, children: [
+            /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "How it behaves" }),
+            /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: "A focus window does not block apps and does not shame you when you leave it. It shows one line when you return and nothing else. You can delete the window in one tap." }),
+            /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(2), marginTop: theme.space(3) }, children: [
+              /* @__PURE__ */ jsx8(Pill, { theme, variant: "secondary", children: "Add a window" }),
+              /* @__PURE__ */ jsx8(Pill, { theme, variant: "quiet", children: "Remove all" })
+            ] })
+          ] }),
+          /* @__PURE__ */ jsx8(Callout, { theme, children: "Focus windows need tier D for the schedule and one of tier A/B/C to say whether the time held. Never more, and never a guess when the second half is missing." })
+        ] })
       ] })
     }
   );
 }
-function ProfileScreen({ theme, persona, state = "default" }) {
+function ProfileScreen({ theme, persona, state, tab }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Behavior Profile",
       theme,
       padded: true,
@@ -3182,7 +3278,7 @@ function ProfileScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Profile options: recompute and export", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Behaviour profile", actionLabel: "Grant usage access" }) : null,
@@ -3200,11 +3296,12 @@ function ProfileScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function WeeklyReportScreen({ theme, persona, state = "default" }) {
+function WeeklyReportScreen({ theme, persona, state, tab }) {
   const total = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Weekly Report + Goals",
       theme,
       padded: true,
@@ -3217,7 +3314,7 @@ function WeeklyReportScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Report options: week and sections", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         state === "empty" ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Weekly report", actionLabel: "Grant usage access" }) : null,
         /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, style: state === "empty" ? { display: "none" } : void 0, children: [
@@ -3266,10 +3363,11 @@ function WeeklyReportScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function BudgetScreen({ theme, persona, state = "default" }) {
+function BudgetScreen({ theme, persona, state, tab }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Attention budget",
       theme,
       padded: true,
@@ -3282,7 +3380,7 @@ function BudgetScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Budget options: units and reset", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         state === "empty" || persona.budgets.length === 0 ? /* @__PURE__ */ jsx8(Card, { theme, children: /* @__PURE__ */ jsx8(
           EmptyState,
@@ -3306,17 +3404,18 @@ function BudgetScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function PrivacyCentreScreen({ theme, persona }) {
+function PrivacyCentreScreen({ theme, persona, tab }) {
   const [sheet, setSheet] = React2.useState(null);
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Privacy Center",
       theme,
       padded: true,
       header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Privacy Center", subtitle: "Nothing here is a promise you cannot check" }),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
-      overlay: /* @__PURE__ */ jsxs6(Fragment, { children: [
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
+      overlay: /* @__PURE__ */ jsxs6(Fragment2, { children: [
         /* @__PURE__ */ jsx8(Sheet, { theme, open: sheet === "receipt", title: "Privacy receipt", subtitle: "This month, from the on-device log", onClose: () => setSheet(null), children: /* @__PURE__ */ jsx8(
           PrivacyReceipt,
           {
@@ -3349,7 +3448,7 @@ function PrivacyCentreScreen({ theme, persona }) {
         ] }),
         /* @__PURE__ */ jsxs6(Card, { theme, children: [
           /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Network log", caption: "every request this device made" }),
-          persona.networkLog.length === 0 ? /* @__PURE__ */ jsxs6(Fragment, { children: [
+          persona.networkLog.length === 0 ? /* @__PURE__ */ jsxs6(Fragment2, { children: [
             /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "0 requests. Privacy Mode is on, so nothing has left this device since it was installed." }),
             /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { marginTop: theme.space(1) }, children: "This list is written from the app's own request layer, not from a server-side report \u2014 the one thing a server could not be trusted to tell you." })
           ] }) : persona.networkLog.map((entry) => /* @__PURE__ */ jsx8(
@@ -3381,16 +3480,17 @@ function PrivacyCentreScreen({ theme, persona }) {
     }
   );
 }
-function PublicProfileScreen({ theme, persona, state = "default" }) {
+function PublicProfileScreen({ theme, persona, state, tab }) {
   const published = state === "empty" ? [] : persona.topics.slice(0, 1);
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Public Profile editor",
       theme,
       padded: true,
       header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Public Profile editor", subtitle: "Edit, with a live preview of what a match sees" }),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(BoundaryToggle, { theme, value: "public", onChange: () => void 0, consequence: "Public. Visible to others: the topics you published, and a coarse activity bucket. Nothing else." }),
         /* @__PURE__ */ jsxs6(Card, { theme, children: [
@@ -3448,16 +3548,17 @@ function PublicProfileScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function MatchesScreen({ theme, persona, state = "default" }) {
+function MatchesScreen({ theme, persona, state, tab }) {
   const socialOn = isOn(initialFlags, "socialMatching") && state !== "empty";
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Matches / Chat",
       theme,
       padded: true,
       header: /* @__PURE__ */ jsx8(Toolbar, { theme, title: "Matches / Chat", subtitle: "Off by default, and not required to use Mirror" }),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         !socialOn ? /* @__PURE__ */ jsx8(Card, { theme, children: /* @__PURE__ */ jsx8(
           EmptyState,
@@ -3524,13 +3625,15 @@ function MatchesScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function DepthScreen({ theme, persona, state = "default" }) {
-  const empty = state === "empty";
+function DepthScreen({ theme, persona, state, tab }) {
+  const canMeasure = canSupply(persona, ["D"], ["A", "B", "C"]);
+  const empty = state === "empty" || !canMeasure;
   const bands = persona.depthBands;
   const under8 = bands[0]?.share ?? 0;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Depth",
       theme,
       padded: true,
@@ -3543,10 +3646,10 @@ function DepthScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Depth options: range and sequence", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
-        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Depth", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], anyOf: ["A", "B", "C"], available: persona.tiers, feature: "Depth", actionLabel: "Connect a source" }) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
           /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, children: [
             /* @__PURE__ */ jsx8(Definition, { theme, term: "depth", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `Depth is how long a single visit lasts, measured from the operating system's own session boundaries. It is a duration, not a judgement: a long visit to something you chose is the point, and a long visit you did not choose still counts as long.` }) }),
             /* @__PURE__ */ jsx8(Divider, { theme }),
@@ -3599,13 +3702,15 @@ function DepthScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function CuriosityHabitScreen({ theme, persona, state = "default" }) {
-  const empty = state === "empty";
+function CuriosityHabitScreen({ theme, persona, state, tab }) {
+  const canMeasure = canSupply(persona, ["D"], ["A", "B", "C"]);
+  const empty = state === "empty" || !canMeasure;
   const { deepHours, habitHours, switchesPerHour, note } = persona.curiosity;
   const total = deepHours + habitHours || 1;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Curiosity vs habit",
       theme,
       padded: true,
@@ -3618,10 +3723,10 @@ function CuriosityHabitScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Curiosity options: what counts as habit", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
-        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Curiosity vs habit", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], anyOf: ["A", "B", "C"], available: persona.tiers, feature: "Curiosity vs habit", actionLabel: "Connect a source" }) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
           /* @__PURE__ */ jsxs6(Card, { theme, children: [
             /* @__PURE__ */ jsx8(Definition, { theme, term: "habit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", tone: "muted", theme, children: `A habit block is time in a feed you reached without searching for anything, made of visits under three minutes. Curiosity is everything else you attended to on purpose \u2014 a search, a saved item, a long read.` }) }),
             /* @__PURE__ */ jsx8(Divider, { theme }),
@@ -3660,12 +3765,13 @@ function CuriosityHabitScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function IqsScreen({ theme, persona, state = "default" }) {
+function IqsScreen({ theme, persona, state, tab }) {
   const empty = state === "empty";
   const iqs = persona.iqs;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "IQS",
       theme,
       padded: true,
@@ -3678,7 +3784,7 @@ function IqsScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "IQS options: parts and weights", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "IQS", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsx8(Card, { theme, elevated: true, children: /* @__PURE__ */ jsx8(
@@ -3698,12 +3804,14 @@ function IqsScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function RabbitHoleScreen({ theme, persona, state = "default" }) {
-  const empty = state === "empty";
+function RabbitHoleScreen({ theme, persona, state, tab }) {
+  const canMeasure = canSupply(persona, ["D"], ["A", "B", "C"]);
+  const empty = state === "empty" || !canMeasure;
   const rabbit = persona.rabbit;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Rabbit hole",
       theme,
       padded: true,
@@ -3716,7 +3824,7 @@ function RabbitHoleScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Rabbit hole options: change the definition", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         /* @__PURE__ */ jsxs6(Card, { theme, children: [
@@ -3727,7 +3835,7 @@ function RabbitHoleScreen({ theme, persona, state = "default" }) {
             /* @__PURE__ */ jsx8(Chip, { label: "Visit length", value: "under 3 min", theme })
           ] })
         ] }),
-        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], available: [], feature: "Rabbit-hole detection", actionLabel: "Grant usage access" }) : /* @__PURE__ */ jsxs6(Fragment, { children: [
+        empty ? /* @__PURE__ */ jsx8(NothingYet, { theme, needs: ["D"], anyOf: ["A", "B", "C"], available: persona.tiers, feature: "Rabbit-hole detection", actionLabel: "Connect a source" }) : /* @__PURE__ */ jsxs6(Fragment2, { children: [
           /* @__PURE__ */ jsxs6(Card, { theme, children: [
             /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "This week", caption: "against the definition above" }),
             /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", justifyContent: "space-between" }, children: [
@@ -3758,11 +3866,12 @@ function RabbitHoleScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function ConnectionsScreen({ theme, persona }) {
+function ConnectionsScreen({ theme, persona, tab }) {
   const [boundary, setBoundary] = React2.useState("private");
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Connections",
       theme,
       padded: true,
@@ -3775,7 +3884,7 @@ function ConnectionsScreen({ theme, persona }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Connection options: add a source", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\uFF0B" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(
           BoundaryToggle,
@@ -3807,7 +3916,7 @@ function ConnectionsScreen({ theme, persona }) {
     }
   );
 }
-function WhyDrawerSheet({ theme, persona }) {
+function WhyDrawerSheet({ theme, persona, tab }) {
   const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
   return /* @__PURE__ */ jsx8(
     Sheet,
@@ -3847,11 +3956,12 @@ function WhyDrawerSheet({ theme, persona }) {
     }
   );
 }
-function LearningArcsScreen({ theme, persona, state = "default" }) {
+function LearningArcsScreen({ theme, persona, state, tab }) {
   const empty = state === "empty" || persona.arcs.length === 0;
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Learning arcs",
       theme,
       padded: true,
@@ -3864,7 +3974,7 @@ function LearningArcsScreen({ theme, persona, state = "default" }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Arc options: range and topics", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsx8(DataStanding, { theme, tiers: persona.tiers }),
         empty ? /* @__PURE__ */ jsx8(
@@ -3901,7 +4011,7 @@ function LearningArcsScreen({ theme, persona, state = "default" }) {
     }
   );
 }
-function AskSheet({ theme, persona, state = "default" }) {
+function AskSheet({ theme, persona, state, tab }) {
   const canAnswer = state !== "empty" && persona.askable.length > 0;
   return /* @__PURE__ */ jsx8(Sheet, { open: true, theme, title: "Ask Mirror", subtitle: "Answers come from this device, or not at all", onClose: () => void 0, children: /* @__PURE__ */ jsx8(
     AskComposer,
@@ -3916,7 +4026,7 @@ function AskSheet({ theme, persona, state = "default" }) {
     }
   ) });
 }
-function PrivacyReceiptSheet({ theme, persona, state = "default" }) {
+function PrivacyReceiptSheet({ theme, persona, state, tab }) {
   const rows = persona.networkLog;
   const bytes = rows.reduce((total, r) => total + r.bytes, 0);
   const empty = state === "empty" || rows.length === 0;
@@ -3937,7 +4047,7 @@ function PrivacyReceiptSheet({ theme, persona, state = "default" }) {
     }
   ) });
 }
-function PersonaPickerSheet({ theme, persona }) {
+function PersonaPickerSheet({ theme, persona, tab }) {
   return /* @__PURE__ */ jsx8(Sheet, { open: true, theme, title: "Demo persona", subtitle: "Which data the screens are built from", onClose: () => void 0, children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
     /* @__PURE__ */ jsx8(Callout, { theme, tone: "limit", children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "Demo data replaces your own while it is on. It is never mixed with it, never written to storage, and turning it off restores your real numbers unchanged." }) }),
     PERSONAS.map((p) => /* @__PURE__ */ jsx8(
@@ -3958,10 +4068,11 @@ function PersonaPickerSheet({ theme, persona }) {
     ] })
   ] }) });
 }
-function IntentCheckScreen({ theme, persona }) {
+function IntentCheckScreen({ theme, persona, tab }) {
   return /* @__PURE__ */ jsx8(
     Screen,
     {
+      demo: persona.name,
       title: "Intent check",
       theme,
       padded: true,
@@ -3974,7 +4085,7 @@ function IntentCheckScreen({ theme, persona }) {
           actions: /* @__PURE__ */ jsx8(IconButton, { label: "Intent check options: timing and quiet hours", theme, children: /* @__PURE__ */ jsx8(Text2, { role: "label", theme, children: "\u22EF" }) })
         }
       ),
-      footer: /* @__PURE__ */ jsx8(View, { style: { height: theme.size.tabBar + theme.space(6) } }),
+      footer: /* @__PURE__ */ jsx8(TabFooter, { theme, active: tab ?? "home" }),
       children: /* @__PURE__ */ jsxs6(View, { style: { gap: theme.space(3) }, children: [
         /* @__PURE__ */ jsxs6(Card, { theme, children: [
           /* @__PURE__ */ jsx8(SectionHeader, { theme, title: "Where Mirror may ask", caption: "off unless you turn it on" }),
@@ -4019,8 +4130,17 @@ function IntentCheckScreen({ theme, persona }) {
     }
   );
 }
-function ShareCardState({ theme, persona }) {
+function ShareCardState({ theme, persona, tab }) {
   return /* @__PURE__ */ jsxs6(View, { style: { flex: 1, backgroundColor: theme.color.scrim, justifyContent: "center", padding: theme.space(5), gap: theme.space(3) }, children: [
+    /* @__PURE__ */ jsx8(
+      BoundaryToggle,
+      {
+        theme,
+        value: "private",
+        onChange: () => void 0,
+        consequence: "Private. This card is a preview; nothing leaves the device until you tap Share, and the preview is the whole card."
+      }
+    ),
     /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, style: { backgroundColor: theme.color.card }, children: [
       /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: "PRIVATE \xB7 PREVIEW ONLY" }),
       /* @__PURE__ */ jsx8(Text2, { role: "headline", theme, style: { marginTop: theme.space(2) }, children: `${duration(persona.weeklyMinutes.reduce((a, b) => a + b, 0))} with ${persona.topics[0]?.name ?? "one habit loop"} in the middle` }),
@@ -4045,7 +4165,7 @@ function ShareCardState({ theme, persona }) {
     ] })
   ] });
 }
-function WidgetItem({ theme, persona }) {
+function WidgetItem({ theme, persona, tab }) {
   return /* @__PURE__ */ jsxs6(View, { style: { flex: 1, backgroundColor: theme.color.canvas, padding: theme.space(5), gap: theme.space(4) }, children: [
     /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, style: { paddingTop: theme.space(4) }, children: "HOME SCREEN \xB7 AS IT WOULD APPEAR" }),
     /* @__PURE__ */ jsxs6(View, { style: { flexDirection: "row", gap: theme.space(3), flexWrap: "wrap" }, children: [
@@ -4107,7 +4227,7 @@ function WidgetItem({ theme, persona }) {
     ] })
   ] });
 }
-function UpdateState({ theme, persona }) {
+function UpdateState({ theme, persona, tab }) {
   const { current, available, notes, bytes } = persona.update;
   return /* @__PURE__ */ jsx8(View, { style: { flex: 1, justifyContent: "flex-end", backgroundColor: theme.color.scrim, padding: theme.space(3) }, children: /* @__PURE__ */ jsxs6(Card, { theme, elevated: true, children: [
     /* @__PURE__ */ jsx8(Text2, { role: "micro", tone: "muted", theme, children: `VERSION ${current} \u2192 ${available}` }),
@@ -4132,6 +4252,15 @@ function UpdateState({ theme, persona }) {
     ] })
   ] }) });
 }
+var PHASES = [
+  { id: "P1", scope: "encrypted local storage, Android collector, ingestion, importers", items: ["J1", "J2"] },
+  { id: "P2", scope: "scoring engine, dashboard, Why-this-score, release stage 1", items: ["J3", "J5", "J6", "J7", "J8", "J17", "J24"] },
+  { id: "P3", scope: "interest evolution, discovery, rabbit holes, what-if, focus windows", items: ["J4", "J9", "J11", "J18", "J20", "J21", "J25"] },
+  { id: "P4", scope: "behaviour profile, weekly report, attention budget, ask, widgets", items: ["J10", "J12", "J19", "J22", "J27"] },
+  { id: "P5", scope: "OAuth connectors, consent dashboard, extension, privacy receipt, release stage 2", items: ["J13", "J14", "J23", "J28"] },
+  { id: "P6", scope: "backend, encrypted sync, social layer, share cards, release stage 3", items: ["J15", "J16", "J26"] },
+  { id: "P7", scope: "security review, store readiness, staged rollout, release stage 4", items: [] }
+];
 var SECTION_J = [
   { id: "J1", title: "Onboarding + privacy promise", kind: "screen" },
   { id: "J2", title: "Permission primers (Usage access, notifications)", kind: "screen" },
@@ -4167,13 +4296,13 @@ var SCREENS = [
   { id: "J2", slug: "permission-primers", title: "Permission primers (Usage access, notifications)", kind: "screen", phase: "P1", requires: [], states: ["default"], rule: 'Explain each permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
   { id: "J3", slug: "dashboard", title: "Dashboard", kind: "screen", tab: "home", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "The measured reference layout \u2014 and an honest empty state instead of estimates.", Component: HomeScreen },
   { id: "J4", slug: "interest-evolution", title: "Interest Evolution", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Interest evolution is only shown when topic-level data exists.", Component: JourneyScreen },
-  { id: "J5", slug: "depth", title: "Depth", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Show how long visits last, and refuse to call any visit good or wasted.", Component: DepthScreen },
-  { id: "J6", slug: "curiosity-vs-habit", title: "Curiosity vs Habit", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Name both halves of the week without framing habit as a failure.", Component: CuriosityHabitScreen },
-  { id: "J7", slug: "iqs", title: "IQS", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "A composite score built only from parts that exist, with the band shown.", Component: IqsScreen },
-  { id: "J8", slug: "sessions", title: "Sessions", kind: "screen", tab: "sessions", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "The user annotates their own sessions; labels stay local and train a local model.", Component: SessionsScreen },
+  { id: "J5", slug: "depth", title: "Depth", kind: "screen", tab: "insights", phase: "P2", requires: ["D"], requiresAnyOf: ["A", "B", "C"], states: ["default", "empty"], rule: "Show how long visits last, and refuse to call any visit good or wasted.", Component: DepthScreen },
+  { id: "J6", slug: "curiosity-vs-habit", title: "Curiosity vs Habit", kind: "screen", tab: "insights", phase: "P2", requires: ["D"], requiresAnyOf: ["A", "B", "C"], states: ["default", "empty"], rule: "Name both halves of the week without framing habit as a failure.", Component: CuriosityHabitScreen },
+  { id: "J7", slug: "iqs", title: "IQS", kind: "screen", tab: "insights", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "A composite score built only from parts that exist, with the band shown.", Component: IqsScreen },
+  { id: "J8", slug: "sessions", title: "Sessions", kind: "screen", tab: "sessions", phase: "P2", requires: ["D"], states: ["default", "empty"], rule: "The user annotates their own sessions; labels stay local and train a local model.", Component: SessionsScreen },
   { id: "J9", slug: "discovery-journey", title: "Discovery Journey", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "Show the route a topic was reached by, step by step, with the tier of each step.", Component: DiscoveryScreen },
   { id: "J10", slug: "behavior-profile", title: "Behavior Profile", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Descriptive traits with their evidence attached, never clinical labels.", Component: ProfileScreen },
-  { id: "J11", slug: "rabbit-hole", title: "Rabbit Hole", kind: "screen", tab: "journey", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Print the definition, let the user change it, and never punish what it finds.", Component: RabbitHoleScreen },
+  { id: "J11", slug: "rabbit-hole", title: "Rabbit Hole", kind: "screen", tab: "journey", phase: "P3", requires: ["D"], requiresAnyOf: ["A", "B", "C"], states: ["default", "empty"], rule: "Print the definition, let the user change it, and never punish what it finds.", Component: RabbitHoleScreen },
   { id: "J12", slug: "weekly-report-goals", title: "Weekly Report + Goals", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "A local document plus goals the user set; no streaks, no nudges.", Component: WeeklyReportScreen },
   { id: "J13", slug: "connections", title: "Connections / Consent Dashboard (with capability matrix)", kind: "screen", tab: "you", phase: "P5", requires: [], states: ["default"], rule: "Every source with its capability matrix and a one-tap revoke.", Component: ConnectionsScreen },
   { id: "J14", slug: "privacy-center", title: "Privacy Center (network log, delete everything)", kind: "screen", tab: "you", phase: "P5", requires: [], states: ["default", "empty"], rule: "Retention, the network log, deletion and the receipt \u2014 all checkable in-app.", Component: PrivacyCentreScreen },
@@ -4182,17 +4311,16 @@ var SCREENS = [
   { id: "J17", slug: "why-drawer", title: "Why drawer", kind: "sheet", parent: "dashboard", phase: "P2", requires: ["D"], states: ["default"], rule: "Every number opens into the parts that produced it, and the parts add up.", Component: WhyDrawerSheet },
   { id: "J18", slug: "what-if", title: "What-if Simulator", kind: "screen", tab: "insights", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Counterfactuals are calculations over your history, never predictions.", Component: WhatIfScreen },
   { id: "J19", slug: "attention-budget", title: "Attention Budget", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Budgets are chosen by the user and rendered as numbers, never alarms.", Component: BudgetScreen },
-  { id: "J20", slug: "focus-windows", title: "Focus Windows", kind: "screen", tab: "you", phase: "P3", requires: ["D"], states: ["default", "empty"], rule: "Focus never blocks or shames; it repeats the choice you made.", Component: FocusScreen },
+  { id: "J20", slug: "focus-windows", title: "Focus Windows", kind: "screen", tab: "you", phase: "P3", requires: ["D"], requiresAnyOf: ["A", "B", "C"], states: ["default", "empty"], rule: "Focus never blocks or shames; it repeats the choice you made.", Component: FocusScreen },
   { id: "J21", slug: "learning-arcs", title: "Learning Arcs", kind: "screen", tab: "journey", phase: "P3", requires: ["A", "B", "C"], states: ["default", "empty"], rule: "A stalled arc is reported exactly like a growing one.", Component: LearningArcsScreen },
   { id: "J22", slug: "ask-sheet", title: "Ask sheet", kind: "sheet", parent: "dashboard", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "Answer from local data or refuse \u2014 never guess, never call out.", Component: AskSheet },
   { id: "J23", slug: "privacy-receipt", title: "Privacy Receipt", kind: "sheet", parent: "privacy-center", phase: "P5", requires: [], states: ["default", "empty"], rule: "What left the device, in bytes, with the empty case explained rather than hidden.", Component: PrivacyReceiptSheet },
-  { id: "J24", slug: "persona-picker", title: "Demo persona picker", kind: "sheet", parent: "dashboard", phase: "P4", requires: [], states: ["default"], rule: "Demo data replaces yours while it is on, and is never mixed with it.", Component: PersonaPickerSheet },
-  { id: "J25", slug: "intent-check-settings", title: "Intent Check settings", kind: "screen", tab: "you", phase: "P4", requires: ["D"], states: ["default"], rule: "The only place Mirror may interrupt, off unless asked for, with quiet hours.", Component: IntentCheckScreen },
-  { id: "J26", slug: "share-card-preview", title: "Private Share Card preview", kind: "state", parent: "weekly-report-goals", phase: "P4", requires: ["D"], states: ["default"], rule: "Preview the whole card; nothing is shared until the user shares it.", Component: ShareCardState },
+  { id: "J24", slug: "persona-picker", title: "Demo persona picker", kind: "sheet", parent: "dashboard", phase: "P2", requires: [], states: ["default"], rule: "Demo data replaces yours while it is on, and is never mixed with it.", Component: PersonaPickerSheet },
+  { id: "J25", slug: "intent-check-settings", title: "Intent Check settings", kind: "screen", tab: "you", phase: "P3", requires: ["D"], states: ["default"], rule: "The only place Mirror may interrupt, off unless asked for, with quiet hours.", Component: IntentCheckScreen },
+  { id: "J26", slug: "share-card-preview", title: "Private Share Card preview", kind: "state", parent: "weekly-report-goals", phase: "P6", requires: ["D"], states: ["default"], rule: "Preview the whole card; nothing is shared until the user shares it.", Component: ShareCardState },
   { id: "J27", slug: "home-widget", title: "Home-screen widget", kind: "widget", parent: "dashboard", phase: "P4", requires: ["D"], states: ["default", "empty"], rule: "A lock-screen surface: totals privately, published topics only in public.", Component: WidgetItem },
   { id: "J28", slug: "update-state", title: '"Update available / app version" state (calm, non-blocking)', kind: "state", parent: "dashboard", phase: "P5", requires: [], states: ["default"], rule: "Calm and non-blocking, and explicit that nothing new is collected.", Component: UpdateState }
 ];
-var TAB_ITEMS = TABS;
 var screensByPhase = (phase) => SCREENS.filter((s) => s.phase === phase);
 var screensByKind = (kind) => SCREENS.filter((s) => s.kind === kind);
 var screensByTab = (tab) => SCREENS.filter((s) => s.tab === tab);
@@ -4204,7 +4332,7 @@ var OVERLAY = { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 };
 function treeFor(spec, persona, theme, state = "default") {
   const Item = spec.Component;
   if (spec.kind === "screen" || spec.kind === "widget") {
-    return /* @__PURE__ */ jsx9(Item, { theme, persona, state });
+    return /* @__PURE__ */ jsx9(Item, { theme, persona, state, tab: spec.tab });
   }
   const parentSpec = spec.parent ? specBySlug(spec.parent) : void 0;
   if (!parentSpec) {
@@ -4212,8 +4340,8 @@ function treeFor(spec, persona, theme, state = "default") {
   }
   const Parent = parentSpec.Component;
   return /* @__PURE__ */ jsxs7(View, { style: { flex: 1 }, children: [
-    /* @__PURE__ */ jsx9(Parent, { theme, persona, state: "default" }),
-    /* @__PURE__ */ jsx9(View, { style: OVERLAY, children: /* @__PURE__ */ jsx9(Item, { theme, persona, state }) })
+    /* @__PURE__ */ jsx9(Parent, { theme, persona, state: "default", tab: parentSpec.tab }),
+    /* @__PURE__ */ jsx9(View, { style: OVERLAY, children: /* @__PURE__ */ jsx9(Item, { theme, persona, state, tab: parentSpec.tab }) })
   ] });
 }
 function renderScreen(spec, persona, theme, state = "default") {
@@ -4227,12 +4355,14 @@ function renderScreen(spec, persona, theme, state = "default") {
     }
   );
 }
+var supplies = (spec, p) => spec.requires.every((tier) => p.tiers.includes(tier)) && (spec.requiresAnyOf?.length ? spec.requiresAnyOf.some((tier) => p.tiers.includes(tier)) : true);
 function personaFor(spec, state = "default", all = PERSONAS) {
-  const capable = all.find((p) => spec.requires.every((tier) => p.tiers.includes(tier))) ?? all[0];
-  if (state !== "empty" || spec.requires.length === 0 || !capable) return capable;
-  const lacking = [...all].sort((a, b) => a.tiers.length - b.tiers.length).find((p) => spec.requires.some((tier) => !p.tiers.includes(tier)));
+  const capable = all.find((p) => supplies(spec, p)) ?? all[0];
+  if (state !== "empty" || spec.requires.length === 0 && !spec.requiresAnyOf?.length || !capable) return capable;
+  const lacking = [...all].sort((a, b) => a.tiers.length - b.tiers.length).find((p) => !supplies(spec, p));
   return lacking ?? capable;
 }
+var isDegraded = (spec, persona) => !supplies(spec, persona);
 function specFor(slug) {
   const spec = specBySlug(slug);
   if (!spec) throw new Error(`unknown screen "${slug}" (known: ${SCREENS.map((s) => s.slug).join(", ")})`);
@@ -4282,6 +4412,8 @@ export {
   DataStanding,
   Definition,
   DegradedNotice,
+  DemoChip,
+  DemoChip as DemoDataChip,
   DepthScreen,
   DiscoveryScreen,
   Divider,
@@ -4306,6 +4438,7 @@ export {
   NothingYet,
   OnboardingScreen,
   PERSONAS,
+  PHASES,
   PermissionPrimer,
   PermissionPrimerScreen,
   PersonaPickerSheet,
@@ -4332,7 +4465,7 @@ export {
   Stat,
   StatusStrip,
   Surface,
-  TABS,
+  TAB_ITEMS as TABS,
   TAB_ITEMS,
   TIERS,
   TIER_ORDER,
@@ -4368,6 +4501,7 @@ export {
   hedged,
   hitSlopFor,
   initialFlags,
+  isDegraded,
   isOn,
   layoutMetrics,
   lightTheme,

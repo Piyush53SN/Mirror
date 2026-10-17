@@ -11,7 +11,9 @@ import type { MirrorTheme } from '../src/tokens.js';
 import type { DataTier } from '../src/tiers.js';
 import { Callout, Divider, Meter, Text, TierBadge } from '../src/primitives/text.js';
 import { DegradedNotice } from '../src/patterns.js';
-import { Pill } from '../src/primitives/controls.js';
+import { TabBar, Pill } from '../src/primitives/controls.js';
+import { useLiveBlur } from '../src/theme.js';
+import { TAB_ITEMS } from './tabs.js';
 import type { Persona } from './personas.js';
 
 export type ScreenState = 'default' | 'empty';
@@ -20,7 +22,43 @@ export type ScreenProps = {
   theme: MirrorTheme;
   persona: Persona;
   state?: ScreenState;
+  /** The tab this screen belongs to; drives the floating tab bar's selected item. */
+  tab?: string;
 };
+
+/**
+ * The bottom chrome every tab screen shares: a spacer the scroll body can run
+ * under, and the floating tab bar itself. The bar is one of the two surfaces
+ * allowed to spend a live-blur pass, so it asks `useLiveBlur` and falls back to
+ * its pre-composited fill when the budget is spent.
+ */
+export function TabFooter({ theme, active }: { theme: MirrorTheme; active: string }) {
+  const liveBlur = useLiveBlur(`tabbar:${active}`, true);
+  return (
+    <>
+      <View style={{ height: theme.size.tabBar + theme.space(6) }} />
+      <TabBar
+        items={TAB_ITEMS.map((t) => ({ id: t.id, label: t.label }))}
+        active={active}
+        onChange={() => undefined}
+        liveBlur={liveBlur}
+        theme={theme}
+      />
+    </>
+  );
+}
+
+/**
+ * Whether a persona can supply everything a feature needs.
+ *
+ * `needs` are required outright; `anyOf` is satisfied by any single tier. The
+ * distinction exists because "depth" is not a tier-D feature: it needs OS session
+ * data *and* at least one content-level signal, and saying otherwise would be the
+ * fake-signal failure the brief forbids.
+ */
+export function canSupply(persona: Persona, needs: DataTier[], anyOf: DataTier[] = []): boolean {
+  return needs.every((t) => persona.tiers.includes(t)) && (anyOf.length === 0 || anyOf.some((t) => persona.tiers.includes(t)));
+}
 
 /**
  * The empty state every screen uses. It always offers the same one action —
@@ -31,12 +69,14 @@ export type ScreenProps = {
 export function NothingYet({
   theme,
   needs,
+  anyOf,
   available,
   feature,
   actionLabel = 'Explain what Mirror needs',
 }: {
   theme: MirrorTheme;
   needs: DataTier[];
+  anyOf?: DataTier[];
   available: DataTier[];
   feature: string;
   actionLabel?: string;
@@ -45,6 +85,7 @@ export function NothingYet({
     <DegradedNotice
       theme={theme}
       needs={needs}
+      anyOf={anyOf}
       available={available}
       feature={feature}
       actions={

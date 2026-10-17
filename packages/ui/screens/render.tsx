@@ -27,7 +27,7 @@ const OVERLAY = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 } a
 export function treeFor(spec: ScreenSpec, persona: Persona, theme: MirrorTheme, state: ScreenState = 'default'): React.ReactElement {
   const Item = spec.Component;
   if (spec.kind === 'screen' || spec.kind === 'widget') {
-    return <Item theme={theme} persona={persona} state={state} />;
+    return <Item theme={theme} persona={persona} state={state} tab={spec.tab} />;
   }
   const parentSpec = spec.parent ? specBySlug(spec.parent) : undefined;
   if (!parentSpec) {
@@ -36,9 +36,9 @@ export function treeFor(spec: ScreenSpec, persona: Persona, theme: MirrorTheme, 
   const Parent = parentSpec.Component;
   return (
     <View style={{ flex: 1 }}>
-      <Parent theme={theme} persona={persona} state="default" />
+      <Parent theme={theme} persona={persona} state="default" tab={parentSpec.tab} />
       <View style={OVERLAY}>
-        <Item theme={theme} persona={persona} state={state} />
+        <Item theme={theme} persona={persona} state={state} tab={parentSpec.tab} />
       </View>
     </View>
   );
@@ -65,14 +65,21 @@ export function renderScreen(spec: ScreenSpec, persona: Persona, theme: MirrorTh
  * needs, so the frame shows the real degraded view instead of a second copy of
  * the default one.
  */
+const supplies = (spec: ScreenSpec, p: Persona) =>
+  spec.requires.every((tier) => p.tiers.includes(tier)) &&
+  (spec.requiresAnyOf?.length ? spec.requiresAnyOf.some((tier) => p.tiers.includes(tier)) : true);
+
 export function personaFor(spec: ScreenSpec, state: ScreenState = 'default', all: Persona[] = PERSONAS): Persona {
-  const capable = all.find((p) => spec.requires.every((tier) => p.tiers.includes(tier))) ?? all[0];
-  if (state !== 'empty' || spec.requires.length === 0 || !capable) return capable as Persona;
+  const capable = all.find((p) => supplies(spec, p)) ?? all[0];
+  if (state !== 'empty' || (spec.requires.length === 0 && !spec.requiresAnyOf?.length) || !capable) return capable as Persona;
   const lacking = [...all]
     .sort((a, b) => a.tiers.length - b.tiers.length)
-    .find((p) => spec.requires.some((tier) => !p.tiers.includes(tier)));
+    .find((p) => !supplies(spec, p));
   return lacking ?? capable;
 }
+
+/** True when the persona cannot supply everything the item declares. */
+export const isDegraded = (spec: ScreenSpec, persona: Persona) => !supplies(spec, persona);
 
 export function specFor(slug: string): ScreenSpec {
   const spec = specBySlug(slug);

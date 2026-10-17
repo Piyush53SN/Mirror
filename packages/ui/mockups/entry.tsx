@@ -16,6 +16,7 @@ import {
   specFor,
   personaFor,
   personaById,
+  isDegraded,
   SCREENS,
   PERSONAS,
   type Persona,
@@ -23,7 +24,7 @@ import {
   type ScreenState,
   type RenderedItem,
 } from '../screens/render.js';
-import { SECTION_J, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index.js';
+import { SECTION_J, PHASES, TAB_ITEMS, screensByKind, screensByPhase, specBySlug } from '../screens/index.js';
 import type { MirrorTheme, ThemeName } from '../src/tokens.js';
 
 export {
@@ -33,10 +34,12 @@ export {
   specFor,
   personaFor,
   personaById,
+  isDegraded,
   renderToStaticMarkup,
   createTheme,
   SCREENS,
   SECTION_J,
+  PHASES,
   TAB_ITEMS,
   PERSONAS,
   screensByKind,

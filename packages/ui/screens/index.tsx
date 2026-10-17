@@ -37,7 +37,7 @@ import {
   WhySheet,
 } from '../src/patterns.js';
 import { PERSONAS, type Persona } from './personas.js';
-import { Definition, NothingYet, ScoreBlock, type ScreenProps, type ScreenState } from './kit.js';
+import { Definition, NothingYet, ScoreBlock, TabFooter, canSupply, type ScreenProps, type ScreenState } from './kit.js';
 
 /* ------------------------------------------------------------------ data ---- */
 
@@ -63,18 +63,14 @@ const HERO = (p: Persona) => [
   },
 ];
 
-const TABS = [
-  { id: 'home', label: 'Home' },
-  { id: 'insights', label: 'Insights' },
-  { id: 'journey', label: 'Journey' },
-  { id: 'sessions', label: 'Sessions' },
-  { id: 'you', label: 'You' },
-];
+import { TAB_ITEMS as TAB_SPECS } from './tabs.js';
+
+const TABS = TAB_SPECS;
 
 /* ------------------------------------------------------------------ J1 ------ */
 
 /** J1 · Onboarding + privacy promise — three promises, then the choice to skip. */
-export function OnboardingScreen({ theme }: ScreenProps) {
+export function OnboardingScreen({ theme, persona, tab }: ScreenProps) {
   const promises = [
     { title: 'Your history stays on this phone', body: 'Titles, searches and timestamps are stored and analysed locally, encrypted.' },
     { title: 'Two profiles, never merged', body: 'Private holds everything. Public holds only the topics you pick, one by one. Nothing is copied across.' },
@@ -114,7 +110,7 @@ export function OnboardingScreen({ theme }: ScreenProps) {
 /* ------------------------------------------------------------------ J2 ------ */
 
 /** J2 · Permission primer — explains before the OS asks, and the "not now" path. */
-export function PermissionPrimerScreen({ theme }: ScreenProps) {
+export function PermissionPrimerScreen({ theme, persona, tab }: ScreenProps) {
   const [step, setStep] = React.useState<'usage' | 'notifications'>('usage');
   const primers = {
     usage: {
@@ -132,6 +128,7 @@ export function PermissionPrimerScreen({ theme }: ScreenProps) {
   } as const;
   return (
     <Screen
+      demo={persona.name}
       title="Permission primers"
       theme={theme}
       padded
@@ -142,7 +139,7 @@ export function PermissionPrimerScreen({ theme }: ScreenProps) {
           subtitle={step === 'usage' ? 'Step 1 of 2 · usage access' : 'Step 2 of 2 · notifications'}
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<View style={{ height: theme.space(6) }} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <SegmentedControl
@@ -171,12 +168,13 @@ export function PermissionPrimerScreen({ theme }: ScreenProps) {
 /* ------------------------------------------------------------------ J3 ------ */
 
 /** J3 · Home — the reference layout: hero, week strip, habits, budget. */
-export function HomeScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function HomeScreen({ theme, persona, state, tab }: ScreenProps) {
   const [hero, setHero] = React.useState(0);
   const empty = state === 'empty';
   const slides = HERO(persona);
   return (
     <Screen
+      demo={persona.name}
       title="Dashboard"
       theme={theme}
       padded={false}
@@ -197,7 +195,7 @@ export function HomeScreen({ theme, persona, state = 'default' }: ScreenProps) {
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ paddingHorizontal: theme.space(4), gap: theme.space(3) }}>
         <BoundaryToggle
@@ -281,9 +279,10 @@ export function HomeScreen({ theme, persona, state = 'default' }: ScreenProps) {
 /* ------------------------------------------------------------------ J5 ------ */
 
 /** J5 · Journey — how interests appeared, grew and faded. */
-export function JourneyScreen({ theme, persona }: ScreenProps) {
+export function JourneyScreen({ theme, persona, tab }: ScreenProps) {
   return (
     <Screen
+      demo={persona.name}
       title="Interest Evolution"
       theme={theme}
       padded
@@ -299,7 +298,7 @@ export function JourneyScreen({ theme, persona }: ScreenProps) {
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -367,14 +366,15 @@ export function JourneyScreen({ theme, persona }: ScreenProps) {
 /* ------------------------------------------------------------------ J6 ------ */
 
 /** J6 · Sessions — the raw material, labelled by the user. */
-export function SessionsScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function SessionsScreen({ theme, persona, state, tab }: ScreenProps) {
   return (
     <Screen
+      demo={persona.name}
       title="Sessions"
       theme={theme}
       padded
       header={<Toolbar theme={theme} title="Sessions" subtitle="Longest first. Labels train the local model." />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -415,11 +415,12 @@ export function SessionsScreen({ theme, persona, state = 'default' }: ScreenProp
 /* ------------------------------------------------------------------ J7 ------ */
 
 /** J7 · Discovery — rabbit-hole detection, stated without drama. */
-export function DiscoveryScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function DiscoveryScreen({ theme, persona, state, tab }: ScreenProps) {
   const rabbit = persona.sessions.filter((s) => s.kind === 'habit');
   const minutes = rabbit.reduce((a, s) => a + s.minutes, 0);
   return (
     <Screen
+      demo={persona.name}
       title="Discovery Journey"
       theme={theme}
       padded
@@ -435,7 +436,7 @@ export function DiscoveryScreen({ theme, persona, state = 'default' }: ScreenPro
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -477,7 +478,7 @@ export function DiscoveryScreen({ theme, persona, state = 'default' }: ScreenPro
 /* ------------------------------------------------------------------ J8 ------ */
 
 /** J8 · What-if — counterfactuals computed locally, with their assumptions shown. */
-export function WhatIfScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function WhatIfScreen({ theme, persona, state, tab }: ScreenProps) {
   const baseline = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
   const scenarios = [
     { label: 'Remove short video', delta: -0.18, note: 'Assumes the minutes are not replaced by another app — they usually are, partially.' },
@@ -486,6 +487,7 @@ export function WhatIfScreen({ theme, persona, state = 'default' }: ScreenProps)
   ];
   return (
     <Screen
+      demo={persona.name}
       title="What if"
       theme={theme}
       padded
@@ -501,7 +503,7 @@ export function WhatIfScreen({ theme, persona, state = 'default' }: ScreenProps)
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -530,55 +532,86 @@ export function WhatIfScreen({ theme, persona, state = 'default' }: ScreenProps)
 /* ------------------------------------------------------------------ J9 ------ */
 
 /** J9 · Focus — windows you choose; Mirror never blocks anything silently. */
-export function FocusScreen({ theme }: ScreenProps) {
+export function FocusScreen({ theme, persona, state, tab }: ScreenProps) {
+  // A focus window is not a tier-D feature. Timestamps can tell you a window was
+  // scheduled; they cannot tell you whether the time inside it was focused, because
+  // that needs a content-level signal (a search, a topic, a read). With tier D
+  // alone this screen would be a calendar pretending to be a measurement.
+  const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
+  const empty = state === 'empty' || !canMeasure;
   return (
     <Screen
+      demo={persona.name}
       title="Focus"
       theme={theme}
       padded
       header={<Toolbar theme={theme} title="Focus windows" subtitle="You choose; Mirror only reminds you of your own choice" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="Scheduled" caption="local notifications only" />
-          <FactList
+        <DataStanding theme={theme} tiers={persona.tiers} />
+        {empty ? (
+          <NothingYet
             theme={theme}
-            items={[
-              { label: 'Weekday deep work', value: '09:00–11:30', detail: 'Announces at the start; never counts down, never nags.' },
-              { label: 'Quiet hours', value: '22:30–07:00', detail: 'Notifications are suppressed; collection continues locally.' },
-            ]}
+            needs={['D']}
+            anyOf={['A', 'B', 'C']}
+            available={persona.tiers}
+            feature="Focus windows"
+            actionLabel="Connect a source"
           />
-        </Card>
-        <Card theme={theme}>
-          <SectionHeader theme={theme} title="How it behaves" />
-          <Text role="label" tone="muted" theme={theme}>
-            A focus window does not block apps and does not shame you when you leave it. It shows one line when you return
-            and nothing else. You can delete the window in one tap.
-          </Text>
-          <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
-            <Pill theme={theme} variant="secondary">
-              Add a window
-            </Pill>
-            <Pill theme={theme} variant="quiet">
-              Remove all
-            </Pill>
-          </View>
-        </Card>
-        <Callout theme={theme}>
-          Focus windows are tier D only: they need nothing but timestamps, and work with no network and no account.
-        </Callout>
+        ) : (
+          <>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Scheduled" caption="local notifications only" />
+              <FactList
+                theme={theme}
+                items={[
+                  { label: 'Weekday deep work', value: '09:00–11:30', detail: 'Announces at the start; never counts down, never nags.' },
+                  { label: 'Quiet hours', value: '22:30–07:00', detail: 'Notifications are suppressed; collection continues locally.' },
+                ]}
+              />
+            </Card>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="Did the window hold?" caption="measured, not assumed" />
+              <FactList
+                theme={theme}
+                items={[
+                  { label: 'Times you returned early', value: '2 of 5', detail: 'Counted from launches inside the window, tier D.' },
+                  { label: 'What you returned to', value: 'a feed, twice', detail: 'Needs a tier A/B/C signal; shown only because you have one.' },
+                  { label: 'Prompts sent', value: '0', detail: 'A window reminder is a local notification you scheduled, not a nudge.' },
+                ]}
+              />
+            </Card>
+            <Card theme={theme}>
+              <SectionHeader theme={theme} title="How it behaves" />
+              <Text role="label" tone="muted" theme={theme}>
+                A focus window does not block apps and does not shame you when you leave it. It shows one line when you return
+                and nothing else. You can delete the window in one tap.
+              </Text>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
+                <Pill theme={theme} variant="secondary">
+                  Add a window
+                </Pill>
+                <Pill theme={theme} variant="quiet">
+                  Remove all
+                </Pill>
+              </View>
+            </Card>
+            <Callout theme={theme}>
+              Focus windows need tier D for the schedule and one of tier A/B/C to say whether the time held. Never more, and
+              never a guess when the second half is missing.
+            </Callout>
+          </>
+        )}
       </View>
     </Screen>
   );
 }
 
-/* ------------------------------------------------------------------ J10 ----- */
-
-/** J10 · Behaviour profile — descriptive traits with their evidence attached. */
-export function ProfileScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function ProfileScreen({ theme, persona, state, tab }: ScreenProps) {
   return (
     <Screen
+      demo={persona.name}
       title="Behavior Profile"
       theme={theme}
       padded
@@ -594,7 +627,7 @@ export function ProfileScreen({ theme, persona, state = 'default' }: ScreenProps
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -630,10 +663,11 @@ export function ProfileScreen({ theme, persona, state = 'default' }: ScreenProps
 /* ------------------------------------------------------------------ J11 ----- */
 
 /** J11 · Weekly report — a local document, shareable only as an image you approve. */
-export function WeeklyReportScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function WeeklyReportScreen({ theme, persona, state, tab }: ScreenProps) {
   const total = persona.weeklyMinutes.reduce((a, b) => a + b, 0);
   return (
     <Screen
+      demo={persona.name}
       title="Weekly Report + Goals"
       theme={theme}
       padded
@@ -649,7 +683,7 @@ export function WeeklyReportScreen({ theme, persona, state = 'default' }: Screen
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         {state === 'empty' ? <NothingYet theme={theme} needs={['D']} available={[]} feature="Weekly report" actionLabel="Grant usage access" /> : null}
@@ -713,9 +747,10 @@ export function WeeklyReportScreen({ theme, persona, state = 'default' }: Screen
 /* ------------------------------------------------------------------ J12 ----- */
 
 /** J12 · Budgets — soft limits you set, shown as plain numbers. */
-export function BudgetScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function BudgetScreen({ theme, persona, state, tab }: ScreenProps) {
   return (
     <Screen
+      demo={persona.name}
       title="Attention budget"
       theme={theme}
       padded
@@ -731,7 +766,7 @@ export function BudgetScreen({ theme, persona, state = 'default' }: ScreenProps)
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         {state === 'empty' || persona.budgets.length === 0 ? (
@@ -774,15 +809,16 @@ export function BudgetScreen({ theme, persona, state = 'default' }: ScreenProps)
 /* ------------------------------------------------------------------ J16 ----- */
 
 /** J16 · Privacy centre — retention, deletion, the receipt and the matrix. */
-export function PrivacyCentreScreen({ theme, persona }: ScreenProps) {
+export function PrivacyCentreScreen({ theme, persona, tab }: ScreenProps) {
   const [sheet, setSheet] = React.useState<'receipt' | 'matrix' | null>(null);
   return (
     <Screen
+      demo={persona.name}
       title="Privacy Center"
       theme={theme}
       padded
       header={<Toolbar theme={theme} title="Privacy Center" subtitle="Nothing here is a promise you cannot check" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
       overlay={
         <>
           <Sheet theme={theme} open={sheet === 'receipt'} title="Privacy receipt" subtitle="This month, from the on-device log" onClose={() => setSheet(null)}>
@@ -878,15 +914,16 @@ export function PrivacyCentreScreen({ theme, persona }: ScreenProps) {
 /* ------------------------------------------------------------------ J17 ----- */
 
 /** J17 · Public profile — what another person would see. */
-export function PublicProfileScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function PublicProfileScreen({ theme, persona, state, tab }: ScreenProps) {
   const published = state === 'empty' ? [] : persona.topics.slice(0, 1);
   return (
     <Screen
+      demo={persona.name}
       title="Public Profile editor"
       theme={theme}
       padded
       header={<Toolbar theme={theme} title="Public Profile editor" subtitle="Edit, with a live preview of what a match sees" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <BoundaryToggle theme={theme} value="public" onChange={() => undefined} consequence="Public. Visible to others: the topics you published, and a coarse activity bucket. Nothing else." />
@@ -972,15 +1009,16 @@ export function PublicProfileScreen({ theme, persona, state = 'default' }: Scree
 /* ------------------------------------------------------------------ J18 ----- */
 
 /** J18 · Matches — off by default, and it says so instead of teasing. */
-export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function MatchesScreen({ theme, persona, state, tab }: ScreenProps) {
   const socialOn = isOn(initialFlags, 'socialMatching') && state !== 'empty';
   return (
     <Screen
+      demo={persona.name}
       title="Matches / Chat"
       theme={theme}
       padded
       header={<Toolbar theme={theme} title="Matches / Chat" subtitle="Off by default, and not required to use Mirror" />}
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         {!socialOn ? (
@@ -1061,12 +1099,16 @@ export function MatchesScreen({ theme, persona, state = 'default' }: ScreenProps
 /* ================================================================== J5 ====== */
 
 /** J5 · Depth — session-length distribution, and what "deep" is defined as. */
-export function DepthScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const empty = state === 'empty';
+export function DepthScreen({ theme, persona, state, tab }: ScreenProps) {
+  // Not a tier-D feature: session length alone is not the thing this screen is
+  // named after. Without a content-level signal it refuses rather than relabelling.
+  const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
+  const empty = state === 'empty' || !canMeasure;
   const bands = persona.depthBands;
   const under8 = bands[0]?.share ?? 0;
   return (
     <Screen
+      demo={persona.name}
       title="Depth"
       theme={theme}
       padded
@@ -1082,12 +1124,12 @@ export function DepthScreen({ theme, persona, state = 'default' }: ScreenProps) 
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
         {empty ? (
-          <NothingYet theme={theme} needs={['D']} available={[]} feature="Depth" actionLabel="Grant usage access" />
+          <NothingYet theme={theme} needs={['D']} anyOf={['A', 'B', 'C']} available={persona.tiers} feature="Depth" actionLabel="Connect a source" />
         ) : (
           <>
             <Card theme={theme} elevated>
@@ -1162,12 +1204,16 @@ export function DepthScreen({ theme, persona, state = 'default' }: ScreenProps) 
 /* ================================================================== J6 ====== */
 
 /** J6 · Curiosity vs Habit — the two halves of the same week, both named. */
-export function CuriosityHabitScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const empty = state === 'empty';
+export function CuriosityHabitScreen({ theme, persona, state, tab }: ScreenProps) {
+  // Not a tier-D feature: session length alone is not the thing this screen is
+  // named after. Without a content-level signal it refuses rather than relabelling.
+  const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
+  const empty = state === 'empty' || !canMeasure;
   const { deepHours, habitHours, switchesPerHour, note } = persona.curiosity;
   const total = deepHours + habitHours || 1;
   return (
     <Screen
+      demo={persona.name}
       title="Curiosity vs habit"
       theme={theme}
       padded
@@ -1183,12 +1229,12 @@ export function CuriosityHabitScreen({ theme, persona, state = 'default' }: Scre
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
         {empty ? (
-          <NothingYet theme={theme} needs={['D']} available={[]} feature="Curiosity vs habit" actionLabel="Grant usage access" />
+          <NothingYet theme={theme} needs={['D']} anyOf={['A', 'B', 'C']} available={persona.tiers} feature="Curiosity vs habit" actionLabel="Connect a source" />
         ) : (
           <>
             <Card theme={theme}>
@@ -1247,11 +1293,12 @@ export function CuriosityHabitScreen({ theme, persona, state = 'default' }: Scre
 /* ================================================================== J7 ====== */
 
 /** J7 · IQS — the composite score, built only from parts that exist. */
-export function IqsScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function IqsScreen({ theme, persona, state, tab }: ScreenProps) {
   const empty = state === 'empty';
   const iqs = persona.iqs;
   return (
     <Screen
+      demo={persona.name}
       title="IQS"
       theme={theme}
       padded
@@ -1267,7 +1314,7 @@ export function IqsScreen({ theme, persona, state = 'default' }: ScreenProps) {
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -1300,11 +1347,15 @@ export function IqsScreen({ theme, persona, state = 'default' }: ScreenProps) {
 /* ================================================================== J11 ===== */
 
 /** J11 · Rabbit Hole — the definition is yours, and it is printed on the screen. */
-export function RabbitHoleScreen({ theme, persona, state = 'default' }: ScreenProps) {
-  const empty = state === 'empty';
+export function RabbitHoleScreen({ theme, persona, state, tab }: ScreenProps) {
+  // Not a tier-D feature: session length alone is not the thing this screen is
+  // named after. Without a content-level signal it refuses rather than relabelling.
+  const canMeasure = canSupply(persona, ['D'], ['A', 'B', 'C']);
+  const empty = state === 'empty' || !canMeasure;
   const rabbit = persona.rabbit;
   return (
     <Screen
+      demo={persona.name}
       title="Rabbit hole"
       theme={theme}
       padded
@@ -1320,7 +1371,7 @@ export function RabbitHoleScreen({ theme, persona, state = 'default' }: ScreenPr
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -1338,7 +1389,7 @@ export function RabbitHoleScreen({ theme, persona, state = 'default' }: ScreenPr
           </View>
         </Card>
         {empty ? (
-          <NothingYet theme={theme} needs={['D']} available={[]} feature="Rabbit-hole detection" actionLabel="Grant usage access" />
+          <NothingYet theme={theme} needs={['D']} anyOf={['A', 'B', 'C']} available={persona.tiers} feature="Rabbit-hole detection" actionLabel="Connect a source" />
         ) : (
           <>
             <Card theme={theme}>
@@ -1373,10 +1424,11 @@ export function RabbitHoleScreen({ theme, persona, state = 'default' }: ScreenPr
 /* ================================================================== J13 ===== */
 
 /** J13 · Connections / consent dashboard — sources, capability matrix, revocation. */
-export function ConnectionsScreen({ theme, persona }: ScreenProps) {
+export function ConnectionsScreen({ theme, persona, tab }: ScreenProps) {
   const [boundary, setBoundary] = React.useState<'private' | 'public'>('private');
   return (
     <Screen
+      demo={persona.name}
       title="Connections"
       theme={theme}
       padded
@@ -1392,7 +1444,7 @@ export function ConnectionsScreen({ theme, persona }: ScreenProps) {
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <BoundaryToggle
@@ -1432,7 +1484,7 @@ export function ConnectionsScreen({ theme, persona }: ScreenProps) {
 /* ================================================================== J17 ===== */
 
 /** J17 · Why drawer — a sheet over whatever number the user is questioning. */
-export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
+export function WhyDrawerSheet({ theme, persona, tab }: ScreenProps) {
   const sum = persona.whyParts.reduce((total, p) => total + p.points, 0);
   return (
     <Sheet
@@ -1474,10 +1526,11 @@ export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
 /* ================================================================== J21 ===== */
 
 /** J21 · Learning arcs — a topic followed over months, with what came next. */
-export function LearningArcsScreen({ theme, persona, state = 'default' }: ScreenProps) {
+export function LearningArcsScreen({ theme, persona, state, tab }: ScreenProps) {
   const empty = state === 'empty' || persona.arcs.length === 0;
   return (
     <Screen
+      demo={persona.name}
       title="Learning arcs"
       theme={theme}
       padded
@@ -1493,7 +1546,7 @@ export function LearningArcsScreen({ theme, persona, state = 'default' }: Screen
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <DataStanding theme={theme} tiers={persona.tiers} />
@@ -1542,7 +1595,7 @@ export function LearningArcsScreen({ theme, persona, state = 'default' }: Screen
 /* ================================================================== J22 ===== */
 
 /** J22 · Ask — a sheet that answers from local data or refuses, never guesses. */
-export function AskSheet({ theme, persona, state = 'default' }: ScreenProps) {
+export function AskSheet({ theme, persona, state, tab }: ScreenProps) {
   const canAnswer = state !== 'empty' && persona.askable.length > 0;
   return (
     <Sheet open theme={theme} title="Ask Mirror" subtitle="Answers come from this device, or not at all" onClose={() => undefined}>
@@ -1566,7 +1619,7 @@ export function AskSheet({ theme, persona, state = 'default' }: ScreenProps) {
 /* ================================================================== J23 ===== */
 
 /** J23 · Privacy receipt — what left the device, in bytes, this month. */
-export function PrivacyReceiptSheet({ theme, persona, state = 'default' }: ScreenProps) {
+export function PrivacyReceiptSheet({ theme, persona, state, tab }: ScreenProps) {
   const rows = persona.networkLog;
   const bytes = rows.reduce((total, r) => total + r.bytes, 0);
   const empty = state === 'empty' || rows.length === 0;
@@ -1600,7 +1653,7 @@ export function PrivacyReceiptSheet({ theme, persona, state = 'default' }: Scree
 /* ================================================================== J24 ===== */
 
 /** J24 · Demo persona picker — switches whose data is on screen, and says so. */
-export function PersonaPickerSheet({ theme, persona }: ScreenProps) {
+export function PersonaPickerSheet({ theme, persona, tab }: ScreenProps) {
   return (
     <Sheet open theme={theme} title="Demo persona" subtitle="Which data the screens are built from" onClose={() => undefined}>
       <View style={{ gap: theme.space(3) }}>
@@ -1637,9 +1690,10 @@ export function PersonaPickerSheet({ theme, persona }: ScreenProps) {
 /* ================================================================== J25 ===== */
 
 /** J25 · Intent Check settings — the one place Mirror is allowed to interrupt. */
-export function IntentCheckScreen({ theme, persona }: ScreenProps) {
+export function IntentCheckScreen({ theme, persona, tab }: ScreenProps) {
   return (
     <Screen
+      demo={persona.name}
       title="Intent check"
       theme={theme}
       padded
@@ -1655,7 +1709,7 @@ export function IntentCheckScreen({ theme, persona }: ScreenProps) {
           }
         />
       }
-      footer={<View style={{ height: theme.size.tabBar + theme.space(6) }} />}
+      footer={<TabFooter theme={theme} active={tab ?? 'home'} />}
     >
       <View style={{ gap: theme.space(3) }}>
         <Card theme={theme}>
@@ -1708,9 +1762,15 @@ export function IntentCheckScreen({ theme, persona }: ScreenProps) {
 /* ================================================================== J26 ===== */
 
 /** J26 · Private share card preview — the card, and what would not be on it. */
-export function ShareCardState({ theme, persona }: ScreenProps) {
+export function ShareCardState({ theme, persona, tab }: ScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.scrim, justifyContent: 'center', padding: theme.space(5), gap: theme.space(3) }}>
+      <BoundaryToggle
+        theme={theme}
+        value="private"
+        onChange={() => undefined}
+        consequence="Private. This card is a preview; nothing leaves the device until you tap Share, and the preview is the whole card."
+      />
       <Card theme={theme} elevated style={{ backgroundColor: theme.color.card }}>
         <Text role="micro" tone="muted" theme={theme}>
           PRIVATE · PREVIEW ONLY
@@ -1745,7 +1805,7 @@ export function ShareCardState({ theme, persona }: ScreenProps) {
 /* ================================================================== J27 ===== */
 
 /** J27 · Home-screen widget — totals privately, topics only if you opt in. */
-export function WidgetItem({ theme, persona }: ScreenProps) {
+export function WidgetItem({ theme, persona, tab }: ScreenProps) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.canvas, padding: theme.space(5), gap: theme.space(4) }}>
       <Text role="micro" tone="muted" theme={theme} style={{ paddingTop: theme.space(4) }}>
@@ -1813,7 +1873,7 @@ export function WidgetItem({ theme, persona }: ScreenProps) {
 /* ================================================================== J28 ===== */
 
 /** J28 · Update available — calm, non-blocking, and explicit about collection. */
-export function UpdateState({ theme, persona }: ScreenProps) {
+export function UpdateState({ theme, persona, tab }: ScreenProps) {
   const { current, available, notes, bytes } = persona.update;
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: theme.color.scrim, padding: theme.space(3) }}>
@@ -1867,12 +1927,34 @@ export type ScreenSpec = {
   phase: 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6';
   /** Tiers the screen needs to show anything beyond its empty state. */
   requires: DataTier[];
+  /**
+   * Additional tiers of which at least one is needed. Some features are not
+   * single-tier features: depth, rabbit holes, curiosity-vs-habit and focus
+   * windows need the OS's session data *and* a content-level signal, and
+   * declaring them as tier-D-only would be the fake-signal failure the brief
+   * forbids.
+   */
+  requiresAnyOf?: DataTier[];
   /** States the mockup renderer must produce for this item. */
   states: ScreenState[];
   /** The product rule this screen carries, so the next person knows why it exists. */
   rule: string;
   Component: React.ComponentType<ScreenProps>;
 };
+
+/**
+ * What ships in which phase — the roadmap from `docs/SPEC.md` §5, as a value so
+ * the inventory can be checked against it instead of drifting.
+ */
+export const PHASES: { id: string; scope: string; items: string[] }[] = [
+  { id: 'P1', scope: 'encrypted local storage, Android collector, ingestion, importers', items: ['J1', 'J2'] },
+  { id: 'P2', scope: 'scoring engine, dashboard, Why-this-score, release stage 1', items: ['J3', 'J5', 'J6', 'J7', 'J8', 'J17', 'J24'] },
+  { id: 'P3', scope: 'interest evolution, discovery, rabbit holes, what-if, focus windows', items: ['J4', 'J9', 'J11', 'J18', 'J20', 'J21', 'J25'] },
+  { id: 'P4', scope: 'behaviour profile, weekly report, attention budget, ask, widgets', items: ['J10', 'J12', 'J19', 'J22', 'J27'] },
+  { id: 'P5', scope: 'OAuth connectors, consent dashboard, extension, privacy receipt, release stage 2', items: ['J13', 'J14', 'J23', 'J28'] },
+  { id: 'P6', scope: 'backend, encrypted sync, social layer, share cards, release stage 3', items: ['J15', 'J16', 'J26'] },
+  { id: 'P7', scope: 'security review, store readiness, staged rollout, release stage 4', items: [] },
+];
 
 /** The Section J list, verbatim, so a test can prove the inventory covers it. */
 export const SECTION_J: { id: string; title: string; kind: ScreenKind; parent?: string }[] = [
@@ -1911,13 +1993,13 @@ export const SCREENS: ScreenSpec[] = [
   { id: 'J2', slug: 'permission-primers', title: 'Permission primers (Usage access, notifications)', kind: 'screen', phase: 'P1', requires: [], states: ['default'], rule: 'Explain each permission before the OS dialog, and make "not now" as easy as "allow".', Component: PermissionPrimerScreen },
   { id: 'J3', slug: 'dashboard', title: 'Dashboard', kind: 'screen', tab: 'home', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'The measured reference layout — and an honest empty state instead of estimates.', Component: HomeScreen },
   { id: 'J4', slug: 'interest-evolution', title: 'Interest Evolution', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Interest evolution is only shown when topic-level data exists.', Component: JourneyScreen },
-  { id: 'J5', slug: 'depth', title: 'Depth', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Show how long visits last, and refuse to call any visit good or wasted.', Component: DepthScreen },
-  { id: 'J6', slug: 'curiosity-vs-habit', title: 'Curiosity vs Habit', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Name both halves of the week without framing habit as a failure.', Component: CuriosityHabitScreen },
-  { id: 'J7', slug: 'iqs', title: 'IQS', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'A composite score built only from parts that exist, with the band shown.', Component: IqsScreen },
-  { id: 'J8', slug: 'sessions', title: 'Sessions', kind: 'screen', tab: 'sessions', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'The user annotates their own sessions; labels stay local and train a local model.', Component: SessionsScreen },
+  { id: 'J5', slug: 'depth', title: 'Depth', kind: 'screen', tab: 'insights', phase: 'P2', requires: ['D'], requiresAnyOf: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Show how long visits last, and refuse to call any visit good or wasted.', Component: DepthScreen },
+  { id: 'J6', slug: 'curiosity-vs-habit', title: 'Curiosity vs Habit', kind: 'screen', tab: 'insights', phase: 'P2', requires: ['D'], requiresAnyOf: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Name both halves of the week without framing habit as a failure.', Component: CuriosityHabitScreen },
+  { id: 'J7', slug: 'iqs', title: 'IQS', kind: 'screen', tab: 'insights', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'A composite score built only from parts that exist, with the band shown.', Component: IqsScreen },
+  { id: 'J8', slug: 'sessions', title: 'Sessions', kind: 'screen', tab: 'sessions', phase: 'P2', requires: ['D'], states: ['default', 'empty'], rule: 'The user annotates their own sessions; labels stay local and train a local model.', Component: SessionsScreen },
   { id: 'J9', slug: 'discovery-journey', title: 'Discovery Journey', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Show the route a topic was reached by, step by step, with the tier of each step.', Component: DiscoveryScreen },
   { id: 'J10', slug: 'behavior-profile', title: 'Behavior Profile', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Descriptive traits with their evidence attached, never clinical labels.', Component: ProfileScreen },
-  { id: 'J11', slug: 'rabbit-hole', title: 'Rabbit Hole', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Print the definition, let the user change it, and never punish what it finds.', Component: RabbitHoleScreen },
+  { id: 'J11', slug: 'rabbit-hole', title: 'Rabbit Hole', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['D'], requiresAnyOf: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Print the definition, let the user change it, and never punish what it finds.', Component: RabbitHoleScreen },
   { id: 'J12', slug: 'weekly-report-goals', title: 'Weekly Report + Goals', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'A local document plus goals the user set; no streaks, no nudges.', Component: WeeklyReportScreen },
   { id: 'J13', slug: 'connections', title: 'Connections / Consent Dashboard (with capability matrix)', kind: 'screen', tab: 'you', phase: 'P5', requires: [], states: ['default'], rule: 'Every source with its capability matrix and a one-tap revoke.', Component: ConnectionsScreen },
   { id: 'J14', slug: 'privacy-center', title: 'Privacy Center (network log, delete everything)', kind: 'screen', tab: 'you', phase: 'P5', requires: [], states: ['default', 'empty'], rule: 'Retention, the network log, deletion and the receipt — all checkable in-app.', Component: PrivacyCentreScreen },
@@ -1926,19 +2008,18 @@ export const SCREENS: ScreenSpec[] = [
   { id: 'J17', slug: 'why-drawer', title: 'Why drawer', kind: 'sheet', parent: 'dashboard', phase: 'P2', requires: ['D'], states: ['default'], rule: 'Every number opens into the parts that produced it, and the parts add up.', Component: WhyDrawerSheet },
   { id: 'J18', slug: 'what-if', title: 'What-if Simulator', kind: 'screen', tab: 'insights', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Counterfactuals are calculations over your history, never predictions.', Component: WhatIfScreen },
   { id: 'J19', slug: 'attention-budget', title: 'Attention Budget', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Budgets are chosen by the user and rendered as numbers, never alarms.', Component: BudgetScreen },
-  { id: 'J20', slug: 'focus-windows', title: 'Focus Windows', kind: 'screen', tab: 'you', phase: 'P3', requires: ['D'], states: ['default', 'empty'], rule: 'Focus never blocks or shames; it repeats the choice you made.', Component: FocusScreen },
+  { id: 'J20', slug: 'focus-windows', title: 'Focus Windows', kind: 'screen', tab: 'you', phase: 'P3', requires: ['D'], requiresAnyOf: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'Focus never blocks or shames; it repeats the choice you made.', Component: FocusScreen },
   { id: 'J21', slug: 'learning-arcs', title: 'Learning Arcs', kind: 'screen', tab: 'journey', phase: 'P3', requires: ['A', 'B', 'C'], states: ['default', 'empty'], rule: 'A stalled arc is reported exactly like a growing one.', Component: LearningArcsScreen },
   { id: 'J22', slug: 'ask-sheet', title: 'Ask sheet', kind: 'sheet', parent: 'dashboard', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'Answer from local data or refuse — never guess, never call out.', Component: AskSheet },
   { id: 'J23', slug: 'privacy-receipt', title: 'Privacy Receipt', kind: 'sheet', parent: 'privacy-center', phase: 'P5', requires: [], states: ['default', 'empty'], rule: 'What left the device, in bytes, with the empty case explained rather than hidden.', Component: PrivacyReceiptSheet },
-  { id: 'J24', slug: 'persona-picker', title: 'Demo persona picker', kind: 'sheet', parent: 'dashboard', phase: 'P4', requires: [], states: ['default'], rule: 'Demo data replaces yours while it is on, and is never mixed with it.', Component: PersonaPickerSheet },
-  { id: 'J25', slug: 'intent-check-settings', title: 'Intent Check settings', kind: 'screen', tab: 'you', phase: 'P4', requires: ['D'], states: ['default'], rule: 'The only place Mirror may interrupt, off unless asked for, with quiet hours.', Component: IntentCheckScreen },
-  { id: 'J26', slug: 'share-card-preview', title: 'Private Share Card preview', kind: 'state', parent: 'weekly-report-goals', phase: 'P4', requires: ['D'], states: ['default'], rule: 'Preview the whole card; nothing is shared until the user shares it.', Component: ShareCardState },
+  { id: 'J24', slug: 'persona-picker', title: 'Demo persona picker', kind: 'sheet', parent: 'dashboard', phase: 'P2', requires: [], states: ['default'], rule: 'Demo data replaces yours while it is on, and is never mixed with it.', Component: PersonaPickerSheet },
+  { id: 'J25', slug: 'intent-check-settings', title: 'Intent Check settings', kind: 'screen', tab: 'you', phase: 'P3', requires: ['D'], states: ['default'], rule: 'The only place Mirror may interrupt, off unless asked for, with quiet hours.', Component: IntentCheckScreen },
+  { id: 'J26', slug: 'share-card-preview', title: 'Private Share Card preview', kind: 'state', parent: 'weekly-report-goals', phase: 'P6', requires: ['D'], states: ['default'], rule: 'Preview the whole card; nothing is shared until the user shares it.', Component: ShareCardState },
   { id: 'J27', slug: 'home-widget', title: 'Home-screen widget', kind: 'widget', parent: 'dashboard', phase: 'P4', requires: ['D'], states: ['default', 'empty'], rule: 'A lock-screen surface: totals privately, published topics only in public.', Component: WidgetItem },
   { id: 'J28', slug: 'update-state', title: '"Update available / app version" state (calm, non-blocking)', kind: 'state', parent: 'dashboard', phase: 'P5', requires: [], states: ['default'], rule: 'Calm and non-blocking, and explicit that nothing new is collected.', Component: UpdateState },
 ];
 
-export const TAB_ITEMS = TABS;
-export { TABS };
+export { TAB_ITEMS, TAB_ITEMS as TABS } from './tabs.js';
 export { PERSONAS, NothingYet, Definition, ScoreBlock };
 export type { Persona, ScreenProps, ScreenState };
 

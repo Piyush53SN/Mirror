@@ -466,6 +466,174 @@ test('every item declares the rule it carries and the tiers it needs', () => {
   }
 });
 
+/* ------------------------------------------------- tiers, phases, chrome --- */
+
+test('features that are not tier-D features say so', () => {
+  // The brief's honest-capability rule: a feature that needs more than usage data
+  // must not be declared (or rendered) as if usage data were enough.
+  const notTierD = ['depth', 'curiosity-vs-habit', 'rabbit-hole', 'focus-windows'];
+  for (const slug of notTierD) {
+    const spec = ui.specBySlug(slug);
+    assert.ok(spec, `unknown slug ${slug}`);
+    assert.deepEqual(spec.requires, ['D'], `${slug}: session data is still required`);
+    assert.ok(
+      spec.requiresAnyOf && spec.requiresAnyOf.length > 0,
+      `${slug} needs a content-level signal in addition to tier D, and must declare requiresAnyOf`,
+    );
+    for (const tier of spec.requiresAnyOf) assert.ok(['A', 'B', 'C'].includes(tier), `${slug}: unknown tier ${tier}`);
+    // with only tier D, the screen must refuse rather than relabel session length
+    const html = JSON.stringify(
+      TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON(),
+    );
+    assert.ok(html.includes('is unavailable'), `${slug} must refuse for a tier-D-only persona`);
+    assert.ok(/at least one of tier/i.test(html), `${slug} must state that any one of A/B/C would do`);
+  }
+});
+
+test('a feature that genuinely runs on tier D alone still runs', () => {
+  // The mirror of the test above: the rule is per-feature, not a blanket blockage.
+  for (const slug of ['dashboard', 'sessions', 'attention-budget', 'ask-sheet']) {
+    const spec = ui.specBySlug(slug);
+    assert.ok(!spec.requiresAnyOf || spec.requiresAnyOf.length === 0, `${slug} should not need a content signal`);
+    const html = JSON.stringify(TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[0], ui.createTheme('dark'), 'default')).toJSON());
+    assert.ok(!html.includes(`${spec.title} is unavailable`), `${slug} must render for a tier-D user`);
+  }
+});
+
+test('degrade() explains an anyOf requirement without inventing a missing tier', () => {
+  const onlyD = ui.degrade(['D'], ['D'], 'Depth', ['A', 'B', 'C']);
+  assert.equal(onlyD.ok, false);
+  assert.deepEqual(onlyD.missing, []);
+  assert.deepEqual(onlyD.missingAny, ['A', 'B', 'C']);
+  assert.match(onlyD.message, /at least one of tier A\/B\/C/);
+  assert.match(onlyD.message, /will not estimate it/);
+  const withC = ui.degrade(['D', 'C'], ['D'], 'Depth', ['A', 'B', 'C']);
+  assert.equal(withC.ok, true, 'one content tier is enough');
+  const nothing = ui.degrade([], ['D'], 'Depth', ['A', 'B', 'C']);
+  assert.deepEqual(nothing.missing, ['D']);
+  assert.deepEqual(nothing.missingAny, ['A', 'B', 'C']);
+  assert.match(nothing.message, /tier D data and at least one of tier/);
+});
+
+test('every item declares the phase the roadmap gives it', () => {
+  const expected = {
+    J1: 'P1', J2: 'P1', J3: 'P2', J4: 'P3', J5: 'P2', J6: 'P2', J7: 'P2', J8: 'P2',
+    J9: 'P3', J10: 'P4', J11: 'P3', J12: 'P4', J13: 'P5', J14: 'P5', J15: 'P6', J16: 'P6',
+    J17: 'P2', J18: 'P3', J19: 'P4', J20: 'P3', J21: 'P3', J22: 'P4', J23: 'P5', J24: 'P2',
+    J25: 'P3', J26: 'P6', J27: 'P4', J28: 'P5',
+  };
+  for (const spec of ui.SCREENS) {
+    assert.equal(spec.phase, expected[spec.id], `${spec.id} ${spec.slug}: phase drifted from the roadmap`);
+  }
+  // The two the user called out explicitly.
+  assert.equal(ui.specBySlug('share-card-preview').phase, 'P6', 'share cards ship with the social layer (P6)');
+  assert.equal(ui.specBySlug('privacy-receipt').phase, 'P5', 'the receipt ships with the connectors (P5)');
+  // PHASES must cover the inventory exactly once.
+  const covered = ui.PHASES.flatMap((p) => p.items);
+  assert.equal(covered.length, 28);
+  assert.deepEqual([...covered].sort(), ui.SCREENS.map((s) => s.id).sort());
+  for (const phase of ui.PHASES) {
+    for (const id of phase.items) assert.equal(ui.SCREENS.find((s) => s.id === id).phase, phase.id);
+  }
+});
+
+test('the tab bar is the five sections, in order, on every tab screen', () => {
+  assert.deepEqual(ui.TAB_ITEMS.map((t) => t.label), ['Home', 'Insights', 'Journey', 'Sessions', 'You']);
+  const tabScreens = ui.SCREENS.filter((s) => s.tab);
+  assert.ok(tabScreens.length >= 15, 'most screens live under a tab');
+  for (const spec of tabScreens) {
+    assert.ok(ui.TAB_ITEMS.some((t) => t.id === spec.tab), `${spec.slug} points at unknown tab "${spec.tab}"`);
+    let renderer;
+    TestRenderer.act(() => {
+      renderer = TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[1], ui.createTheme('dark'), 'default'));
+    });
+    // Find the tab bar itself (role="tablist") and read only its children: the
+    // Private | Public control is also a tablist-shaped control, and counting every
+    // role="tab" on the screen would conflate the two.
+    const tree = renderer.toJSON();
+    let bar = null;
+    (function find(node) {
+      if (!node || typeof node !== 'object' || bar) return;
+      if (Array.isArray(node)) return node.forEach(find);
+      if ((node.props?.role ?? node.props?.accessibilityRole) === 'tablist' && node.props?.['aria-label'] === 'Sections') bar = node;
+      find(node.children);
+    })(tree);
+    assert.ok(bar, `${spec.slug} must render the tab bar`);
+    const tabs = [];
+    (function walk(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(walk);
+      if ((node.props?.role ?? node.props?.accessibilityRole) === 'tab') tabs.push(node.props);
+      walk(node.children);
+    })(bar);
+    assert.equal(tabs.length, 5, `${spec.slug} must render all five tabs (found ${tabs.length})`);
+    assert.deepEqual(tabs.map((t) => t['aria-label'] ?? t.accessibilityLabel), ['Home', 'Insights', 'Journey', 'Sessions', 'You']);
+    const selected = tabs.filter((t) => {
+      const v = t['aria-selected'] ?? t.accessibilityState?.selected;
+      return v === true || v === 'true';
+    });
+    assert.equal(selected.length, 1, `${spec.slug}: exactly one tab is selected`);
+    assert.equal(selected[0]['aria-label'] ?? selected[0].accessibilityLabel, ui.TAB_ITEMS.find((x) => x.id === spec.tab).label);
+    renderer.unmount();
+  }
+});
+
+test('the demo-data chip is on screen whenever demo data is', () => {
+  const screen = TestRenderer.create(
+    ui.renderScreen(ui.specBySlug('dashboard'), ui.PERSONAS[0], ui.createTheme('dark'), 'default'),
+  );
+  const text = JSON.stringify(screen.toJSON());
+  assert.match(text, /DEMO DATA/, 'demo data must be labelled on the screen itself');
+  assert.match(text, /Ananya/, 'and must name the persona whose data is showing');
+  assert.match(text, /Not your data/i, 'the accessible name says it is not the user\'s data');
+  screen.unmount();
+
+  // Off when the app passes no persona (i.e. real data).
+  const plain = TestRenderer.create(
+    React.createElement(ui.Screen, { title: 'Real', theme: ui.createTheme('dark') }, React.createElement(ui.Text, { theme: ui.createTheme('dark') }, 'x')),
+  );
+  assert.ok(!JSON.stringify(plain.toJSON()).includes('DEMO DATA'), 'a screen without demo must not claim demo');
+  plain.unmount();
+});
+
+test('the Private | Public control shows both options and the consequence of each', () => {
+  const seen = [];
+  let setter;
+  function Probe() {
+    const [v, set] = React.useState('private');
+    setter = set;
+    seen.push(v);
+    return React.createElement(ui.BoundaryToggle, {
+      theme: ui.createTheme('dark'),
+      value: v,
+      onChange: set,
+      consequence: v === 'private' ? 'Private consequence sentence.' : 'Public consequence sentence.',
+    });
+  }
+  let renderer;
+  TestRenderer.act(() => {
+    renderer = TestRenderer.create(React.createElement(Probe));
+  });
+  const priv = JSON.stringify(renderer.toJSON());
+  assert.match(priv, /Private/, 'the Private side is labelled, not just an icon');
+  assert.match(priv, /Public/, 'the Public side is labelled');
+  assert.match(priv, /Private consequence sentence/, 'the consequence for the current side is stated');
+  TestRenderer.act(() => setter('public'));
+  const pub = JSON.stringify(renderer.toJSON());
+  assert.match(pub, /Public consequence sentence/, 'switching states the other consequence');
+  assert.ok(!/\bDIP\b|\bPIP\b/.test(priv + pub), 'DIP/PIP are code terms and must never reach the UI');
+  renderer.unmount();
+});
+
+test('every screen that can share renders the Private | Public control', () => {
+  for (const slug of ['dashboard', 'connections', 'public-profile-editor', 'share-card-preview']) {
+    const spec = ui.specBySlug(slug);
+    const html = JSON.stringify(TestRenderer.create(ui.renderScreen(spec, ui.PERSONAS[2], ui.createTheme('dark'), 'default')).toJSON());
+    assert.match(html, /Private/, `${slug} must show the boundary`);
+    assert.match(html, /Public/, `${slug} must show the boundary`);
+  }
+});
+
 /* --------------------------------------------------------------- source ---- */
 
 test('components carry no colour literals: every colour comes from the theme', () => {

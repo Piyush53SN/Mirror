@@ -149,6 +149,40 @@ export function Card({
 
 /* ---------------------------------------------------------------- Screen ---- */
 
+/**
+ * The demo-data chip. Defined here rather than in patterns.tsx because patterns
+ * imports containers, and a chip is too small a thing to invert that dependency
+ * for. `patterns.DemoDataChip` re-exports it for consumers that expect it there.
+ */
+export function DemoChip({ persona, theme }: { persona: string; theme?: MirrorTheme }) {
+  const t = withTheme(theme);
+  return (
+    <View
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`Demo data from ${persona}. Not your data.`}
+      style={{ paddingHorizontal: t.space(4), paddingTop: t.space(2) }}
+    >
+      <View
+        style={{
+          alignSelf: 'flex-start',
+          minHeight: t.size.chipHeight,
+          justifyContent: 'center',
+          paddingHorizontal: t.space(3),
+          borderRadius: t.radius.pill,
+          backgroundColor: t.glass.chip.fill,
+          borderWidth: 1,
+          borderColor: t.color.borderCard,
+        }}
+      >
+        <Text role="micro" tone="muted" theme={t} style={{ fontWeight: '700' }}>
+          {`DEMO DATA · ${persona.toUpperCase()}`}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export type ScreenProps = {
   children: React.ReactNode;
   /** Header content (title row / brand + actions). */
@@ -164,7 +198,7 @@ export type ScreenProps = {
   title: string;
 };
 
-export function Screen({ children, header, footer, overlay, padded = true, theme, title }: ScreenProps) {
+export function Screen({ children, header, footer, overlay, padded = true, theme, title, demo }: ScreenProps & { demo?: string }) {
   const t = withTheme(theme);
   const metrics = layoutMetrics(t);
   return (
@@ -174,6 +208,7 @@ export function Screen({ children, header, footer, overlay, padded = true, theme
     >
       <Backdrop theme={t} />
       <StatusStrip theme={t} />
+      {demo ? <DemoChip persona={demo} theme={t} /> : null}
       {header}
       <ScrollView
         style={{ flex: 1 }}

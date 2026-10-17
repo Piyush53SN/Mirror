@@ -74,20 +74,44 @@ export type Capability = {
   counts?: Partial<Record<DataTier, number>>;
 };
 
-export type Degrade = { ok: true } | { ok: false; missing: DataTier[]; message: string };
+export type Degrade =
+  | { ok: true }
+  | {
+      ok: false;
+      /** Tiers that are required outright and are missing. */
+      missing: DataTier[];
+      /** Tiers of which at least one is required — all of them are missing. */
+      missingAny: DataTier[];
+      message: string;
+    };
 
 /**
- * Decide whether a feature can run, and what to say when it cannot. Callers must
- * render `message` verbatim rather than inventing their own consolation copy.
+ * Decide whether a feature can run, and what to say when it cannot.
+ *
+ * `anyOf` exists because some features are not "tier D" features: depth, rabbit
+ * holes, curiosity-vs-habit and focus windows all need the OS's session data
+ * *and* at least one content-level signal (a topic, a search term, a scroll
+ * depth). Declaring them as tier-D-only would be the "fake a signal" failure the
+ * brief forbids, so the requirement is expressed as D + one of A/B/C and the
+ * message names exactly that.
+ *
+ * Callers must render `message` verbatim rather than inventing their own
+ * consolation copy.
  */
-export function degrade(available: DataTier[], needs: DataTier[], featureLabel: string): Degrade {
+export function degrade(available: DataTier[], needs: DataTier[], featureLabel: string, anyOf: DataTier[] = []): Degrade {
   const missing = needs.filter((t) => !available.includes(t));
-  if (missing.length === 0) return { ok: true };
-  return {
-    ok: false,
-    missing,
-    message: `${featureLabel} is unavailable: it needs tier ${missing.join(' and ')} data, which is not on this device. Mirror will not estimate it.`,
-  };
+  const missingAny = anyOf.length > 0 && !anyOf.some((t) => available.includes(t)) ? [...anyOf] : [];
+  if (missing.length === 0 && missingAny.length === 0) return { ok: true };
+  const because = 'which is not on this device. Mirror will not estimate it.';
+  let requirement: string;
+  if (missing.length > 0 && missingAny.length > 0) {
+    requirement = `it needs tier ${missing.join(' and ')} data and at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), none of ${because}`;
+  } else if (missingAny.length > 0) {
+    requirement = `it needs at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), none of ${because}`;
+  } else {
+    requirement = `it needs tier ${missing.join(' and ')} data, ${because}`;
+  }
+  return { ok: false, missing, missingAny, message: `${featureLabel} is unavailable: ${requirement}` };
 }
 
 export const tierLabel = (t: DataTier) => `${t} · ${TIERS[t].name}`;
