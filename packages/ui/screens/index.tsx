@@ -221,7 +221,7 @@ export function HomeScreen({ theme, persona, state, tab }: ScreenProps) {
         ) : (
           <>
             <Card theme={theme} elevated>
-              <SectionHeader theme={theme} title="Interest quality" caption="out of what Mirror can actually measure" />
+              <SectionHeader theme={theme} title="Interaction quality" caption="out of what Mirror can actually measure" />
               <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(2) }}>
                 <Text role="display" theme={theme}>
                   {signals.iqs.value === null ? '—' : String(Math.round(signals.iqs.value))}
@@ -1333,7 +1333,7 @@ export function IqsScreen({ theme, persona, state, tab }: ScreenProps) {
       header={
         <Toolbar
           theme={theme}
-          title="Interest quality"
+          title="Interaction quality"
           subtitle="A composite, never a verdict"
           actions={
             <IconButton label="IQS options: parts and weights" theme={theme}>
@@ -1352,7 +1352,7 @@ export function IqsScreen({ theme, persona, state, tab }: ScreenProps) {
           <Card theme={theme} elevated>
             <ScoreBlock
               theme={theme}
-              title="Interest Quality Score"
+              title="Interaction Quality Score"
               score={iqs.value ?? 0}
               max={iqs.max}
               band={iqs.band}

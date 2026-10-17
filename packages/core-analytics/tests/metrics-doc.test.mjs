@@ -46,11 +46,12 @@ test('the brief formula and the crosswalk are stated, including the two unmeasur
   assert.ok(DOC.includes('**Follow-through**') && DOC.includes('not measured'), 'follow-through must be marked unmeasured');
 });
 
-test('the three deviations are recorded as decisions awaiting approval', () => {
+test('the four deviations are recorded as decisions (now approved)', () => {
   for (const id of ['D-P2-01', 'D-P2-02', 'D-P2-03', 'D-P2-04']) {
     assert.ok(DOC.includes(`**${id}`), `${id} missing from the decision record`);
   }
-  assert.ok(DOC.includes('Recorded with status **proposed**'), 'the decision record must say they are proposed, not accepted');
+  assert.ok(DOC.includes('Approved 2026-10-17'), 'the decision record must show approval dates');
+  assert.ok(DOC.includes('Interaction Quality Score'), 'D-P2-04 must record the approved expansion');
 });
 
 test('the documented version matches the engine', () => {

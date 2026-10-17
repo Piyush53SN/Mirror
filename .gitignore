@@ -32,7 +32,6 @@ packages/*/tests/.build/
 tests/.build/
 
 # canary reports, scan reports and debug builds
-privacy/
-builds/
-.reports/
-.reports/
+/privacy/
+/builds/
+/.reports/

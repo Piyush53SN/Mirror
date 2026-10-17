@@ -626,26 +626,26 @@ copy. Recorded here because either one could otherwise be "fixed" back.
   48 dp reports are approximate; heights and explicit sizes are exact.
 - No i18n/RTL pass yet.
 
-## Decisions awaiting approval (P2)
+## Decisions (P2) — approved 2026-10-17
 
 The engine's five factors do **not** implement the brief's weighted formula
 literally. The crosswalk, the per-factor formulas and the alternatives are in
-`docs/metrics.md` §2; the three decisions are:
+`docs/metrics.md` §2. All four deviations are now approved:
 
-- **D-P2-01** — the engine's five operational factors replace the brief's five
+- **D-P2-01 — approved 2026-10-17** — the engine's five operational factors replace the brief's five
   components as the IQS. Active engagement and Follow-through are not measured;
   Topic depth is an addition; the weights are 25/20/15/15/25, not 35/25/20/10/10.
-- **D-P2-02** — no doomscroll penalty term; fragmentation and late-night time are
+- **D-P2-02 — approved 2026-10-17** — no doomscroll penalty term; fragmentation and late-night time are
   scored as factors, and a second subtraction would double-count them.
-- **D-P2-03** — a missing factor reduces the maximum; it is never a zero and the
+- **D-P2-03 — approved 2026-10-17** — a missing factor reduces the maximum; it is never a zero and the
   score is never renormalised to 100.
-- **D-P2-04** — pick the expansion of IQS: *Interest Quality Score* (current UI)
-  or *Interaction quality score* (the brief's prototype). Recommendation: keep
-  Interest. Same metric, different words.
+- **D-P2-04 — approved 2026-10-17: use "Interaction Quality Score"** — the brief's
+  prototype says *Interaction quality score*; the P2 UI said *Interest Quality
+  Score*. Per approval the spec wins. UI copy and code comments now say
+  Interaction everywhere; docs/metrics.md §2.4 records the approval.
 
-**Status: proposed.** No code changes until these are approved or replaced.
 `docs/metrics.md` carries the same record, and a test fails if any factor exists
-in the engine but not in that document.
+in the engine but not in that document. No code changes pending for these.
 
 ## Open questions
 

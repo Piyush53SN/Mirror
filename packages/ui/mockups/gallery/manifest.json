@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25466
+      "bytes": 25469
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25449
+      "bytes": 25452
     },
     {
       "id": "J3",
@@ -651,7 +651,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 23794
+      "bytes": 23800
     },
     {
       "id": "J7",
@@ -670,7 +670,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 23775
+      "bytes": 23781
     },
     {
       "id": "J7",
@@ -689,7 +689,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 13235
+      "bytes": 13238
     },
     {
       "id": "J7",
@@ -708,7 +708,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 13223
+      "bytes": 13226
     },
     {
       "id": "J8",
@@ -1401,7 +1401,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40023
+      "bytes": 40026
     },
     {
       "id": "J17",
@@ -1420,7 +1420,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40000
+      "bytes": 40003
     },
     {
       "id": "J18",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 30003
+      "bytes": 30006
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29986
+      "bytes": 29989
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28351
+      "bytes": 28354
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28336
+      "bytes": 28339
     },
     {
       "id": "J23",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32633
+      "bytes": 32636
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32614
+      "bytes": 32617
     },
     {
       "id": "J25",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30283
+      "bytes": 30286
     },
     {
       "id": "J28",
@@ -2112,7 +2112,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30262
+      "bytes": 30265
     }
   ],
   "extraItems": 1,

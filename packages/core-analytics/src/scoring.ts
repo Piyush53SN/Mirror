@@ -249,7 +249,7 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
 }
 
 /**
- * The Interest Quality Score.
+ * The Interaction Quality Score.
  *
  * Weights: session length 25, deliberate share 20, switching 15, late night 15,
  * topic depth 25. The four OS-only parts sum to 75, which is why a usage-only

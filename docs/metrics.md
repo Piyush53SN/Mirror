@@ -84,11 +84,11 @@ Consequences, stated plainly:
 
 ### 2.4 Decisions for approval
 
-Recorded with status **proposed**. They stay open until the reviewer says
-approve or asks for a different formula.
+D-P2-01, D-P2-02, D-P2-03 **approved 2026-10-17** (P2 engine approved). D-P2-04
+**approved 2026-10-17**: use "Interaction Quality Score" per spec. The record
+below is kept for history.
 
-**D-P2-01 — the engine's five factors replace the brief's five components as the
-operational IQS.**
+**D-P2-01 — the engine's five factors replace the brief's five components as the operational IQS. Approved 2026-10-17.**
 The brief's literal formula needs five 0–100 sub-scores. Mirror can compute two
 of them (Depth-in-time, Intentionality) from tier D, one partially (Focus), and
 none for Active engagement and Follow-through without data it is not allowed to
@@ -99,7 +99,7 @@ collect. The engine therefore uses only what it can measure and names the rest.
 formula with zeros for missing components — which would violate rule 9 ("never
 fake a signal"), so it needs to be an explicit product decision, not a default.
 
-**D-P2-02 — no doomscroll penalty.**
+**D-P2-02 — no doomscroll penalty. Approved 2026-10-17.**
 The brief subtracts up to 25 points. The engine has no penalty term: fragmentation
 (`switching`) and late-night time are scored as factors, so poor behaviour already
 lowers the score, and a second subtraction would count the same minutes twice.
@@ -107,8 +107,7 @@ lowers the score, and a second subtraction would count the same minutes twice.
 be defined; the prototype used short-session share and late-night share, which are
 already factors here.
 
-**D-P2-03 — a missing factor reduces the maximum; it is never a zero and never
-renormalised.**
+**D-P2-03 — a missing factor reduces the maximum; it is never a zero and never renormalised. Approved 2026-10-17.**
 The brief's fixed weights assume every component exists. Mirror reports `49/75`
 rather than scaling 49/75 up to 65/100, because renormalising silently changes the
 weights and a zero would claim a measurement that was never made.
@@ -116,13 +115,14 @@ weights and a zero would claim a measurement that was never made.
 within a tier, and the UI copy has to say that the missing components are scored
 as zero.
 
-**D-P2-04 — the expansion of IQS.**
+**D-P2-04 — the expansion of IQS. Approved 2026-10-17: use "Interaction Quality Score".**
 The brief's prototype expands IQS as *"Interaction quality score"*; the P2 UI
-says *"Interest Quality Score"* and the Home card says *"Interest quality"*. The
-metric is the same; the words are not. Pick one before P3 copy is written.
-*Recommendation:* keep **Interest Quality Score** (it describes what the factors
-measure — the quality of the interests pursued — and "interaction" would promise
-tap/scroll data the app does not collect).
+said *"Interest Quality Score"* and the Home card said *"Interest quality"*. The
+metric is the same; the words were not. Per review 2026-10-17 the spec wins:
+IQS is **Interaction Quality Score** everywhere — docs, code comments and UI
+copy. The UI now says "Interaction quality" on the Home card and
+"Interaction Quality Score" on the sheet. The mockup gallery is regenerated
+from the screen, so its frames follow the same copy.
 
 
 ---
