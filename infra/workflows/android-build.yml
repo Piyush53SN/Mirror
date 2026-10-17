@@ -20,9 +20,9 @@ permissions:
 
 jobs:
   android-build:
-    name: Gradle debug + merged-manifest gate
+    name: Gradle debug + release manifest gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     env:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
@@ -76,26 +76,51 @@ jobs:
           chmod +x android/gradlew
           ./android/gradlew --version
 
-      - name: Build + gate (make android-build)
+      - name: Build debug + gate (make android-build)
         run: |
           make android-build
+          ls -lh apps/mobile/android/app/build/outputs/apk/debug/ || true
+          ls -lh .reports/ || true
+          cp .reports/merged-manifest.json .reports/merged-manifest-debug.json || true
 
-      - name: Upload APK
+      - name: Build release manifest (unsigned) + gate release variant
+        run: |
+          # Release variant needs same permission checks as debug.
+          # Debug has extra perms from react-native debug manifests (now removed via plugin),
+          # release has only DYNAMIC_RECEIVER from AndroidX (allowlisted). Both must pass.
+          # We don't need a signed AAB — just merge manifests for release.
+          cd apps/mobile/android
+          ./gradlew :app:processReleaseMainManifest --no-daemon
+          cd ../..
+          # Gate for release variant (reads intermediates/merged_manifests/release/...)
+          npm run android:manifest -- --variant release
+          ls -lh .reports/ || true
+          cp .reports/merged-manifest.json .reports/merged-manifest-release.json || true
+          # Also try to assemble release APK unsigned (will use debug keystore if no signing config)
+          # If it fails due to signing, that's okay — manifest gate already passed.
+          cd android && ./gradlew :app:assembleRelease --no-daemon || echo "assembleRelease failed (expected without signing), but manifest gate passed" 
+          cd ..
+
+      - name: Upload APKs (debug + release if any)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mirror-debug-apk
+          name: mirror-apks
           path: |
             apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/android/app/build/outputs/apk/release/*.apk
             apps/mobile/android/app/build/outputs/apk/**/*.apk
+            apps/mobile/android/app/build/outputs/bundle/**/*.aab
           if-no-files-found: warn
 
-      - name: Upload merged-manifest report
+      - name: Upload merged-manifest reports (debug + release)
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: merged-manifest-report
+          name: merged-manifest-reports
           path: |
+            .reports/merged-manifest-debug.json
+            .reports/merged-manifest-release.json
             .reports/merged-manifest.json
             .reports/
           if-no-files-found: warn
