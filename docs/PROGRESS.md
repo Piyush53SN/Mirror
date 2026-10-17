@@ -18,7 +18,7 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P1a | **approved** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
 | P1b-1 | **approved** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI — commit `2753206` |
 | P1b-2 | **approved** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL — commit `e3c9cd2` |
-| P2 | **delivered for review** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. Gradle build and signing remain MANUAL |
+| P2 | **engine approved; Stage 1 open** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. Step 0 and signing await the reviewer's Gradle run |
 | P3…P7 | not started | — |
 
 ---
@@ -625,6 +625,27 @@ copy. Recorded here because either one could otherwise be "fixed" back.
 - Text measurement in the repo's DOM stub is character-count based, so widths in
   48 dp reports are approximate; heights and explicit sizes are exact.
 - No i18n/RTL pass yet.
+
+## Decisions awaiting approval (P2)
+
+The engine's five factors do **not** implement the brief's weighted formula
+literally. The crosswalk, the per-factor formulas and the alternatives are in
+`docs/metrics.md` §2; the three decisions are:
+
+- **D-P2-01** — the engine's five operational factors replace the brief's five
+  components as the IQS. Active engagement and Follow-through are not measured;
+  Topic depth is an addition; the weights are 25/20/15/15/25, not 35/25/20/10/10.
+- **D-P2-02** — no doomscroll penalty term; fragmentation and late-night time are
+  scored as factors, and a second subtraction would double-count them.
+- **D-P2-03** — a missing factor reduces the maximum; it is never a zero and the
+  score is never renormalised to 100.
+- **D-P2-04** — pick the expansion of IQS: *Interest Quality Score* (current UI)
+  or *Interaction quality score* (the brief's prototype). Recommendation: keep
+  Interest. Same metric, different words.
+
+**Status: proposed.** No code changes until these are approved or replaced.
+`docs/metrics.md` carries the same record, and a test fails if any factor exists
+in the engine but not in that document.
 
 ## Open questions
 

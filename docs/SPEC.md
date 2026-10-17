@@ -113,6 +113,25 @@ Makefile           one entry point for the gates
 
 Then **stop and wait** for "continue" / "approved".
 
+### The IQS formula (from the brief)
+
+The brief defines the Interaction Quality Score over five 0–100 sub-scores:
+
+```
+IQS = 100 × (0.35 × Depth
+           + 0.25 × Intentionality
+           + 0.20 × Active engagement
+           + 0.10 × Focus
+           + 0.10 × Follow-through)
+      − doomscroll penalty                    (penalty ≤ 25)
+```
+
+Depth's weight rises to 0.5 when completion and query-refinement signals are
+available. **The P2 engine does not implement this literally**: its five factors,
+the crosswalk to these components and the deviations awaiting approval are
+recorded in `docs/metrics.md` §2. That document, not this summary, is the source
+of truth for what the shipped score computes.
+
 ### Test requirements (standing)
 
 - Unit tests per score formula, including the **empty / zero / single-event /

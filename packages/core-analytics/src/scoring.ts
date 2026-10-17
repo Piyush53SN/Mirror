@@ -31,6 +31,13 @@ const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
+/**
+ * The formula version. Bump when a factor, a weight or a formula changes, and
+ * update `docs/metrics.md` §9 in the same commit. A stored score must not be
+ * compared with one computed under a different version without saying so.
+ */
+export const IQS_METRICS_VERSION = 1;
+
 /** Label facts below this are too few to be a share. */
 export const MIN_LABELS = 5;
 /** Two app changes further apart than this are not one sitting's switching. */
@@ -81,6 +88,8 @@ export type Confidence = {
 
 export type Score = {
   id: 'iqs';
+  /** The formula version that produced this score; see docs/metrics.md §9. */
+  metricsVersion: number;
   /** Null when nothing could be measured. Never zero for "unknown". */
   value: number | null;
   /** Sum of the maxima of the measurable factors: 100, 75, or less. */
@@ -383,6 +392,7 @@ export function scoreIqs(input: ScoreInput): Score {
 
   return {
     id: 'iqs',
+    metricsVersion: IQS_METRICS_VERSION,
     value,
     max,
     band: value === null ? 'not measured' : max >= 100 ? 'full band' : 'usage-only band',

@@ -58,6 +58,7 @@ break.
 | [`packages/ml/`](packages/ml) | on-device embeddings — a **labelled placeholder** (384-d hashed n-grams) with the model-id re-embedding path wired into the store |
 | [`scripts/android/`](scripts/android) | the merged-manifest gate and its fixtures |
 | [`docs/P1B.md`](docs/P1B.md) | storage crypto, threat model, cursor state, counted gaps, ingestion, importers, the placeholder embedder, the SQLCipher deviation and the manifest gate |
+| [`docs/metrics.md`](docs/metrics.md) | every metric with its formula, inputs and caveats; the brief's IQS formula, the crosswalk, and D-P2-01…04 awaiting approval |
 | [`docs/ANDROID_PERMISSIONS.md`](docs/ANDROID_PERMISSIONS.md) | every Android permission that will ever exist, when it is requested, and why boot sync needs none |
 | [`docs/store/FAMILY_CONTROLS_REQUEST.md`](docs/store/FAMILY_CONTROLS_REQUEST.md) | the ready-to-submit iOS entitlement request text |
 | [`infra/workflows/`](infra/workflows) | CI (`ci.yml`) and the device/extension canary workflow (`privacy-canary.yml`); they live here because the pushing GitHub App cannot write `.github/workflows/` — activation command in that folder |
@@ -105,16 +106,16 @@ reintroduces a conflict, the fix is to resolve the versions — not to add
 
 ```bash
 npm install
-npm run verify            # all checks: 386 Node + 9 Python
+npm run verify            # all checks: 390 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
 make android-build        # Gradle + merged-manifest gate — needs JDK/SDK (MANUAL precondition)
 make release-stage1       # Stage 1 preflight; signing itself is MANUAL
 ```
 
-Measured: **386** Node tests (tokens 24 · prototype 18 · ui 37 · import screen 6
+Measured: **390** Node tests (tokens 24 · prototype 18 · ui 37 · import screen 6
 · mockups 17 · event schema 23 · records 21 · preferences 22 · sessions 16 ·
 ingestion 18 · collector 25 · connectors 20 · store 22 · embeddings 12 ·
-importers 19 · scoring 17 · config 17 · merged manifest 12 · release 4 · canary
+importers 19 · scoring 21 · config 17 · merged manifest 12 · release 4 · canary
 18 · security 18) and **9** Python addon tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
