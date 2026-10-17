@@ -19,7 +19,8 @@ const abs = resolve(extensionPath);
 
 if (!existsSync(abs)) {
   console.log(`::notice::No built extension at ${abs}. Expected before P5; nothing to test yet.`);
-  process.exit(0);
+  console.error(`extension-canary: precondition missing — no built extension at ${abs} (exit 2)`);
+  process.exit(2);
 }
 
 console.log(`Extension found at ${abs}, but extension canary is not yet implemented (P5). Reporting pass for now.`);

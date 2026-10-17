@@ -4,16 +4,27 @@
  * Self-test for the JS canary scanner. Ensures the scanner itself doesn't
  * leak and that a clean transcript is clean. Used by `npm run privacy:self-test`
  * which is part of `npm run test:privacy`.
+ *
+ * Exit codes: 0 = clean, 1 = leak found / assertion failed, 2 = precondition
+ * missing (canary module not found).
  */
 
-import {
+let canary;
+try {
+  canary = await import('./canary.mjs');
+} catch (e) {
+  console.error(`self-test: precondition missing — cannot load canary.mjs: ${e.message} (exit 2)`);
+  process.exit(2);
+}
+
+const {
   makeCanaries,
   canariesFrom,
   scanValue,
   scanTranscript,
   emptyTranscript,
   CANARY_MARKER,
-} from './canary.mjs';
+} = canary;
 
 const TOKEN = `${CANARY_MARKER}-9f2c1a7b3d4e`;
 

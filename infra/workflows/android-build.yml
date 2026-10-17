@@ -1,0 +1,116 @@
+name: Android build + manifest gate
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: Build variant (debug or release)
+        type: choice
+        options: [debug, release]
+        default: debug
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android-build:
+    name: Gradle debug + merged-manifest gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build-tools
+        run: |
+          sdkmanager --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          sdkmanager --list_installed
+
+      - name: Install node deps
+        run: npm ci
+
+      - name: Expo prebuild (android)
+        run: |
+          cd apps/mobile
+          npx expo prebuild --platform android --non-interactive
+          ls -la android/gradlew
+          ./android/gradlew --version
+
+      - name: Build + gate (make android-build)
+        run: |
+          # This runs :app:assembleDebug and then the merged-manifest gate.
+          # Exit 0 = build + gate clean, 1 = build or gate failed, 2 = precondition missing.
+          # The workflow must fail on 1 or 2; only 0 is green.
+          make android-build
+
+      - name: Upload APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mirror-debug-apk
+          path: |
+            apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            apps/mobile/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+
+      - name: Upload merged-manifest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: merged-manifest-report
+          path: |
+            .reports/merged-manifest.json
+            .reports/
+          if-no-files-found: warn
+
+  release-preflight:
+    name: Release Stage-1 preflight (no signing)
+    # Manual only — does not run on push to main, only via workflow_dispatch
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+
+      - name: Install node deps
+        run: npm ci
+
+      - name: Run release Stage-1 preflight (no signing)
+        run: |
+          # This checks package id, versionCode, EAS profiles, and that no keystore is committed.
+          # It never signs anything and never produces an artifact.
+          make release-stage1
+
+      - name: Upload preflight log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-stage1-preflight
+          path: .reports/
+          if-no-files-found: warn
