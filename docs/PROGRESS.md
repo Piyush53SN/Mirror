@@ -339,7 +339,7 @@ importers, the placeholder embedder and the first Android prebuild.
 
 **Android prebuild:** ran `npx expo prebuild --platform android --no-install
 --clean`; exit 0; `apps/mobile/android/` is now committed. The generated manifest
-keeps `PACKAGE_USAGE_STATS` and carries **14 `tools:node="remove"`** lines.
+keeps `PACKAGE_USAGE_STATS` and carries **15 `tools:node="remove"`** lines.
 `edgeToEdgeEnabled` was removed from `app.json` and `expo-system-ui` added, so the
 two prebuild warnings are fixed rather than suppressed.
 

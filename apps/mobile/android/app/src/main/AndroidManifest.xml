@@ -3,6 +3,7 @@
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" tools:node="remove"/>
   <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>
   <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:node="remove"/>
   <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"/>
   <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:node="remove"/>
   <uses-permission android:name="android.permission.READ_CALL_LOG" tools:node="remove"/>

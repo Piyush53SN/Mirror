@@ -362,7 +362,7 @@ cd apps/mobile && npx expo prebuild --platform android --no-install --clean
 It succeeded and produced `apps/mobile/android/` (committed, since the merged-manifest
 gate and device builds need it). The generated `AndroidManifest.xml` declares exactly
 three permissions — `INTERNET`, `VIBRATE` and `PACKAGE_USAGE_STATS` — and carries
-**14 `tools:node="remove"`** markers from `blockedPermissions` (location, camera,
+**15 `tools:node="remove"`** markers from `blockedPermissions` (location, camera,
 microphone, contacts, SMS, call log, phone state, storage, overlays, AD_ID,
 `QUERY_ALL_PACKAGES`, install packages). The markers are *removals*, not requests;
 the merged manifest is what the gate reads, and it is what must not contain them. Two prebuild warnings were

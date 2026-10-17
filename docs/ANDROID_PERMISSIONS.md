@@ -63,7 +63,7 @@ the config test in the same change. It is not added "just in case".
 | `READ_CONTACTS`, `READ_SMS`, `READ_CALL_LOG`, location, camera, microphone | Not part of the product. Every one is in `blockedPermissions`, so a transitive dependency cannot add it quietly. |
 | `com.google.android.gms.permission.AD_ID` | No advertising, no attribution. Blocked in the manifest. |
 | `FOREGROUND_SERVICE` | Not used. Collection runs in a bounded WorkManager job; no persistent notification, no always-on service. |
-| `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE` | The importers read files the person picks, through the system document picker (SAF). Wide storage access is never needed. All three are in `blockedPermissions`, and in the gate's forbidden list. |
+| `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE` | The importers read files the person picks, through the system document picker (SAF). Wide storage access is never needed. All three are in `blockedPermissions` and in the gate's forbidden list, so a transitive dependency cannot add them quietly. |
 
 ## 5. What the person sees
 
@@ -83,6 +83,6 @@ the config test in the same change. It is not added "just in case".
 | Forbidden permissions are blocked, not merely unused | `tests/config.test.mjs` | AUTOMATED |
 | Every declared permission appears on this page | `tests/config.test.mjs` | AUTOMATED |
 | The **merged** manifest matches this page (not just `app.json`) | `npm run android:manifest` (`scripts/android/check-merged-manifest.mjs`), fixtures in `scripts/android/fixtures` | **AUTOMATED** (policy + parser); needs a Gradle build to run against a real artifact — **MANUAL precondition** |
-| The first prebuild produced the expected `android/` project (14 `tools:node="remove"` lines, `PACKAGE_USAGE_STATS` kept) | `npx expo prebuild --platform android` — run 2026-10-17, exit 0 | AUTOMATED (ran once); re-running is part of CI |
+| The first prebuild produced the expected `android/` project (15 `tools:node="remove"` lines, `PACKAGE_USAGE_STATS` kept) | `npx expo prebuild --platform android` — run 2026-10-17, exit 0 | AUTOMATED (ran once); re-running is part of CI |
 | The Settings round-trip (grant → resume → detected) | emulator run, P1 | MANUAL until an emulator is wired into CI |
 | The notification prompt appears only on opt-in | P4 device test | MANUAL until then |
