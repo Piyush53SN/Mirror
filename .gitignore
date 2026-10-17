@@ -27,3 +27,4 @@ out/
 Thumbs.db
 # P-UI-2: the renderer bundle is a build artifact, never committed
 packages/ui/mockups/.build/
+packages/ui/tests/.build/
