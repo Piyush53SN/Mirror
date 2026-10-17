@@ -14,7 +14,7 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P-UI-0 | **approved** | image analysis → design brief (`docs/design/00-image-analysis.md`), measurements (`docs/design/measurements.md`), reference copy + analyzer |
 | P-UI-1 | **accepted** | generated tokens (`packages/ui/tokens/`), single-file phone prototype (`prototype/index.html`) — commit `93e83cc` |
 | P-UI-2 | **approved with corrections** | React Native design system (`packages/ui/src`), all 28 Section J items (`packages/ui/screens`), mockup gallery (`packages/ui/mockups/gallery`), **96** tests. Corrections from review applied — see below |
-| P0 | **in progress** | monorepo scaffold, CI, EAS profiles, event + connector schemas, synthetic data, privacy-canary harness, store-readiness draft |
+| P0 | **delivered for review** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
 | P1…P7 | not started | — |
 
 ---
@@ -149,6 +149,72 @@ copy. Recorded here because either one could otherwise be "fixed" back.
   most one action and never a nudge.
 
 ---
+
+### P0 decisions (2026-10-17)
+
+1. **One closed event schema, one validator.** `packages/shared-types` defines the
+   eight event kinds. Unknown fields are rejected; A/B/C events must cite a consent
+   grant and D events must not; `content: "content"` from `origin: "os"` is rejected
+   as fabricated. The JSON Schema is the interop description and a test keeps it in
+   step with the executable validator.
+2. **The schema is versioned, not migrated in place.** `schemaVersion: 1` is
+   stamped on every event. P1's storage layer will refuse to open a store whose
+   events carry a newer version rather than guess.
+3. **Sessionisation drops what it cannot prove, with a reason.** Unclosed
+   foreground intervals are dropped, not extended to "now"; orphan backgrounds,
+   zero-length and below-minimum intervals are reported. The result type carries
+   `dropped[]` so a collector bug is visible instead of silently shrinking a total.
+4. **The synthetic dataset validates itself.** The generator runs `assertEvent` on
+   its own output, so an invalid synthetic event fails at generation rather than
+   making every downstream test a test of the wrong contract. It is seeded and
+   deterministic.
+5. **Connectors are checked before code exists.** A connector must name every
+   scope, every scope must be used by a collector, write scopes/password flows/web
+   callbacks are refused, and a provider with no official API is on
+   `REFUSED_SOURCES` with a reason (Instagram saved, Netflix viewing, TikTok
+   history, WhatsApp, banking). Implementations are P5.
+6. **Preferences are a permission surface.** Every flag defaults off except the
+   on-device-only ones (weekly report, Ask sheet, focus windows); social,
+   share cards, nudges, widget and extension capture default off. Remote overrides
+   may only narrow: `applyOverrides` refuses anything that would enable a flag,
+   grant a tier or enable notifications.
+7. **The canary harness ships with its own attacker.** The scanner decodes base64
+   (including a token inside a larger blob), base64url, hex, UTF-16LE and
+   percent-encoding. The self-test proves a clean transcript stays clean and that
+   six planted leaks are each found. Exit code 2 means "not run", never "pass".
+8. **Release configuration is tested.** The only requested Android permission is
+   usage access; AD ID, contacts, location, mic, camera, SMS and phone state are
+   explicitly blocked; the extension requests `storage` and exactly the five
+   allowlisted hosts. Any change is a test failure, not a review note.
+9. **The extension allowlist has one source.** `EXTENSION_HOSTS` feeds both the
+   manifest check and (P5) the runtime check; the manifest and the constant are
+   compared by test, so they cannot drift.
+10. **Store readiness is written before the store.** The Data safety answers and
+    the permission declarations are drafted now, with the manual steps labelled,
+    so the app cannot claim one thing and the listing another.
+
+### P0 limitations (recorded, not hidden)
+
+- **No app binary.** P0 ships contracts and configuration; `apps/mobile` has no
+  entry point, and no build has been run. EAS profiles are validated config, not a
+  verified build pipeline. The first real build is P2's release stage 1.
+- **The device and extension canary runs are scripted but not exercised.** There
+  is no emulator, no adb, no browser and no Playwright in this sandbox. Both
+  scripts exit **2** with an explanation rather than reporting a pass; the scanner
+  they use is fully tested (18 Node + 9 Python tests + the self-test).
+- **`npm run check:prototype` still exits 2** (no browser). CI runs it
+  non-blocking and annotates the result.
+- **The app stack is newer than the design system.** Expo 58 / RN 0.88 / React 19
+  versus `packages/ui` on React 18 / RN 0.74. P1 upgrades the design system; the
+  alternative — pinning the app to a two-year-old SDK — is worse. Recorded in
+  `apps/mobile/README.md`.
+- **The workflows are in `infra/workflows/`, not `.github/workflows/`.** The
+  GitHub App that pushes this branch lacks the `workflows` permission, and GitHub
+  rejects any commit containing those paths. The files are final and the command
+  to activate them is in `infra/workflows/README.md`. This is a deviation from the
+  fixed layout, forced by tooling, and it is recorded rather than silently
+  reverted after the push fails.
+- **No i18n/RTL pass yet**, unchanged from P-UI-2.
 
 ## Known limitations carried forward
 

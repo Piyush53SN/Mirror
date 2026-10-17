@@ -1,0 +1,14 @@
+{
+  "name": "@mirror/shared-types",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The event schema, its validator, and the DTOs every Mirror package shares.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema/event": "./schema/event.schema.json"
+  },
+  "scripts": {
+    "test": "node --test tests/event.test.mjs"
+  }
+}

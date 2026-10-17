@@ -1,0 +1,9 @@
+{
+  "name": "@mirror/extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Manifest V3 capture extension. Only allow-listed hosts; no <all_urls>, no history, no cookies, no webRequest.",
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}

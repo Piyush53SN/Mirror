@@ -1,30 +1,36 @@
 # dependencies
 node_modules/
-.pnpm-store/
-
-# python analysis tooling
-__pycache__/
-*.pyc
-
-# expo / react-native
-.expo/
-dist/
-build/
-out/
-*.jks
-*.keystore
-*.p8
-*.p12
-*.mobileprovision
 
 # env / secrets — never commit
 .env
 .env.*
 !.env.example
+*.jks
+*.keystore
+*.mobileprovision
+*.p12
+*.p8
 
 # OS
 .DS_Store
 Thumbs.db
-# P-UI-2: the renderer bundle is a build artifact, never committed
+
+# expo / react-native
+.expo/
+build/
+dist/
+out/
+
+# python analysis tooling
+*.pyc
+__pycache__/
+
+# build artifacts (never committed)
 packages/ui/mockups/.build/
 packages/ui/tests/.build/
+packages/*/tests/.build/
+tests/.build/
+
+# canary reports and debug builds
+privacy/
+builds/

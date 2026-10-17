@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mirror.example/schema/event-1.json",
+  "title": "Mirror event",
+  "description": "One on-device behaviour event. Closed schema: unknown fields are rejected, because an unknown field is either a bug or a leak. Enforcement lives in src/validate.ts; this file is the interop description and the two are kept in step by a test.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "kind", "at", "tier", "origin", "content"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+    "kind": {
+      "enum": ["app_foreground", "app_background", "device_unlock", "web_visit", "api_item", "import_item", "intent_label", "focus_window"]
+    },
+    "at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$" },
+    "tier": { "enum": ["A", "B", "C", "D"] },
+    "origin": { "enum": ["os", "extension", "api", "export", "user"] },
+    "content": { "enum": ["metadata", "content"] },
+    "consent": { "type": "string", "minLength": 1, "description": "Grant id. Required for A/B/C events, forbidden on D." },
+    "app": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$" },
+    "activity": { "type": "string" },
+    "durationMs": { "type": "number", "minimum": 0, "maximum": 86400000 },
+    "host": { "type": "string", "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$" },
+    "scrollDepth": { "type": "number", "minimum": 0, "maximum": 1 },
+    "completed": { "type": "number", "minimum": 0, "maximum": 1 },
+    "query": { "type": "string", "maxLength": 512 },
+    "sourceId": { "type": "string" },
+    "action": { "enum": ["saved", "subscribed", "followed", "liked"] },
+    "subject": { "type": "string" },
+    "exportFormat": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "label": { "enum": ["intentional", "mindless", "unsure"] },
+    "windowId": { "type": "string" },
+    "phase": { "enum": ["start", "end", "left"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "app_foreground" } }, "required": ["kind"] },
+      "then": { "required": ["app"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "app_background" } }, "required": ["kind"] },
+      "then": { "required": ["app", "durationMs"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "web_visit" } }, "required": ["kind"] },
+      "then": { "required": ["host", "durationMs"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "api_item" } }, "required": ["kind"] },
+      "then": { "required": ["sourceId", "action"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "import_item" } }, "required": ["kind"] },
+      "then": { "required": ["sourceId", "exportFormat"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "intent_label" } }, "required": ["kind"] },
+      "then": { "required": ["sessionId", "label"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "focus_window" } }, "required": ["kind"] },
+      "then": { "required": ["windowId", "phase"] }
+    },
+    {
+      "if": { "properties": { "tier": { "enum": ["A", "B", "C"] } }, "required": ["tier"] },
+      "then": { "required": ["consent"] }
+    },
+    {
+      "if": { "properties": { "tier": { "const": "D" } }, "required": ["tier"] },
+      "then": { "not": { "required": ["consent"] } }
+    },
+    {
+      "description": "The OS produces metadata only; a content event from origin os is fabricated.",
+      "not": {
+        "required": ["content", "origin"],
+        "properties": { "content": { "const": "content" }, "origin": { "const": "os" } }
+      }
+    }
+  ]
+}

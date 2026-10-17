@@ -1,0 +1,16 @@
+{
+  "name": "@mirror/connectors",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The connector registry: which official APIs Mirror may call, with which scopes, and why every other source is refused. Implementations arrive in P5; the contract and its tests are P0.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@mirror/shared-types": "0.0.0"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "@mirror/core-analytics",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sessionisation and the synthetic dataset the whole pipeline is tested against. No UI, no network, no storage.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@mirror/shared-types": "0.0.0"
+  }
+}

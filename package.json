@@ -5,7 +5,7 @@
   "description": "Mirror \u2014 privacy-first, mobile-first digital behaviour analytics. Monorepo root.",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
   "workspaces": [
     "apps/*",
@@ -14,15 +14,22 @@
   ],
   "scripts": {
     "tokens": "node scripts/generate-tokens.mjs",
-    "typecheck": "tsc -p packages/ui/tsconfig.json --noEmit",
+    "typecheck": "tsc -p packages/ui/tsconfig.json --noEmit && tsc -p tsconfig.packages.json",
     "mockups": "node packages/ui/mockups/render.mjs",
-    "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups",
+    "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups && npm run test:packages && npm run test:config && npm run test:privacy",
     "test:tokens": "node --test tests/tokens.test.mjs",
     "test:prototype": "node --test tests/prototype.test.mjs",
     "test:ui": "node --test packages/ui/tests/ui.test.mjs",
     "test:mockups": "npm run mockups && node --test packages/ui/tests/mockups.test.mjs",
     "check:prototype": "node scripts/check-prototype.mjs",
-    "verify": "npm run tokens && npm run typecheck && npm test && npm run check:prototype"
+    "verify": "npm run tokens && npm run typecheck && npm test",
+    "test:packages": "node --test packages/shared-types/tests/*.test.mjs packages/core-analytics/tests/*.test.mjs packages/connectors/tests/*.test.mjs",
+    "test:config": "node --test tests/config.test.mjs",
+    "test:privacy": "node --test tests/privacy.test.mjs && npm run privacy:self-test && npm run privacy:addon",
+    "privacy:self-test": "node scripts/privacy/self-test.mjs",
+    "privacy:addon": "python3 -m unittest discover -s tests -p \"privacy_addon_test.py\"",
+    "privacy:extension": "node scripts/privacy/extension-canary.mjs",
+    "privacy:android": "bash scripts/privacy/android-emulator.sh"
   },
   "keywords": [
     "privacy",
@@ -34,10 +41,12 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.1",
     "esbuild": "^0.28.2",
+    "fast-check": "^4.10.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-native": "^0.74.7",
     "react-test-renderer": "^18.3.1",
     "typescript": "^5.9.3"
-  }
+  },
+  "imports": {}
 }

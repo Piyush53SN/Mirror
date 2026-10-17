@@ -8,15 +8,74 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** design layer only, no app code yet. P-UI-0 (image analysis →
-> design brief) is approved and P-UI-1 (image-derived tokens + HTML prototype) is
-> accepted; P-UI-2 (React Native design system + mockups of all **28 Section J
-> items**) is delivered here for review. The app scaffolding — React Native app
-> shell, storage, collectors — arrives with P0/P1.
+> **Build status:** P-UI-0, P-UI-1 and P-UI-2 (design system, 28 Section J items,
+> 96 mockup frames) are approved. **P0 (foundation) is delivered here for review:**
+> event and preference schemas, the connector registry, the synthetic dataset,
+> sessionisation, the privacy-canary harness, CI, EAS profiles and a store-readiness
+> draft. There is still **no app binary** — P1 adds the Expo shell, the encrypted
+> store and the UsageStats collector. No build or store step has been run.
 
 ---
 
-## Current phase — P-UI-2: React Native design system + screen mockups
+---
+
+## Current phase — P0: the foundation
+
+P0 is the layer everything else is written against. It ships no screens and no
+binary; it ships the contracts, and tests that make the contracts expensive to
+break.
+
+| artifact | what it is |
+| --- | --- |
+| [`packages/shared-types/`](packages/shared-types) | **the event schema** (`src/event.ts`), a hand-written validator with field-level errors (`src/validate.ts`), the JSON Schema description (`schema/event.schema.json`), the four-tier model, and preferences/flags/consent grants (`src/preferences.ts`) |
+| [`packages/core-analytics/`](packages/core-analytics) | sessionisation with explicit drop reasons, phase summaries, and the deterministic synthetic dataset used by every later test |
+| [`packages/connectors/`](packages/connectors) | the OAuth connector registry, its scope allowlist, the refusal list (no official API → no connector), and the extension allowlist |
+| [`scripts/privacy/`](scripts/privacy) | the canary scanner, an end-to-end self-test, a mitmproxy addon, a Playwright runner and the emulator runbook |
+| [`infra/workflows/`](infra/workflows) | CI (`ci.yml`) and the device/extension canary workflow (`privacy-canary.yml`); they live here because the pushing GitHub App cannot write `.github/workflows/` — activation command in that folder |
+| [`apps/mobile/app.json`](apps/mobile/app.json) + [`eas.json`](apps/mobile/eas.json) | app identity, the permission surface, and the three build profiles |
+| [`docs/privacy/CANARY.md`](docs/privacy/CANARY.md) | how a canary run works, and which parts are automated |
+| [`docs/STORE_READINESS.md`](docs/STORE_READINESS.md) | the Data safety / App Privacy draft, and the release-stage checklist |
+
+### What P0 asserts
+
+- **The schema is closed.** An unknown field is rejected, because an unknown field
+  is either a bug or a leak. `content: "content"` from `origin: "os"` is rejected
+  as fabricated — the OS cannot produce titles or queries.
+- **Consent is data.** A/B/C events must cite a grant; D events must not (the OS
+  grant lives in settings). Revocation is a record, not a boolean.
+- **Telemetry cannot be added by deployment.** `applyOverrides` accepts a
+  narrowing only: a remote override that would enable social, a tier or
+  notifications is refused, with a reason.
+- **A connector is a permission request.** Every scope must be in the provider's
+  allowlist *and* used by a collector; write scopes, password flows and web
+  callbacks are refused; scraping-only sources are on the refusal list with a
+  reason a person can read.
+- **The harness catches leaks, including encoded ones.** Canaries are found in
+  clear text, percent-encoded, inside base64 blobs (a `Basic` auth header), in hex
+  dumps and in UTF-16LE text; a clean transcript stays clean; a look-alike token is
+  not flagged.
+- **Release config is tested like code.** The only Android permission requested is
+  usage access; AD ID, contacts, location, mic, camera and SMS are explicitly
+  *blocked*; the extension asks for `storage` and five hosts, never `<all_urls>`.
+
+### Run it
+
+```bash
+npm install --legacy-peer-deps
+npm run verify            # 213 checks: 204 Node + 9 Python
+npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
+make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
+```
+
+Measured: **204** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
+schema 17 · preferences 22 · sessions 16 · connectors 20 · config 15 · canary 18)
+and **9** Python addon tests. `npm run verify` is the CI target. The prototype
+measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
+CI runs it non-blocking and says so.
+
+---
+
+## P-UI-2 (approved) — React Native design system + screen mockups
 
 `/packages/ui` is now a real React Native package: typed primitives, a theme
 factory, feature flags and data-tier rules, plus a component for every screen in
@@ -30,8 +89,8 @@ second styling path and no hand-written CSS to drift.
 | [`packages/ui/screens/index.tsx`](packages/ui/screens/index.tsx) | all **28 Section J items** (`J1`–`J28`) as components — screens, sheets, states and the widget — each with the rule it obeys, the tiers it needs and its empty state |
 | [`packages/ui/mockups/gallery/index.html`](packages/ui/mockups/gallery/index.html) | **the gallery** — every screen × persona × state × theme, dark and light |
 | [`packages/ui/README.md`](packages/ui/README.md) | the component API and how to add a screen |
-| `packages/ui/tests/ui.test.mjs` | 29 component tests (tokens, theme, blur budget, contrast, a11y, flags, inventory, source rules) |
-| `packages/ui/tests/mockups.test.mjs` | 15 tests over the rendered artifacts (28 items present, sheets layered over parents, 48dp on every target, offline, honest empty states) |
+| `packages/ui/tests/ui.test.mjs` | 37 component tests (tokens, theme, blur budget, contrast, a11y, flags, inventory, source rules) |
+| `packages/ui/tests/mockups.test.mjs` | 17 tests over the rendered artifacts (28 items present, sheets layered over parents, 48dp on every target, offline, honest empty states) |
 
 ### Run it
 
@@ -39,8 +98,8 @@ second styling path and no hand-written CSS to drift.
 npm install            # once (.npmrc handles react-native's exact react pin)
 npm run mockups        # render 96 frames (28 Section J items) → packages/ui/mockups/gallery/
 npm run typecheck      # tsc --noEmit over packages/ui (src, screens and the DOM binding)
-npm test               # 86 checks: tokens 24 · prototype 18 · components 29 · mockups 15
-npm run verify         # tokens → typecheck → tests → browser check
+npm test               # 204 Node checks (P-UI + P0) · see the P0 section for the split
+npm run verify         # tokens → both typechecks → all 204 tests (python addon tests run separately)
 open packages/ui/mockups/gallery/index.html   # no server, no build step, no network
 ```
 

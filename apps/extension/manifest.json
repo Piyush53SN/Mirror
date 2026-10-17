@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Mirror capture",
+  "version": "0.1.0",
+  "description": "Records how you scroll and how long you read, on sites you allow. Never sends pages, titles or queries anywhere.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://arxiv.org/*",
+    "https://en.wikipedia.org/*",
+    "https://www.youtube.com/*",
+    "https://github.com/*",
+    "https://developer.mozilla.org/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://arxiv.org/*",
+        "https://en.wikipedia.org/*",
+        "https://www.youtube.com/*",
+        "https://github.com/*",
+        "https://developer.mozilla.org/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Mirror"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": false,
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@mirror/shared-types": ["packages/shared-types/src/index.ts"],
+      "@mirror/core-analytics": ["packages/core-analytics/src/index.ts"],
+      "@mirror/connectors": ["packages/connectors/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/shared-types/src/**/*.ts",
+    "packages/core-analytics/src/**/*.ts",
+    "packages/connectors/src/**/*.ts"
+  ]
+}

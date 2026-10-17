@@ -1,0 +1,46 @@
+{
+  "expo": {
+    "name": "Mirror",
+    "slug": "mirror",
+    "scheme": "mirror",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "dev.mirror.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIUserInterfaceStyle": "Dark"
+      }
+    },
+    "android": {
+      "package": "dev.mirror.app",
+      "versionCode": 1,
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.PACKAGE_USAGE_STATS"
+      ],
+      "blockedPermissions": [
+        "android.permission.READ_CONTACTS",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.READ_SMS",
+        "android.permission.READ_CALL_LOG",
+        "android.permission.READ_PHONE_STATE",
+        "com.google.android.gms.permission.AD_ID"
+      ]
+    },
+    "extra": {
+      "privacyModeDefault": "private",
+      "telemetry": false,
+      "remoteConfig": "narrow-only"
+    }
+  }
+}
