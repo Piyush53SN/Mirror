@@ -53,6 +53,8 @@ test('advertising id, contacts, location, mic, camera, SMS and phone state are b
     'android.permission.READ_SMS',
     'android.permission.READ_CALL_LOG',
     'android.permission.READ_PHONE_STATE',
+    'android.permission.ACCESS_LOCAL_NETWORK',
+    'android.permission.SYSTEM_ALERT_WINDOW',
   ]) {
     assert.ok(blocked.has(permission), `${permission} must be blocked, not merely unused`);
   }

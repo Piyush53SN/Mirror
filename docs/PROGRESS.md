@@ -18,7 +18,7 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P1a | **approved** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
 | P1b-1 | **approved** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI — commit `2753206` |
 | P1b-2 | **approved** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL — commit `e3c9cd2` |
-| P2 | **engine approved; Stage 1 open** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. Step 0 and signing await the reviewer's Gradle run |
+| P2 | **engine approved; Stage 1 open — first Kotlin compile succeeded** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. **First Kotlin compile: GitHub Actions run #2 on `arena/46c54cde-mirror`, Gradle `assembleDebug` BUILD SUCCESSFUL in 5m 9s (2026-10-18).** Merged-manifest gate then failed on 3 permissions (SYSTEM_ALERT_WINDOW, ACCESS_LOCAL_NETWORK, DYNAMIC_RECEIVER_NOT_EXPORTED) — now fixed in this commit. Signing still MANUAL. |
 | P3…P7 | not started | — |
 
 ---

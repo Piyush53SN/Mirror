@@ -36,6 +36,10 @@ export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
  *   VIBRATE, USE_BIOMETRIC, USE_FINGERPRINT — expo-haptics / local auth, P4
  *   POST_NOTIFICATIONS — local notifications, P4
  *   CHECK_LICENSE — Play licensing (Expo default)
+ *   DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION — AndroidX (work, core) generates a
+ *     per-package permission for RECEIVER_NOT_EXPORTED dynamic receivers, required
+ *     on Android 13+ (SDK 33+). Added by AGP when a library declares a receiver
+ *     with android:exported="false" and RECEIVER_NOT_EXPORTED flag.
  */
 export const ALLOWED_FROM_LIBRARIES = [
   'android.permission.INTERNET',
@@ -48,6 +52,7 @@ export const ALLOWED_FROM_LIBRARIES = [
   'android.permission.USE_FINGERPRINT',
   'android.permission.POST_NOTIFICATIONS',
   'com.android.vending.CHECK_LICENSE',
+  'dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 ];
 
 /** Never, under any build variant. Each entry is a product decision. */
@@ -61,6 +66,7 @@ export const FORBIDDEN_PERMISSIONS = [
   'android.permission.ACCESS_FINE_LOCATION',
   'android.permission.ACCESS_COARSE_LOCATION',
   'android.permission.ACCESS_BACKGROUND_LOCATION',
+  'android.permission.ACCESS_LOCAL_NETWORK',
   'android.permission.RECORD_AUDIO',
   'android.permission.CAMERA',
   'android.permission.READ_SMS',

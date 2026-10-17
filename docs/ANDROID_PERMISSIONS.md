@@ -28,6 +28,18 @@ notice and says why — it never shows a made-up number.
 | `android.permission.POST_NOTIFICATIONS` | Runtime (Android 13+) | P4 | On the nudge opt-in screen only — never at launch, never after onboarding | Local weekly report and the opt-in nudge. If the person never enables a notification, this is never requested. Refusal keeps every other feature working. |
 | `android.permission.INTERNET` | Normal | P5, with the first connector | n/a (install-time) | OAuth token exchange and (P6) optional encrypted sync. The app is fully functional offline; Private mode makes no requests at all. |
 | `android.permission.WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | Normal | contributed by **WorkManager** (`expo-background-task`), P1b-1 | n/a | Scheduled collection survives reboots. These merge in from the library's manifest; the merged-manifest gate lists them as reviewed library permissions and fails on anything else. |
+| `dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Normal, per-package | contributed by **AndroidX** (`androidx.work`, `androidx.core`), P1b-1 | n/a | AGP generates a per-package permission when a library declares a receiver with `RECEIVER_NOT_EXPORTED` (Android 13+). Required to protect dynamic receivers. No user prompt. Documented in `ALLOWED_FROM_LIBRARIES` with reason. |
+
+## 2a. Permissions that appear only in debug and are removed
+
+React Native's own `ReactAndroid/src/debug/AndroidManifest.xml` adds two permissions for its dev overlay and debugger that are **not** in release:
+
+| Permission | Added by | Why blocked |
+| --- | --- | --- |
+| `android.permission.SYSTEM_ALERT_WINDOW` | `react-native` debug manifest (dev overlay) | Overlays are forbidden by product decision. Already in `blockedPermissions`; custom plugin `remove-forbidden-permissions` adds `tools:node="remove"` to `main`, `debug` and `debugOptimized` manifests so merged-manifest gate passes for both debug and release. |
+| `android.permission.ACCESS_LOCAL_NETWORK` | `react-native` debug manifest (Android 17+ local-network debugger) | Not needed for product; blocked via `blockedPermissions` and same plugin. Gate would otherwise flag it as unexpected. |
+
+Both are in `blockedPermissions` in `apps/mobile/app.json`. The first Kotlin compile (Gradle `assembleDebug` 5m 9s) succeeded before the gate failed, proving the plugin runs after prebuild and before merge.
 
 ## 3. Boot sync: no permission is needed, and none is requested
 
@@ -82,7 +94,8 @@ the config test in the same change. It is not added "just in case".
 | The declared list is exactly the documented list | `tests/config.test.mjs` | AUTOMATED |
 | Forbidden permissions are blocked, not merely unused | `tests/config.test.mjs` | AUTOMATED |
 | Every declared permission appears on this page | `tests/config.test.mjs` | AUTOMATED |
-| The **merged** manifest matches this page (not just `app.json`) | `npm run android:manifest` (`scripts/android/check-merged-manifest.mjs`), fixtures in `scripts/android/fixtures` | **AUTOMATED** (policy + parser); needs a Gradle build to run against a real artifact — **MANUAL precondition** |
-| The first prebuild produced the expected `android/` project (15 `tools:node="remove"` lines, `PACKAGE_USAGE_STATS` kept) | `npx expo prebuild --platform android` — run 2026-10-17, exit 0 | AUTOMATED (ran once); re-running is part of CI |
+| The **merged** manifest matches this page (not just `app.json`) — debug | `npm run android:manifest` (`scripts/android/check-merged-manifest.mjs`), fixtures in `scripts/android/fixtures` | **AUTOMATED** (policy + parser); needs a Gradle build to run against a real artifact — **MANUAL precondition**, now green on GitHub Actions run #2 (BUILD SUCCESSFUL 5m 9s, then gate) |
+| The **merged** manifest matches this page — release | `npm run android:manifest -- --variant release` — same gate, same allowlist, but release does **not** contain `SYSTEM_ALERT_WINDOW` or `ACCESS_LOCAL_NETWORK` (those come from `react-native` debug manifests only). `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` is in both debug and release and is allowlisted. Release needs same checks; signing is MANUAL. | AUTOMATED (same gate); release build is `assembleRelease`/`bundleRelease` — MANUAL signing |
+| The first prebuild produced the expected `android/` project (17 `tools:node="remove"` lines, `PACKAGE_USAGE_STATS` kept) | `npx expo prebuild --platform android` — run 2026-10-18, exit 0, with custom plugin `remove-forbidden-permissions` adding remove for debug manifests | AUTOMATED (ran once); re-running is part of CI |
 | The Settings round-trip (grant → resume → detected) | emulator run, P1 | MANUAL until an emulator is wired into CI |
 | The notification prompt appears only on opt-in | P4 device test | MANUAL until then |
