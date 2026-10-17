@@ -6,13 +6,24 @@
  * *mean* lives here, as pure functions with tests — because this is where a
  * collector bug would silently inflate a person's screen time.
  *
- * Rules:
- *   - only foreground/background events for real packages are considered;
- *   - an interval needs an open and a close inside the window; an unclosed one is
- *     dropped, never extended to "now";
- *   - intervals longer than `maxIntervalMs` (6 h) are dropped as implausible
- *     rather than trusted: a phone that reports a 14-hour YouTube session has a
- *     broken event stream, and Mirror would rather lose the day than invent it;
+ * **The sync boundary.** A sitting can start before one collection and end after
+ * it. Dropping the un-closed foreground at the end of a window and then treating
+ * its background as an orphan in the next window would lose the sitting twice.
+ * So the builder takes the intervals that were still open at the end of the last
+ * run, completes them with the rows it now sees, and returns the ones that are
+ * still open for the *next* run to carry. The cursor therefore stores a state, not
+ * a timestamp.
+ *
+ * **Gaps are counted.** An interval Mirror cannot measure is never silently
+ * discarded: it becomes a `DataGap` with a reason and, where the span is known,
+ * a duration. A day with a 6-hour gap must not read as a day with 20 minutes of
+ * use — P2's scoring consumes these counts.
+ *
+ * Other rules:
+ *   - an interval needs a close; an open interval older than `maxIntervalMs` is
+ *     abandoned and counted, never extended to "now";
+ *   - intervals longer than `maxIntervalMs` (6 h) are counted as gaps rather than
+ *     trusted: a phone reporting a 14-hour YouTube session has a broken stream;
  *   - ids are deterministic from (package, start), so re-collecting an overlapping
  *     window is idempotent and an interrupted collection is safe to retry.
  */
@@ -52,22 +63,34 @@ export type UsageEvent = {
   session_id?: string;
 };
 
+/** An interval seen but not yet closed. Carried in the cursor between runs. */
+export type OpenInterval = { app: string; startMs: number };
+
 export type UsageDropReason =
   | 'invalid_package'
   | 'ignored_package'
   | 'outside_window'
   | 'unknown_type'
   | 'orphan_background'
-  | 'unclosed'
   | 'too_long'
   | 'below_minimum';
 
 export type UsageDrop = { reason: UsageDropReason; app?: string; at?: number };
 
+/** A counted gap. `count` is how many intervals/rows it represents. */
+export type UsageGap = {
+  reason: 'too_long' | 'abandoned_open' | 'orphan_background' | 'invalid_package';
+  count: number;
+  fromMs?: number;
+  toMs?: number;
+};
+
 export type BuildUsageOptions = {
   /** Window actually queried [sinceMs, untilMs). */
   sinceMs: number;
   untilMs: number;
+  /** Intervals carried from the previous run, not yet closed. */
+  openIntervals?: readonly OpenInterval[];
   /** Packages that are never meaningful: Mirror itself, launchers, system UI. */
   ignorePackages?: readonly string[];
   /** Intervals longer than this are treated as an OS glitch, not as use. */
@@ -78,14 +101,19 @@ export type BuildUsageOptions = {
 
 export type BuildUsageResult = {
   events: UsageEvent[];
+  /** Row-level reasons, for diagnostics. Aggregated counts live in `gaps`. */
   dropped: UsageDrop[];
-  stats: { rows: number; intervals: number; totalMs: number; unclosed: number };
+  /** Aggregated, countable gaps. Nothing disappears without a number here. */
+  gaps: UsageGap[];
+  /** Still open at the end of this window; persist and pass to the next run. */
+  nextOpen: OpenInterval[];
+  stats: { rows: number; intervals: number; totalMs: number; carriedIn: number; carriedOut: number };
   /** Where the next collection should start. Idempotent ids make overlap safe. */
   nextCursor: number;
 };
 
 const PACKAGE = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i;
-const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export const DEFAULT_IGNORED_PACKAGES = [
   'dev.mirror.app',
@@ -108,31 +136,45 @@ function stableId(prefix: string, app: string, startMs: number): string {
   return `${prefix}_${hash.toString(16).padStart(8, '0')}${startMs.toString(36).slice(-8)}`;
 }
 
+/** Merge gap rows of the same reason into one countable line. */
+function addGap(gaps: UsageGap[], gap: UsageGap): void {
+  const existing = gaps.find((entry) => entry.reason === gap.reason && entry.fromMs === gap.fromMs && entry.toMs === gap.toMs);
+  if (existing) existing.count += gap.count;
+  else gaps.push({ ...gap });
+}
+
 export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageOptions): BuildUsageResult {
   const ignore = new Set([...(options.ignorePackages ?? DEFAULT_IGNORED_PACKAGES)]);
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
   const minIntervalMs = options.minIntervalMs ?? 0;
-  const dropped: UsageDrop[] = [];
+  const drops: UsageDrop[] = [];
+  const gaps: UsageGap[] = [];
 
   const ordered = [...rows].sort((a, b) => a.timeStamp - b.timeStamp);
   const open = new Map<string, number>();
-  const intervals: { app: string; start: number; end: number }[] = [];
+  const carriedIn = options.openIntervals ?? [];
+  for (const interval of carriedIn) {
+    if (!open.has(interval.app)) open.set(interval.app, interval.startMs);
+  }
+
+  const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
 
   for (const row of ordered) {
     if (!PACKAGE.test(row.packageName)) {
-      dropped.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
+      addGap(gaps, { reason: 'invalid_package', count: 1 });
       continue;
     }
     if (ignore.has(row.packageName)) {
-      dropped.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp });
       continue;
     }
     if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
-      dropped.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
       continue;
     }
     if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType)) {
-      dropped.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp });
       continue;
     }
 
@@ -145,27 +187,37 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
     const start = open.get(row.packageName);
     if (start === undefined) {
-      dropped.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
+      addGap(gaps, { reason: 'orphan_background', count: 1 });
       continue;
     }
     open.delete(row.packageName);
     const duration = row.timeStamp - start;
     if (duration > maxIntervalMs) {
-      dropped.push({ reason: 'too_long', app: row.packageName, at: start });
+      // The span is known, so the gap is countable in time as well as in number.
+      drops.push({ reason: 'too_long', app: row.packageName, at: start });
+      addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: row.timeStamp });
       continue;
     }
-    if (duration <= 0) {
-      dropped.push({ reason: 'below_minimum', app: row.packageName, at: start });
+    if (duration <= 0 || duration < minIntervalMs) {
+      drops.push({ reason: 'below_minimum', app: row.packageName, at: start });
       continue;
     }
-    if (duration < minIntervalMs) {
-      dropped.push({ reason: 'below_minimum', app: row.packageName, at: start });
-      continue;
-    }
-    intervals.push({ app: row.packageName, start, end: row.timeStamp });
+    intervals.push({ app: row.packageName, start, end: row.timeStamp, carried: start < options.sinceMs });
   }
 
-  for (const [app, start] of open) dropped.push({ reason: 'unclosed', app, at: start });
+  // Anything still open becomes the next run's responsibility, unless it is so
+  // old that it cannot be a sitting any more: then it is an abandoned gap.
+  const nextOpen: OpenInterval[] = [];
+  for (const [app, start] of open) {
+    if (options.untilMs - start > maxIntervalMs) {
+      addGap(gaps, { reason: 'abandoned_open', count: 1, fromMs: start });
+      drops.push({ reason: 'too_long', app, at: start });
+      continue;
+    }
+    nextOpen.push({ app, startMs: start });
+  }
+  nextOpen.sort((a, b) => a.startMs - b.startMs || a.app.localeCompare(b.app));
 
   intervals.sort((a, b) => a.start - b.start || a.app.localeCompare(b.app));
   const events: UsageEvent[] = [];
@@ -197,12 +249,15 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
   return {
     events,
-    dropped,
+    dropped: drops,
+    gaps,
+    nextOpen,
     stats: {
       rows: rows.length,
       intervals: intervals.length,
       totalMs,
-      unclosed: dropped.filter((drop) => drop.reason === 'unclosed').length,
+      carriedIn: carriedIn.length,
+      carriedOut: nextOpen.length,
     },
     nextCursor: options.untilMs,
   };
@@ -212,9 +267,10 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
 /** What the collector needs from storage. `MirrorStore` satisfies this structurally. */
 export type UsageStorePort = {
-  getCursor(source: string): Promise<number | null>;
-  setCursor(source: string, atMs: number): Promise<void>;
+  getCursorState(source: string): Promise<{ at: number | null; open: { app: string; startMs: number }[] }>;
+  setCursorState(source: string, state: { at: number | null; open: { app: string; startMs: number }[] }): Promise<void>;
   appendEvents(events: readonly unknown[]): Promise<{ inserted: number; duplicate: number; rejected: { id: string; reason: string }[] }>;
+  recordGaps?(source: string, gaps: { reason: string; count: number; fromMs?: number; toMs?: number }[], atMs?: number): Promise<void>;
 };
 
 /** What the collector needs from the native module. */
@@ -233,6 +289,7 @@ export type CollectOptions = {
   overlapMs?: number;
   now: number;
   ignorePackages?: readonly string[];
+  maxIntervalMs?: number;
 };
 
 export type CollectResult =
@@ -244,7 +301,11 @@ export type CollectResult =
       inserted: number;
       duplicate: number;
       rejected: { id: string; reason: string }[];
-      dropped: UsageDrop[];
+      /** Row-level reasons, for diagnostics. Aggregated counts live in `gaps`. */
+  dropped: UsageDrop[];
+      gaps: UsageGap[];
+      carriedIn: number;
+      carriedOut: number;
       from: number;
       to: number;
       cursor: number;
@@ -253,12 +314,16 @@ export type CollectResult =
 const DAY_MS = 86_400_000;
 
 /**
- * One collection pass: read the cursor, ask the OS for the window, turn rows into
- * events, write them, advance the cursor.
+ * One collection pass: read the cursor state, ask the OS for the window, turn rows
+ * into events, write them, record gaps, persist the new state.
  *
- * The cursor advances only after a successful write, so a crash mid-write means
- * the same window is read again — and the deterministic ids make that a no-op
- * rather than a duplicate.
+ * `openIntervals` are intervals from the previous run that had no close yet. They
+ * are completed by this run's rows; whatever is still open is carried forward, so
+ * a session that straddles two syncs is written once, whole.
+ *
+ * The state is written only after a successful append, so a crash re-reads the
+ * same window — and the deterministic ids make that a no-op rather than a
+ * duplicate.
  */
 export async function collectUsage(source: UsageSourcePort, store: UsageStorePort, options: CollectOptions): Promise<CollectResult> {
   if (!(await source.hasPermission())) return { status: 'permission-required' };
@@ -266,16 +331,25 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
   const initialWindowMs = options.initialWindowMs ?? DAY_MS;
   const maxWindowMs = options.maxWindowMs ?? 2 * DAY_MS;
   const overlapMs = options.overlapMs ?? 2_000;
+  const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
 
-  const stored = await store.getCursor('usage_stats');
-  const from = stored === null ? options.now - initialWindowMs : Math.max(0, stored - overlapMs);
+  const state = await store.getCursorState('usage_stats');
+  const from = state.at === null ? options.now - initialWindowMs : Math.max(0, state.at - overlapMs);
   const to = Math.min(options.now, from + maxWindowMs);
   if (to <= from) return { status: 'no-window', cursor: from };
 
   const rows = await source.queryEvents(from, to);
-  const built = buildUsageEvents(rows, { sinceMs: from, untilMs: to, ignorePackages: options.ignorePackages });
+  const built = buildUsageEvents(rows, {
+    sinceMs: from,
+    untilMs: to,
+    openIntervals: state.open,
+    ignorePackages: options.ignorePackages,
+    maxIntervalMs,
+  });
+
   const appended = await store.appendEvents(built.events);
-  await store.setCursor('usage_stats', built.nextCursor);
+  await store.recordGaps?.('usage_stats', built.gaps, options.now);
+  await store.setCursorState('usage_stats', { at: built.nextCursor, open: built.nextOpen });
 
   return {
     status: 'collected',
@@ -284,6 +358,9 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
     duplicate: appended.duplicate,
     rejected: appended.rejected,
     dropped: built.dropped,
+    gaps: built.gaps,
+    carriedIn: built.stats.carriedIn,
+    carriedOut: built.stats.carriedOut,
     from,
     to,
     cursor: built.nextCursor,

@@ -11,7 +11,7 @@
  */
 import type { SqlDriver } from './types';
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export type Migration = { version: number; name: string; statements: string[] };
 
@@ -76,6 +76,51 @@ export const MIGRATIONS: Migration[] = [
         consent_id TEXT NOT NULL
       )`,
       `CREATE INDEX IF NOT EXISTS imports_consent ON imports (consent_id)`,
+    ],
+  },
+  {
+    version: 2,
+    name: 'sessions, vectors, gaps, rollups',
+    statements: [
+      // Sessions are derived from events. The app name is the only recognisable
+      // field, so it is sealed in `payload`; the timings stay queryable.
+      `CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        start_ms INTEGER NOT NULL,
+        end_ms INTEGER NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        payload BLOB NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS sessions_start ON sessions (start_ms)`,
+      // Topic vectors are content-derived (an embedding can be matched against a
+      // corpus), so they are sealed too. The model id is plaintext so a
+      // re-embedding pass can select rows without decrypting them.
+      `CREATE TABLE IF NOT EXISTS event_vectors (
+        event_id TEXT PRIMARY KEY,
+        model TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        vec BLOB NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS event_vectors_model ON event_vectors (model)`,
+      // Counted data gaps: time Mirror could not measure. Plaintext because it
+      // holds no app name and no content — only why and how much.
+      `CREATE TABLE IF NOT EXISTS data_gaps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        source TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        from_ms INTEGER,
+        to_ms INTEGER,
+        count INTEGER NOT NULL,
+        recorded_at INTEGER NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS data_gaps_from ON data_gaps (source, from_ms)`,
+      // One sealed rollup per day: the aggregate P2 scores read.
+      `CREATE TABLE IF NOT EXISTS daily_rollups (
+        day TEXT PRIMARY KEY,
+        payload BLOB NOT NULL,
+        computed_at INTEGER NOT NULL
+      )`,
     ],
   },
 ];

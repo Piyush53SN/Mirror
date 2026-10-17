@@ -1,0 +1,10 @@
+{
+  "name": "@mirror/importers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tier-B importers: Google Takeout and Reddit's own data export. Preview, dedupe, commit — all through the store's consent-checked write path.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "dependencies": { "@mirror/shared-types": "0.0.0" }
+}

@@ -24,6 +24,12 @@
       ],
       "@mirror/store": [
         "packages/store/src/index.ts"
+      ],
+      "@mirror/ml": [
+        "packages/ml/src/index.ts"
+      ],
+      "@mirror/importers": [
+        "packages/importers/src/index.ts"
       ]
     }
   },
@@ -31,6 +37,8 @@
     "packages/shared-types/src/**/*.ts",
     "packages/core-analytics/src/**/*.ts",
     "packages/connectors/src/**/*.ts",
-    "packages/store/src/**/*.ts"
+    "packages/store/src/**/*.ts",
+    "packages/ml/src/**/*.ts",
+    "packages/importers/src/**/*.ts"
   ]
 }

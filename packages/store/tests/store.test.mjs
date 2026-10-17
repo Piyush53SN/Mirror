@@ -393,3 +393,103 @@ test('the ingest cursor survives a reopen and rejects nonsense', async () => {
     close();
   }
 });
+
+/* -------------------------------------------------------------- migration --- */
+
+test('a v1 store migrates to v2 in place, keeping every event readable', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-migrate-'));
+  const file = join(dir, 'mirror.db');
+  const driver = NodeSqliteDriver.file(file);
+  const rootKey = new Uint8Array(TEST_ROOT_KEY);
+  try {
+    // Build a real v1 file: run migration 1 only, stamp the version, and write a
+    // v1 event through the same seal() the v1 build used. Nothing about this
+    // fixture is a mock of the old schema.
+    await driver.exec('PRAGMA journal_mode = WAL');
+    for (const statement of store.MIGRATIONS[0].statements) await driver.exec(statement);
+    await driver.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '1')`);
+    const v1Event = foreground();
+    const sealed = store.seal(v1Event, store.deriveKeys(rootKey), 'test-key-1', counterRandom());
+    await driver.run(
+      `INSERT INTO events (id, at, kind, tier, origin, content, session_id, item_hash, consent_id, payload)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+      [v1Event.id, Date.parse(v1Event.at), v1Event.kind, v1Event.tier, v1Event.origin, v1Event.content, sealed],
+    );
+    await driver.run(`INSERT INTO consent_log (id, at, action, subject, tier, scopes, promise, method, deletes_imported_events)
+                      VALUES ('cns_os_000001', ?, 'granted', 'os_usage', 'D', '[]', 'p', 'in_app', 0)`, [Date.parse(iso(-86_400_000))]);
+    assert.equal(Number((await driver.all(`SELECT value FROM meta WHERE key = 'schema_version'`))[0].value), 1);
+
+    const s = new MirrorStore({ driver, keys, random: counterRandom() });
+    const opened = await s.open();
+    assert.equal(opened.schemaVersion, store.SCHEMA_VERSION);
+
+    // The old row is still there, in clear, and the new tables are usable.
+    const rows = await s.events();
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].id, v1Event.id);
+    assert.equal(rows[0].payload.app, 'com.google.android.youtube');
+
+    await s.applySessions({
+      window: { fromMs: Date.parse(iso(-1000)), toMs: Date.parse(iso(3_600_000)) },
+      sessions: [{ id: 'ses_migrated_0001', app: 'com.google.android.youtube', start_ms: Date.parse(iso(0)), end_ms: Date.parse(iso(60_000)), duration_ms: 60_000 }],
+      assignments: [{ eventId: v1Event.id, sessionId: 'ses_migrated_0001' }],
+    });
+    assert.equal((await s.sessions()).length, 1);
+    await s.putRollup('2026-10-16', { sessions: 1 });
+    assert.equal((await s.rollup('2026-10-16')).payload.sessions, 1);
+    assert.equal((await s.events())[0].session_id, 'ses_migrated_0001');
+  } finally {
+    driver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a store from a newer build is refused, not guessed at', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-future-'));
+  const file = join(dir, 'mirror.db');
+  const driver = NodeSqliteDriver.file(file);
+  try {
+    await driver.exec(`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+    await driver.run(`INSERT INTO meta (key, value) VALUES ('schema_version', '99')`);
+    const future = new MirrorStore({ driver, keys, random: counterRandom() });
+    await assert.rejects(() => future.open(), /newer than this build/);
+  } finally {
+    driver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/* ------------------------------------------------------------- item hashes -- */
+
+test('item hashes answer "have I seen this?" without storing the identity', async () => {
+  const { s, close } = await makeStore({ allowContent: true });
+  try {
+    await s.appendConsent(grant({ id: 'cns_export_0001', subject: 'export:reddit-export', tier: 'B', scopes: ['reddit-export'] }));
+    const hashes = s.hashItems(['reddit:post:abc123', 'reddit:post:def456']);
+    assert.equal(hashes.length, 2);
+    assert.match(hashes[0], /^[0-9a-f]{64}$/);
+    assert.equal(await s.itemHashes(hashes).then((rows) => rows.length), 0);
+
+    const event = {
+      schema_version: 1,
+      id: 'evt_import_0001',
+      kind: 'import_item',
+      at: iso(0),
+      tier: 'B',
+      origin: 'export',
+      content: 'content',
+      consent: 'export:reddit-export',
+      source_id: 'reddit-export',
+      export_format: 'reddit-export',
+      subject: 'Zone system, part one',
+      item_hash: hashes[0],
+    };
+    const appended = await s.appendEvents([event]);
+    assert.equal(appended.inserted, 1);
+    assert.deepEqual(await s.itemHashes(hashes), [hashes[0]]);
+    assert.deepEqual(await s.itemHashes([]), []);
+    assert.deepEqual(await s.itemHashes(['not-a-hash']), [], 'a malformed hash is ignored, not interpolated');
+  } finally {
+    close();
+  }
+});

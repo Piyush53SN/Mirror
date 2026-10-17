@@ -17,11 +17,40 @@
  */
 import type { MirrorEvent } from '@mirror/shared-types';
 
+/** FNV-1a, 32-bit. Only used to keep two apps with identical bounds apart. */
+function fingerprint(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619) >>> 0;
+  }
+  return hash.toString(36).slice(-4);
+}
+
+/** `ses_` + start/end in base36 + app fingerprint. Always inside `ses_[A-Za-z0-9_-]{6,40}`. */
+export function sessionId(app: string, startMs: number, endMs: number): string {
+  return `ses_${Math.max(0, Math.floor(startMs)).toString(36)}${Math.floor(endMs).toString(36)}_${fingerprint(app)}`;
+}
+
 export type Session = {
+  /**
+   * Deterministic id, `ses_` + base36 bounds + an app fingerprint.
+   *
+   * Sessions are derived, so the id must be derivable: a re-ingest of the same
+   * interval produces the same id, and a merge produces a different one, which is
+   * what lets the store replace rather than accumulate. The shape matches the
+   * `SESSION_ID` the event validator accepts, because an `intent_label` points at
+   * a session by this id.
+   */
+  id: string;
   app: string;
   start: string;
   end: string;
+  startMs: number;
+  endMs: number;
   durationMs: number;
+  /** The foreground/background events that produced this session. */
+  eventIds: string[];
 };
 
 export type SessionizeOptions = {
@@ -47,8 +76,8 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
     .filter((e) => e.kind === 'app_foreground' || e.kind === 'app_background')
     .sort((a, b) => ms(a.at) - ms(b.at) || (a.kind === 'app_foreground' ? -1 : 1));
 
-  const open = new Map<string, { start: number; at: string }>();
-  const intervals: { app: string; start: number; end: number }[] = [];
+  const open = new Map<string, { start: number; at: string; eventId: string }>();
+  const intervals: { app: string; start: number; end: number; eventIds: string[] }[] = [];
   const dropped: SessionizeResult['dropped'] = [];
 
   for (const event of ordered) {
@@ -56,7 +85,7 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
       // A second foreground without a background means the collector missed an
       // event; keep the earlier start (the sitting did not end) and note nothing,
       // because there is no honest reason to invent one.
-      if (!open.has(event.app)) open.set(event.app, { start: ms(event.at), at: event.at });
+      if (!open.has(event.app)) open.set(event.app, { start: ms(event.at), at: event.at, eventId: event.id });
       continue;
     }
     const started = open.get(event.app);
@@ -79,13 +108,13 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
       dropped.push({ reason: 'below_minimum', app: event.app, at: event.at });
       continue;
     }
-    intervals.push({ app: event.app, start: started.start, end });
+    intervals.push({ app: event.app, start: started.start, end, eventIds: [started.eventId, event.id].filter(Boolean) });
   }
 
   for (const [app, started] of open) dropped.push({ reason: 'unclosed', app, at: started.at });
 
   // Merge per app, then order by start.
-  const byApp = new Map<string, { app: string; start: number; end: number }[]>();
+  const byApp = new Map<string, { app: string; start: number; end: number; eventIds: string[] }[]>();
   for (const interval of intervals) {
     const list = byApp.get(interval.app) ?? [];
     list.push(interval);
@@ -99,6 +128,7 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
     for (const next of list.slice(1)) {
       if (next.start - current.end <= mergeGapMs) {
         current.end = Math.max(current.end, next.end);
+        current.eventIds = [...current.eventIds, ...next.eventIds];
       } else {
         sessions.push(toSession(current));
         current = { ...next };
@@ -111,11 +141,17 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
   return { sessions, dropped };
 }
 
-const toSession = (i: { app: string; start: number; end: number }): Session => ({
+const toSession = (i: { app: string; start: number; end: number; eventIds: string[] }): Session => ({
+  id: sessionId(i.app, i.start, i.end),
   app: i.app,
   start: new Date(i.start).toISOString().replace(/\.\d{3}Z$/, 'Z'),
   end: new Date(i.end).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  startMs: i.start,
+  endMs: i.end,
   durationMs: i.end - i.start,
+  // A merge can meet the same event twice only if the OS repeated a row; the
+  // store's assignment path is idempotent either way, but a set keeps it honest.
+  eventIds: [...new Set(i.eventIds)],
 });
 
 /** Sessions shorter than this are the "under 8 seconds" edge the brief names. */

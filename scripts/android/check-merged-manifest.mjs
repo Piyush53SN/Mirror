@@ -69,6 +69,7 @@ export const FORBIDDEN_PERMISSIONS = [
   'android.permission.QUERY_ALL_PACKAGES',
   'android.permission.MANAGE_EXTERNAL_STORAGE',
   'android.permission.READ_EXTERNAL_STORAGE',
+  'android.permission.WRITE_EXTERNAL_STORAGE',
   'android.permission.REQUEST_INSTALL_PACKAGES',
   'com.google.android.gms.permission.AD_ID',
 ];

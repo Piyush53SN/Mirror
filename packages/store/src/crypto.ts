@@ -67,6 +67,40 @@ export function seal(value: unknown, keys: DerivedKeys, keyId: string, random: R
   return out;
 }
 
+/** Seal opaque bytes (a float32 vector) without a JSON round-trip. */
+export function sealBytes(bytes: Uint8Array, keys: DerivedKeys, keyId: string, random: RandomBytes): Uint8Array {
+  const nonce = random(NONCE_BYTES);
+  if (nonce.length !== NONCE_BYTES) throw new Error('nonce must be 24 bytes');
+  const keyIdBytes = utf8ToBytes(keyId);
+  const ciphertext = xchacha20poly1305(keys.encryption, nonce).encrypt(bytes);
+  const out = new Uint8Array(2 + keyIdBytes.length + NONCE_BYTES + ciphertext.length);
+  out[0] = ENVELOPE_VERSION;
+  out[1] = keyIdBytes.length;
+  out.set(keyIdBytes, 2);
+  out.set(nonce, 2 + keyIdBytes.length);
+  out.set(ciphertext, 2 + keyIdBytes.length + NONCE_BYTES);
+  return out;
+}
+
+export function openBytes(envelope: Uint8Array | ArrayBuffer, keys: DerivedKeys, expectedKeyId?: string): Uint8Array {
+  const bytes = envelope instanceof Uint8Array ? envelope : new Uint8Array(envelope);
+  if (bytes.length < 2 + NONCE_BYTES + 16) throw new DecryptionError('envelope is too short');
+  if (bytes[0] !== ENVELOPE_VERSION) throw new DecryptionError(`unsupported envelope version ${bytes[0]}`);
+  const keyIdLength = bytes[1]!;
+  const nonceStart = 2 + keyIdLength;
+  const keyId = new TextDecoder().decode(bytes.subarray(2, nonceStart));
+  if (expectedKeyId !== undefined && keyId !== expectedKeyId) {
+    throw new DecryptionError(`record was sealed with key "${keyId}", current key is "${expectedKeyId}"`);
+  }
+  try {
+    return xchacha20poly1305(keys.encryption, bytes.subarray(nonceStart, nonceStart + NONCE_BYTES)).decrypt(
+      bytes.subarray(nonceStart + NONCE_BYTES),
+    );
+  } catch {
+    throw new DecryptionError('authentication failed: the record has been altered');
+  }
+}
+
 export class DecryptionError extends Error {
   constructor(message: string) {
     super(message);

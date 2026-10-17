@@ -1,0 +1,10 @@
+{
+  "name": "@mirror/ml",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "On-device, network-free embeddings. P1b-2 ships a labelled placeholder; the interface is what a real model will implement.",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "dependencies": { "@mirror/shared-types": "0.0.0" }
+}

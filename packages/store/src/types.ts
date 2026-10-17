@@ -97,6 +97,40 @@ export type ConnectionRow = {
   revoked_at: string | null;
 };
 
+export type CursorState = {
+  /** Where the next collection should start. */
+  at: number | null;
+  /** Intervals seen but not yet closed. Carried across syncs so a session that
+   *  straddles two runs is completed, not lost. */
+  open: { app: string; startMs: number }[];
+};
+
+export type SessionRow = {
+  id: string;
+  app: string;
+  start_ms: number;
+  end_ms: number;
+  duration_ms: number;
+  source: string;
+};
+
+export type GapReason = 'too_long' | 'abandoned_open' | 'orphan_background' | 'invalid_package' | 'os_query_failed';
+
+export type DataGap = {
+  source: string;
+  reason: GapReason;
+  from_ms: number | null;
+  to_ms: number | null;
+  count: number;
+  recorded_at: number;
+};
+
+export type RollupRecord = {
+  day: string;
+  payload: Record<string, unknown>;
+  computed_at: number;
+};
+
 export type ImportRecord = {
   id: string;
   source_id: string;

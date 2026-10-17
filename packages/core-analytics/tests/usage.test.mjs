@@ -58,17 +58,19 @@ test('both Android event-type families are understood', () => {
 
 /* ------------------------------------------------------------------ edges -- */
 
-test('a single event is not a session: an unclosed interval is dropped', () => {
+test('a single event is not a session: it is carried, not written', () => {
   const result = buildUsageEvents([fg('com.a.b', 0)], base);
-  assert.equal(result.events.length, 0);
-  assert.equal(result.dropped[0].reason, 'unclosed');
-  assert.equal(result.stats.unclosed, 1);
+  assert.equal(result.events.length, 0, 'half a session is never written');
+  assert.deepEqual(result.nextOpen, [{ app: 'com.a.b', startMs: at(0) }]);
+  assert.equal(result.stats.carriedOut, 1);
+  assert.equal(result.dropped.length, 0, 'carrying is not dropping');
 });
 
-test('a background with no foreground is an orphan, not a zero-length session', () => {
+test('a background with no foreground is an orphan, and is counted as a gap', () => {
   const result = buildUsageEvents([bg('com.a.b', 5)], base);
   assert.equal(result.events.length, 0);
   assert.equal(result.dropped[0].reason, 'orphan_background');
+  assert.deepEqual(result.gaps, [{ reason: 'orphan_background', count: 1 }]);
 });
 
 test('a zero-length interval is dropped with a reason', () => {
@@ -90,11 +92,12 @@ test('all sessions under 8 seconds are still recorded: the filter is opt-in', ()
   assert.ok(filtered.dropped.every((drop) => drop.reason === 'below_minimum'));
 });
 
-test('an implausible interval is dropped rather than believed', () => {
+test('an implausible interval is dropped AND counted as a gap with its span', () => {
   const wide = { sinceMs: T0, untilMs: T0 + 20 * 3_600_000 };
   const result = buildUsageEvents([fg('com.a.b', 0), bg('com.a.b', 14 * 60)], wide);
   assert.equal(result.events.length, 0);
   assert.equal(result.dropped[0].reason, 'too_long');
+  assert.deepEqual(result.gaps, [{ reason: 'too_long', count: 1, fromMs: at(0), toMs: at(14 * 60) }]);
 });
 
 test('a duplicated foreground keeps the earlier start', () => {
@@ -113,10 +116,11 @@ test('interleaved apps stay separate and are emitted in start order', () => {
   assert.equal(result.stats.totalMs, 4 * 60_000);
 });
 
-test('system UI, launchers and Mirror itself are ignored', () => {
+test('system UI, launchers and Mirror itself are ignored, and produce no gaps', () => {
   const result = buildUsageEvents([fg(DEFAULT_IGNORED_PACKAGES[0], 0), bg(DEFAULT_IGNORED_PACKAGES[0], 1)], base);
   assert.equal(result.events.length, 0);
   assert.ok(result.dropped.every((drop) => drop.reason === 'ignored_package'));
+  assert.deepEqual(result.gaps, [], 'ignoring a launcher is not a data gap');
 });
 
 test('rows outside the requested window and malformed packages are refused', () => {
@@ -214,13 +218,16 @@ const fakeSource = (permission, rows, log = []) => ({
   },
 });
 
-function fakeStore(initial = null) {
-  const state = { cursor: initial, events: [], calls: 0 };
+function fakeStore(initial = { at: null, open: [] }) {
+  const state = { cursor: { ...initial, open: [...initial.open] }, events: [], gaps: [], calls: 0 };
   return {
     state,
-    getCursor: async () => state.cursor,
-    setCursor: async (_source, value) => {
-      state.cursor = value;
+    getCursorState: async () => ({ at: state.cursor.at, open: state.cursor.open.map((entry) => ({ ...entry })) }),
+    setCursorState: async (_source, next) => {
+      state.cursor = { at: next.at, open: next.open.map((entry) => ({ ...entry })) };
+    },
+    recordGaps: async (_source, gaps) => {
+      state.gaps.push(...gaps);
     },
     appendEvents: async (events) => {
       state.calls += 1;
@@ -240,13 +247,58 @@ function fakeStore(initial = null) {
   };
 }
 
+/* ------------------------------------------------- the sync boundary ---- */
+
+test('a session straddling two syncs is written once, whole', async () => {
+  const store = fakeStore();
+  // Sync 1 at 23:59: sees a foreground but no close.
+  const first = [
+    { packageName: 'com.a.one', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(0) }, // 09:00
+  ];
+  const run1 = await collectUsage(fakeSource(true, first), store, { now: at(60) });
+  assert.equal(run1.status, 'collected');
+  assert.equal(run1.inserted, 0, 'a half session is not written');
+  assert.equal(run1.carriedOut, 1);
+  assert.deepEqual(store.state.cursor.open, [{ app: 'com.a.one', startMs: at(0) }]);
+
+  // Sync 2 at 11:00: sees only the close, because the foreground is behind the cursor.
+  const second = [{ packageName: 'com.a.one', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(120) }];
+  const run2 = await collectUsage(fakeSource(true, second), store, { now: at(130) });
+  assert.equal(run2.status, 'collected');
+  assert.equal(run2.carriedIn, 1);
+  assert.equal(run2.inserted, 2, 'the pair is written together in the second run');
+  assert.equal(store.state.cursor.open.length, 0, 'nothing is left open');
+  assert.deepEqual(store.state.events.map((e) => e.kind), ['app_foreground', 'app_background']);
+  assert.equal(store.state.events[1].duration_ms, 120 * 60_000, 'the duration spans both windows');
+  assert.equal(run2.dropped.length, 0, 'the close is not treated as an orphan');
+});
+
+test('a session straddling three syncs is still one session', async () => {
+  const store = fakeStore();
+  const fgRow = { packageName: 'com.a.one', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(0) };
+  await collectUsage(fakeSource(true, [fgRow]), store, { now: at(30) });
+  await collectUsage(fakeSource(true, []), store, { now: at(60) });
+  assert.equal(store.state.cursor.open.length, 1);
+  const run = await collectUsage(fakeSource(true, [{ packageName: 'com.a.one', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(90) }]), store, { now: at(100) });
+  assert.equal(run.inserted, 2);
+  assert.equal(store.state.events[1].duration_ms, 90 * 60_000);
+});
+
+test('an open interval older than the maximum is abandoned and counted, not carried forever', async () => {
+  const store = fakeStore({ at: at(0), open: [{ app: 'com.a.one', startMs: at(-600) }] }); // 10 hours open
+  const run = await collectUsage(fakeSource(true, []), store, { now: at(30) });
+  assert.equal(run.status, 'collected');
+  assert.equal(store.state.cursor.open.length, 0);
+  assert.ok(run.gaps.some((gap) => gap.reason === 'abandoned_open'), JSON.stringify(run.gaps));
+});
+
 test('collector: no permission means no query at all', async () => {
   const log = [];
   const store = fakeStore();
   const result = await collectUsage(fakeSource(false, [], log), store, { now: at(60) });
   assert.deepEqual(result, { status: 'permission-required' });
   assert.equal(log.length, 0);
-  assert.equal(store.state.cursor, null);
+  assert.equal(store.state.cursor.at, null);
 });
 
 test('collector: first run reads one day, writes events and advances the cursor', async () => {
@@ -255,7 +307,7 @@ test('collector: first run reads one day, writes events and advances the cursor'
   const result = await collectUsage(fakeSource(true, rows), store, { now: at(10) });
   assert.equal(result.status, 'collected');
   assert.equal(result.inserted, 2);
-  assert.equal(store.state.cursor, at(10));
+  assert.equal(store.state.cursor.at, at(10));
 });
 
 test('collector: a second run re-reads a small overlap and inserts nothing new', async () => {
@@ -268,8 +320,17 @@ test('collector: a second run re-reads a small overlap and inserts nothing new',
   assert.equal(store.state.events.length, 2);
 });
 
+test('collector: gaps are recorded through the store port', async () => {
+  const store = fakeStore();
+  const rows = [fg('com.a.one', 0), bg('com.a.one', 14 * 60)];
+  const result = await collectUsage(fakeSource(true, rows), store, { now: at(900), maxWindowMs: 24 * 3_600_000 });
+  assert.equal(result.status, 'collected');
+  assert.ok(store.state.gaps.length > 0);
+  assert.equal(store.state.gaps[0].reason, 'too_long');
+});
+
 test('collector: the window is capped, and a stale cursor does not produce an empty window', async () => {
-  const store = fakeStore(0);
+  const store = fakeStore({ at: 0, open: [] });
   const log = [];
   const result = await collectUsage(fakeSource(true, [], log), store, { now: at(60), maxWindowMs: 3_600_000 });
   assert.equal(result.status, 'collected');
@@ -277,7 +338,7 @@ test('collector: the window is capped, and a stale cursor does not produce an em
 });
 
 test('collector: a cursor in the future yields no-window rather than a negative query', async () => {
-  const store = fakeStore(at(600));
+  const store = fakeStore({ at: at(600), open: [] });
   const result = await collectUsage(fakeSource(true, []), store, { now: at(60) });
   assert.equal(result.status, 'no-window');
   assert.equal(store.state.events.length, 0);

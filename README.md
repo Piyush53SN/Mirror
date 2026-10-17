@@ -8,12 +8,14 @@ Raw history (titles, searches, timestamps) never leaves the device in Privacy Mo
 There is no engagement-maximising design in this product, by policy — see
 `docs/design/00-image-analysis.md` §2 for the visual consequences.
 
-> **Build status:** P-UI-0…P-UI-2, **P0** and **P1a are approved**. **P1b-1 is
-> delivered for review:** an encrypted SQLite store, the Android UsageStats
-> collector with its decision layer, a background collection task and a
-> merged-manifest gate. There is still **no app binary beyond a one-screen entry**,
-> and no UI is wired to the store — P1b-2 adds ingestion, importers and embeddings.
-> No build or store step has been run.
+> **Build status:** P-UI-0…P-UI-2, **P0**, **P1a** and **P1b-1 are approved**.
+> **P1b-2 is delivered for review:** cursor-state collection with counted data
+> gaps, schema v2 with a v1→v2 migration, session attribution and daily rollups,
+> Reddit-export and Google Takeout importers, and a labelled placeholder embedder.
+> The first Android prebuild has run, but **the Kotlin module is still
+> uncompiled** — this environment has no JDK or Android SDK, so that step is
+> MANUAL. There is still **no app binary beyond a one-screen entry**, and no UI is
+> wired to the store.
 
 ---
 
@@ -47,13 +49,15 @@ break.
 | artifact | what it is |
 | --- | --- |
 | [`packages/shared-types/`](packages/shared-types) | **the event schema** (`src/event.ts`) with `session_id`, `item_hash`, `topic_vector` and `completion_ratio`, a hand-written validator with field-level errors (`src/validate.ts`), the JSON Schema descriptions, the four-tier model, preferences/flags, and the **`consent_log` / `retention` / `connections`** record schemas |
-| [`packages/core-analytics/`](packages/core-analytics) | sessionisation with explicit drop reasons, phase summaries, and the deterministic synthetic dataset used by every later test |
+| [`packages/core-analytics/`](packages/core-analytics) | sessionisation with explicit drop reasons, ingestion into sessions + daily rollups, the cursor-state collector, and the deterministic synthetic dataset used by every later test |
 | [`packages/connectors/`](packages/connectors) | the OAuth connector registry, its scope allowlist, the refusal list (no official API → no connector), and the extension allowlist |
 | [`scripts/privacy/`](scripts/privacy) | the canary scanner, an end-to-end self-test, a mitmproxy addon, a Playwright runner and the emulator runbook |
 | [`scripts/security/`](scripts/security) | the secret scanner (patterns + entropy, placeholder-aware), the dependency-audit gate and the bundle reachability check |
-| [`packages/store/`](packages/store) | encrypted local storage: migrations, AEAD field encryption, consent enforcement, retention and delete-all |
+| [`packages/store/`](packages/store) | encrypted local storage: migrations (v2), AEAD field encryption, sessions/vectors/gaps/rollups, consent enforcement, retention and delete-all |
+| [`packages/importers/`](packages/importers) | tier-B preview → confirm importers for Reddit's data export and Google Takeout, with HMAC dedupe and import-scoped revocation |
+| [`packages/ml/`](packages/ml) | on-device embeddings — a **labelled placeholder** (384-d hashed n-grams) with the model-id re-embedding path wired into the store |
 | [`scripts/android/`](scripts/android) | the merged-manifest gate and its fixtures |
-| [`docs/P1B.md`](docs/P1B.md) | storage crypto, threat model, collector rules and the manifest gate |
+| [`docs/P1B.md`](docs/P1B.md) | storage crypto, threat model, cursor state, counted gaps, ingestion, importers, the placeholder embedder, the SQLCipher deviation and the manifest gate |
 | [`docs/ANDROID_PERMISSIONS.md`](docs/ANDROID_PERMISSIONS.md) | every Android permission that will ever exist, when it is requested, and why boot sync needs none |
 | [`docs/store/FAMILY_CONTROLS_REQUEST.md`](docs/store/FAMILY_CONTROLS_REQUEST.md) | the ready-to-submit iOS entitlement request text |
 | [`infra/workflows/`](infra/workflows) | CI (`ci.yml`) and the device/extension canary workflow (`privacy-canary.yml`); they live here because the pushing GitHub App cannot write `.github/workflows/` — activation command in that folder |
@@ -101,15 +105,16 @@ reintroduces a conflict, the fix is to resolve the versions — not to add
 
 ```bash
 npm install
-npm run verify            # all checks: 303 Node + 9 Python
+npm run verify            # all checks: 359 Node + 9 Python
 npm run test:privacy      # scanner tests, end-to-end self-test, mitmproxy addon tests
 make privacy-android      # emulator canary — needs adb/emulator/mitmproxy (MANUAL precondition)
 ```
 
-Measured: **303** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
-event schema 23 · records 21 · preferences 22 · sessions 16 · connectors 20 ·
-store 19 · collector 21 · config 17 · merged manifest 12 · canary 18 · security 18)
-and **9** Python addon tests. `npm run verify` is the CI target. The prototype
+Measured: **359** Node tests (tokens 24 · prototype 18 · ui 37 · mockups 17 ·
+event schema 23 · records 21 · preferences 22 · sessions 16 · ingestion 18 ·
+collector 25 · connectors 20 · store 22 · embeddings 12 · importers 19 ·
+config 17 · merged manifest 12 · canary 18 · security 18) and **9** Python addon
+tests. `npm run verify` is the CI target. The prototype
 measurement (`npm run check:prototype`) still needs a browser and exits 2 here;
 CI runs it non-blocking and says so.
 

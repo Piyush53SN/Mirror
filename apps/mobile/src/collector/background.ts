@@ -15,6 +15,7 @@ import * as BackgroundTask from 'expo-background-task';
 import * as TaskManager from 'expo-task-manager';
 import { collectUsage } from '@mirror/core-analytics';
 import { MirrorStore } from '@mirror/store';
+import { ingestRecentDays } from './ingest';
 import { nativeUsageSource } from './usageSource';
 
 export const USAGE_COLLECTION_TASK = 'mirror-usage-collection';
@@ -41,6 +42,13 @@ export function defineUsageTask(): void {
       // A missing permission is not a failure: the person may simply not have
       // granted it, and the OS should not retry with backoff for that.
       if (result.status === 'permission-required') return BackgroundTask.BackgroundTaskResult.Success;
+
+      // Derive sessions and rollups for the days the pass just touched. Both are
+      // idempotent, so a retry rewrites the same rows; a partial day is skipped by
+      // `ingestDay` rather than replacing a complete rollup with a smaller one.
+      // The offset is read here, at pass time, not fixed at registration.
+      const utcOffsetMinutes = -new Date().getTimezoneOffset();
+      await ingestRecentDays(runtime.store, Date.now(), utcOffsetMinutes);
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       // A thrown task is retried with backoff by the platform; that is the right

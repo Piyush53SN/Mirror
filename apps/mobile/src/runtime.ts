@@ -5,21 +5,36 @@
  * Nothing in the UI may construct a `MirrorStore`; it asks this module. That keeps
  * "one store per process" true and makes the key provider swappable in tests.
  *
- * P1b-1 stops here: the runtime opens the encrypted store and exposes a collection
- * pass. Nothing renders it yet — ingestion into screens, importers and embeddings
- * arrive in P1b-2.
+ * The runtime is also the only place the gap summary is assembled for the UI. A
+ * screen must not query `data_gaps` itself: the sentence and the numbers have to
+ * come from the same call, or a zero can disagree with the words beside it.
  */
 import * as SQLite from 'expo-sqlite';
 import { MirrorStore } from '@mirror/store';
-import { collectUsage } from '@mirror/core-analytics';
+import { collectUsage, describeGapSummary } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
+import { ingestDay, ingestRecentDays } from './collector/ingest';
 import { nativeUsageSource } from './collector/usageSource';
+
+export type DataQuality = {
+  count: number;
+  byReason: Record<string, number>;
+  measuredGapMs: number;
+  /** The sentence to render. Always produced with the numbers, never separately. */
+  sentence: string;
+};
 
 export type MirrorRuntime = {
   store: MirrorStore;
   collectNow(now?: number): ReturnType<typeof collectUsage>;
   usage(): ReturnType<typeof nativeUsageSource>;
+  /** Attribute sessions and write a complete local day's rollup. */
+  ingestDay(day: string, utcOffsetMinutes?: number): ReturnType<typeof ingestDay>;
+  /** Recompute the last two complete local days (idempotent). */
+  ingestRecent(now?: number): ReturnType<typeof ingestRecentDays>;
+  /** What Mirror could not measure, in words and numbers. */
+  dataQuality(range?: { fromMs?: number; toMs?: number }): Promise<DataQuality>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -38,10 +53,18 @@ export async function createRuntime(options: { allowContent?: boolean; retention
   await store.open();
 
   const usage = nativeUsageSource();
+  const offsetNow = () => -new Date().getTimezoneOffset();
+
   singleton = {
     store,
     usage: () => usage,
     collectNow: (now = Date.now()) => collectUsage(usage, store, { now }),
+    ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
+    ingestRecent: (now = Date.now()) => ingestRecentDays(store, now, offsetNow()),
+    dataQuality: async (range = {}) => {
+      const summary = await store.gapSummary(range);
+      return { ...summary, sentence: describeGapSummary(summary) };
+    },
   };
   return singleton;
 }

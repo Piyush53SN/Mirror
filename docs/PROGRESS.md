@@ -16,8 +16,8 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P-UI-2 | **approved with corrections** | React Native design system (`packages/ui/src`), all 28 Section J items (`packages/ui/screens`), mockup gallery (`packages/ui/mockups/gallery`), **96** tests. Corrections from review applied — see below |
 | P0 | **approved** | monorepo scaffold, CI, EAS profiles, event + preference schemas, connector registry, synthetic data + sessionisation, privacy-canary harness, store-readiness draft |
 | P1a | **approved** | React 19 / RN 0.88 migration of `packages/ui`, lint coverage for the design system, `--legacy-peer-deps` removed, Metro bundle check. No new features |
-| P1b-1 | **delivered for review** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI |
-| P1b-2 | not started | ingestion (session attribution), importers, embeddings |
+| P1b-1 | **approved** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI — commit `2753206` |
+| P1b-2 | **delivered for review** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL |
 | P2…P7 | not started | — |
 
 ---
@@ -148,8 +148,9 @@ and `uuid`; the bundle check proves none of them ships. See the P1a section.
    dry-run preview of what would be imported, dedupe against existing hashes,
    revoke deletes exactly what the import produced.
 8. **P1b — embeddings.** `packages/ml`: an on-device, network-free embedder
-   (versioned model id) producing 32-d unit vectors, with a golden-vector test and
-   a cold-start budget.
+   (versioned model id) producing **384-d** unit vectors, with a golden-vector test
+   and a cold-start budget. *P1b-2 ships a labelled placeholder; the plan's earlier
+   "32-d" was superseded by the spec's 384 before P1b started.*
 9. **P1b — tests and budgets.** Property tests for store invariants and retention,
    import edge cases (empty, huge, malformed), canary run on an emulator with the
    real store, and measured cold start / battery notes.
@@ -273,6 +274,94 @@ This section covers P1b-1 only.
   device or a compromised OS while the app is installed — the app must be able to
   read its own data. Stated in `docs/P1B.md` rather than implied away.
 - **iOS has no collector** until P5 (DeviceActivity + Family Controls entitlement).
+
+
+### P1b-2 delivered (2026-10-17)
+
+**Approved P1b-1 remains commit `2753206`.** This delivery is the second half of
+P1b: the collector's sync boundary, counted gaps, schema v2, ingestion, the two
+importers, the placeholder embedder and the first Android prebuild.
+
+**The three questions from the approval, answered in code and in `docs/P1B.md`:**
+
+1. **Cursor state, not a timestamp** (§7). `cursor_state:usage_stats` holds
+   `{at, open:[{app,startMs}]}`. An interval without a close is carried to the next
+   pass, which closes it and writes the foreground/background pair together with
+   the full span — so a session straddling two syncs is written once, whole. The
+   cursor advances only after a successful append; deterministic ids make the
+   overlap a no-op. Tested for two-sync and three-sync straddles, and for an open
+   interval abandoned after 6 h.
+2. **Gaps are rows, not silent drops** (§8). `data_gaps(source, reason, from_ms,
+   to_ms, count, recorded_at)`; reasons `too_long`, `abandoned_open`,
+   `orphan_background`, `invalid_package` (`os_query_failed` reserved). `too_long`
+   keeps its span, so hidden time is measurable. `gapSummary()` and
+   `describeGapSummary()` expose it; P2 will read it so a day with a six-hour gap
+   never scores as a quiet day. Ignored launchers produce no gap because nothing
+   was missed.
+3. **SQLCipher vs expo-sqlite, recorded as a deviation** (§12). The implementation
+   is `expo-sqlite` + per-record XChaCha20-Poly1305. SQLCipher needs a native fork
+   (prebuilt `.so` or a custom dev client) and offers page-level rather than
+   record-level tamper detection, no key-id rotation per record, and no
+   field-level control. `docs/SPEC.md` line 94 only says "encrypted local storage",
+   so the written spec is met; the **assumption that SQLCipher would be used is
+   not**, and §12 lists what stays unencrypted — metadata columns, HMAC item
+   hashes, model ids, gap spans, rollup day keys, and the SQLite file's structure,
+   freelist, WAL framing, row counts and timing.
+
+**What shipped:**
+
+- **`packages/core-analytics/src/usage.ts`** — rewritten around cursor state, with
+  `nextOpen`, counted `gaps`, `dropped` reasons and a 2-day maximum window.
+- **`packages/core-analytics/src/ingest.ts`** — pure session attribution + daily
+  rollups. Deterministic `ses_…` ids, explicit `null` assignments for events that
+  lose a session, local-day buckets from an explicit UTC offset, midnight split by
+  duration, `partialDays` never guessed at, and a rollup shape with no free-text
+  field at all.
+- **`packages/core-analytics/src/sessionize.ts`** — sessions now carry `id`,
+  `startMs`/`endMs` and the `eventIds` that produced them.
+- **`packages/store`** — schema **v2** (sessions, vectors, gaps, rollups), a
+  v1→v2 migration test on a real v1 file, `itemHashes()` for import dedupe,
+  `applySessions()` (delete/insert/reassign in one transaction), sealed rollups,
+  `gapSummary()`, cursor-state carry-over with a legacy `cursor:` fallback.
+- **`packages/importers`** — RFC-4180 CSV parser, **Reddit's own data export**
+  (`saved_posts.csv` + `saved_comments.csv`; `posts.csv` / `comments.csv` and the
+  GDPR chat archive are deliberately not read), Google Takeout `watch-history.json`,
+  read-only preview, HMAC dedupe, `export:<importer>` consent, and an end-to-end
+  test proving revocation deletes exactly the imported events from the real
+  encrypted store.
+- **`packages/ml`** — `placeholder-ngram-v1`, 384-d, labelled
+  `placeholder: true`, with the re-embedding path through
+  `store.reembedCandidates(model)` → `writeVectors()`.
+- **`apps/mobile/src/collector/ingest.ts`** — day ingestion boundary; background
+  work now collects **and** ingests the last two local days after every pass.
+- **`packages/core-analytics/src/ingest.ts#describeGapSummary`** — the sentence the
+  Privacy Centre will render; the screen row itself is P2 UI.
+
+**Android prebuild:** ran `npx expo prebuild --platform android --no-install
+--clean`; exit 0; `apps/mobile/android/` is now committed. The generated manifest
+keeps `PACKAGE_USAGE_STATS` and carries **14 `tools:node="remove"`** lines.
+`edgeToEdgeEnabled` was removed from `app.json` and `expo-system-ui` added, so the
+two prebuild warnings are fixed rather than suppressed.
+
+**Kotlin compile is MANUAL, not done.** This environment has no JDK and no Android
+SDK (`java`, `kotlinc`, `/usr/lib/jvm` all absent), so `./gradlew` cannot run.
+Prebuild is not a compile. The exact device/CI commands are in `docs/P1B.md` §14.
+
+**Tests:** 359 Node + 9 Python (was 303 + 9). New: ingestion 18, importers 19,
+embeddings 12, store +3 (migration, future-version refusal, item hashes), and the
+rewritten collector suite at 25 (+4). `npm run verify` green; `npm run mockups` leaves `git status`
+clean; the bundle check is run last and its numbers are in the report.
+
+**P1b-2 limitations, recorded:**
+
+- No UI reads rolls or gaps yet; no import screen. Both are P2.
+- The embedder is a placeholder and has no semantic understanding.
+- Import parsing is per-file in memory with a 64 M character guard; there is no
+  ZIP reader and no streaming parser.
+- The Kotlin module is still uncompiled, so the merged-manifest gate still exits 2
+  until a real Gradle build exists.
+- Android-only collection; iOS DeviceActivity is P5.
+
 
 
 ## Approved decisions
