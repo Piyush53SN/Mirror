@@ -36,7 +36,7 @@ jobs:
           cache: npm
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -70,29 +70,84 @@ jobs:
 
       - name: Expo prebuild (android)
         run: |
+          set -e
           cd apps/mobile
           npx expo prebuild --platform android --clean --non-interactive
           ls -la android/gradlew
           chmod +x android/gradlew
           ./android/gradlew --version
+          cd ../..
+          echo "Prebuild done, PWD=$(pwd)"
 
       - name: Build debug + gate (make android-build)
         run: |
+          set -e
+          echo "=== Build debug + gate ==="
+          echo "GITHUB_WORKSPACE=${{ github.workspace }}"
+          echo "PWD start=$(pwd)"
           make android-build
-          ls -lh apps/mobile/android/app/build/outputs/apk/debug/ || true
-          ls -lh .reports/ || true
-          cp .reports/merged-manifest.json .reports/merged-manifest-debug.json || true
+          echo "--- after make android-build, PWD=$(pwd) ---"
+          echo "Listing APK outputs:"
+          ls -R apps/mobile/android/app/build/outputs/apk/ || echo "no apk folder yet"
+          find apps/mobile/android/app/build -name "*.apk" -type f -exec ls -lh {} \; || echo "find apk: none"
+          echo "--- .reports at workspace root ---"
+          ls -lh "${{ github.workspace }}/.reports/" || echo ".reports missing at root"
+          cat "${{ github.workspace }}/.reports/merged-manifest.json" | head -n 30 || echo "no merged-manifest.json"
+          echo "--- copying debug report ---"
+          cp "${{ github.workspace }}/.reports/merged-manifest.json" "${{ github.workspace }}/.reports/merged-manifest-debug.json"
+          ls -lh "${{ github.workspace }}/.reports/"
+          echo "--- merged manifest debug path from gate log above should be: apps/mobile/android/app/build/intermediates/merged_manifests/debug/AndroidManifest.xml ---"
 
       - name: Build release manifest (unsigned) + gate release variant
         run: |
-          cd apps/mobile/android
+          set -e
+          echo "=== Build release manifest + gate ==="
+          echo "PWD start=$(pwd)"
+          echo "Step 1: processReleaseMainManifest"
+          cd "${{ github.workspace }}/apps/mobile/android"
           ./gradlew :app:processReleaseMainManifest --no-daemon
-          cd ../..
+          echo "After processReleaseMainManifest, listing merged_manifests:"
+          find app/build/intermediates -name "AndroidManifest.xml" | grep -i merged | head -n 20
+          ls -lh app/build/intermediates/merged_manifests/ || true
+          ls -lh app/build/intermediates/merged_manifests/release/ || true
+          cd "${{ github.workspace }}"
+          echo "PWD after cd back to workspace: $(pwd)"
+          echo "Step 2: gate release variant (must fail loudly if forbidden perms)"
           npm run android:manifest -- --variant release
-          ls -lh .reports/ || true
-          cp .reports/merged-manifest.json .reports/merged-manifest-release.json || true
-          cd android && ./gradlew :app:assembleRelease --no-daemon || echo "assembleRelease failed (expected without signing), but manifest gate passed"
-          cd ..
+          echo "--- gate log above must show manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml ---"
+          echo "Step 3: verify .reports and copy"
+          ls -lh "${{ github.workspace }}/.reports/"
+          cp "${{ github.workspace }}/.reports/merged-manifest.json" "${{ github.workspace }}/.reports/merged-manifest-release.json"
+          echo "After copy:"
+          ls -lh "${{ github.workspace }}/.reports/"
+          echo "--- release gate JSONs ---"
+          cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 40 || echo "no release json"
+          echo "Step 4: try assembleRelease (unsigned, may fail without signing config, but gate already passed)"
+          cd "${{ github.workspace }}/apps/mobile/android"
+          if ./gradlew :app:assembleRelease --no-daemon; then
+            echo "assembleRelease succeeded (using debug keystore)"
+            find app/build/outputs -name "*.apk" -o -name "*.aab" | xargs ls -lh || true
+          else
+            echo "::warning::assembleRelease failed (expected if no signing config), but release manifest gate passed - this is not a gate failure"
+            echo "Listing any release outputs that may exist:"
+            find app/build/outputs -type f | head -n 20 || true
+          fi
+          cd "${{ github.workspace }}"
+
+      - name: Debug artifact paths before upload
+        if: always()
+        run: |
+          echo "=== Final artifact debug ==="
+          echo "PWD=$(pwd)"
+          echo "Workspace=${{ github.workspace }}"
+          echo "--- find APKs ---"
+          find "${{ github.workspace }}" -type f -name "*.apk" | head -n 20
+          echo "--- find AABs ---"
+          find "${{ github.workspace }}" -type f -name "*.aab" | head -n 20
+          echo "--- .reports ---"
+          ls -R "${{ github.workspace }}/.reports/" || echo "no .reports"
+          echo "--- apps/mobile/android/app/build/outputs/apk/debug ---"
+          ls -lh "${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/debug/" || echo "no debug apk folder"
 
       - name: Upload APKs (debug + release if any)
         if: always()
@@ -100,11 +155,13 @@ jobs:
         with:
           name: mirror-apks
           path: |
-            apps/mobile/android/app/build/outputs/apk/debug/*.apk
-            apps/mobile/android/app/build/outputs/apk/release/*.apk
-            apps/mobile/android/app/build/outputs/apk/**/*.apk
-            apps/mobile/android/app/build/outputs/bundle/**/*.aab
-          if-no-files-found: warn
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/debug/*.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/*.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/**/*.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/bundle/**/*.aab
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/**/*.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/**/*.aab
+          if-no-files-found: error
 
       - name: Upload merged-manifest reports (debug + release)
         if: always()
@@ -112,11 +169,11 @@ jobs:
         with:
           name: merged-manifest-reports
           path: |
-            .reports/merged-manifest-debug.json
-            .reports/merged-manifest-release.json
-            .reports/merged-manifest.json
-            .reports/
-          if-no-files-found: warn
+            ${{ github.workspace }}/.reports/merged-manifest-debug.json
+            ${{ github.workspace }}/.reports/merged-manifest-release.json
+            ${{ github.workspace }}/.reports/merged-manifest.json
+            ${{ github.workspace }}/.reports/
+          if-no-files-found: error
 
   release-preflight:
     name: Release Stage-1 preflight (no signing)
@@ -138,11 +195,14 @@ jobs:
       - name: Run release Stage-1 preflight (no signing)
         run: |
           make release-stage1
+          echo "--- preflight .reports ---"
+          ls -lh .reports/ || true
 
       - name: Upload preflight log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-stage1-preflight
-          path: .reports/
+          path: |
+            ${{ github.workspace }}/.reports/
           if-no-files-found: warn
