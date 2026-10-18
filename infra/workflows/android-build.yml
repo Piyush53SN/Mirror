@@ -104,23 +104,24 @@ jobs:
           set -eo pipefail
           echo "=== Build release manifest + gate ==="
           echo "PWD start=$(pwd)"
-          echo "Step 1: processReleaseMainManifest"
+          echo "Step 1: processReleaseManifest (full merge, NOT processReleaseMainManifest which is partial)"
           cd "${{ github.workspace }}/apps/mobile/android"
-          ./gradlew :app:processReleaseMainManifest --no-daemon
-          echo "After processReleaseMainManifest, listing merged_manifests:"
-          find app/build/intermediates -name "AndroidManifest.xml" | grep -i merged | head -n 20
-          ls -lh app/build/intermediates/merged_manifests/
-          ls -lh app/build/intermediates/merged_manifests/release/
+          ./gradlew :app:processReleaseManifest --no-daemon
+          echo "After processReleaseManifest, listing merged manifests (find-based, not strict ls):"
+          find app/build/intermediates -type f -name "AndroidManifest.xml" | grep -i merged | sort | head -n 40
+          echo "--- listing merged_manifests folder if exists ---"
+          find app/build/intermediates/merged_manifests -type f 2>/dev/null | sort | head -n 40 || echo "merged_manifests not found, checking merged_manifest"
+          find app/build/intermediates/merged_manifest -type f 2>/dev/null | sort | head -n 40 || echo "merged_manifest not found"
           cd "${{ github.workspace }}"
           echo "PWD after cd back to workspace: $(pwd)"
-          echo "Step 2: gate release variant (must fail loudly) with --json and tee"
+          echo "Step 2: gate release variant (must read FINAL merged release manifest at merged_manifests/release/... not partial MainManifest)"
           mkdir -p "${{ github.workspace }}/.reports"
           npm run android:manifest -- --variant release --json "${{ github.workspace }}/.reports/merged-manifest-release.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-release.txt"
-          echo "--- gate log above must show manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml ---"
+          echo "--- gate log above must show FINAL manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml (not .../processReleaseMainManifest/...) ---"
           echo "Step 3: verify .reports"
           ls -lh "${{ github.workspace }}/.reports/"
-          cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 40
-          cat "${{ github.workspace }}/.reports/merged-manifest-release.txt" | head -n 40
+          cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 60
+          cat "${{ github.workspace }}/.reports/merged-manifest-release.txt" | head -n 60
           echo "Step 4: try assembleRelease (unsigned, may fail without signing config, but gate already passed)"
           cd "${{ github.workspace }}/apps/mobile/android"
           if ./gradlew :app:assembleRelease --no-daemon; then
