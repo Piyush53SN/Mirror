@@ -24,7 +24,11 @@ Root cause: R8 minification stripped Room's generated `WorkDatabase_Impl` (used 
 -keep class expo.modules.backgroundtask.** { *; }
 ```
 
-Also added CI smoke test that installs APK on emulator and checks logcat for `WorkDatabase` crash.
+Kotlin package confirmed: `dev.mirror.usagestats` (from `UsageStatsModule.kt`) matches keep rule `dev.mirror.usagestats.**`.
+
+> **Note:** Current keep rules are broad (`androidx.work.**`, `expo.modules.**`) to unblock phone testing. **Must be narrowed before store build** — replace with specific keeps like `* extends Worker`, `* extends RoomDatabase`, `@Entity`, `@Dao`, etc., to allow R8 shrinking.
+
+Also added CI smoke test that installs APK on emulator and checks logcat for `WorkDatabase` crash (now fails fast if `pidof` empty or `FATAL EXCEPTION` mentions `dev.mirror.app`).
 
 **Quick diagnostic option:** Disabling minification for test build (`android.enableMinifyInReleaseBuilds=false` via `expo-build-properties`) is acceptable for `mirror-test.apk`. Cost: APK ~10-20 MB larger, no obfuscation, slightly slower startup, but bypasses R8 and confirms crash is R8-related. For production AAB, keep minify enabled with proper keep rules.
 
