@@ -249,11 +249,29 @@ jobs:
             adb devices
             echo "--- installing $APK ---"
             adb install -r "$APK"
-            echo "--- launching app ---"
-            adb shell am start -n dev.mirror.app/.MainActivity || adb shell am start -n dev.mirror.app/dev.mirror.app.MainActivity || true
+            echo "--- checking package installed ---"
+            adb shell pm list packages | grep dev.mirror.app
+            echo "--- launching app (must not be masked) ---"
+            if adb shell am start -n dev.mirror.app/.MainActivity; then
+              echo "Launch via .MainActivity succeeded"
+            else
+              echo "First launch failed, trying fully qualified"
+              adb shell am start -n dev.mirror.app/dev.mirror.app.MainActivity
+            fi
+            echo "--- waiting for app to start ---"
             sleep 10
             echo "--- logcat (check for WorkDatabase crash) ---"
-            adb logcat -d | grep -i -E "mirror|WorkDatabase|InitializationProvider|AndroidRuntime|FATAL" | head -n 100 || true
+            adb logcat -d | grep -i -E "mirror|WorkDatabase|InitializationProvider|AndroidRuntime|FATAL" | head -n 200 || true
+            echo "--- checking if process is alive (fail if pidof empty) ---"
+            PID=$(adb shell pidof dev.mirror.app || true)
+            echo "pidof dev.mirror.app: $PID"
+            if [ -z "$PID" ]; then
+              echo "::error::pidof dev.mirror.app is empty after 10s wait - app crashed or did not start"
+              echo "--- full logcat tail ---"
+              adb logcat -d | tail -n 300
+              exit 1
+            fi
+            echo "Process alive with PID $PID"
             echo "--- checking for crash in logcat ---"
             if adb logcat -d | grep -i "Failed to create an instance of class androidx.work.impl.WorkDatabase" ; then
               echo "::error::Found WorkDatabase crash - R8 keep rules missing"
@@ -263,7 +281,16 @@ jobs:
               echo "::error::Found InitializationProvider crash - WorkManager init failed"
               exit 1
             fi
-            echo "Smoke test passed - no WorkManager crash detected"
+            if adb logcat -d | grep -i "FATAL EXCEPTION" | grep -i "dev.mirror.app"; then
+              echo "::error::Found FATAL EXCEPTION mentioning dev.mirror.app"
+              adb logcat -d | grep -i -A 20 "FATAL EXCEPTION"
+              exit 1
+            fi
+            if adb logcat -d | grep -E "AndroidRuntime.*dev.mirror.app" | grep -i "FATAL"; then
+              echo "::error::Found AndroidRuntime FATAL for dev.mirror.app"
+              exit 1
+            fi
+            echo "Smoke test passed - no WorkManager crash, pid alive, no FATAL EXCEPTION for dev.mirror.app"
 
   release-preflight:
     name: Release Stage-1 preflight (no signing)
