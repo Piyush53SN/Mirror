@@ -204,6 +204,73 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
 
+  android-smoke-test:
+    name: Smoke test release APK on emulator
+    needs: android-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download mirror-test APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mirror-apks
+          path: ${{ github.workspace }}/smoke-apks
+
+      - name: Find APK
+        run: |
+          set -eo pipefail
+          echo "--- downloaded APKs ---"
+          find "${{ github.workspace }}/smoke-apks" -type f -name "*.apk" | head -n 20
+          ls -lh "${{ github.workspace }}/smoke-apks/" || true
+          # Prefer mirror-test.apk, fallback to app-release.apk
+          APK=$(find "${{ github.workspace }}/smoke-apks" -name "mirror-test.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            APK=$(find "${{ github.workspace }}/smoke-apks" -name "app-release.apk" | head -n 1)
+          fi
+          if [ -z "$APK" ]; then
+            APK=$(find "${{ github.workspace }}/smoke-apks" -name "*.apk" | head -n 1)
+          fi
+          echo "Using APK: $APK"
+          echo "APK=$APK" >> $GITHUB_ENV
+          ls -lh "$APK"
+
+      - name: Run emulator and smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 8192M
+          script: |
+            set -eo pipefail
+            echo "--- emulator started ---"
+            adb devices
+            echo "--- installing $APK ---"
+            adb install -r "$APK"
+            echo "--- granting usage access permission (cannot auto-grant special access, but app should launch without WorkManager crash) ---"
+            adb shell pm list packages | grep mirror || true
+            echo "--- launching app ---"
+            adb shell am start -n dev.mirror.app/.MainActivity || adb shell am start -n dev.mirror.app/dev.mirror.app.MainActivity || true
+            sleep 10
+            echo "--- logcat (check for WorkDatabase crash) ---"
+            adb logcat -d | grep -i -E "mirror|WorkDatabase|InitializationProvider|AndroidRuntime|FATAL" | head -n 100 || true
+            echo "--- checking if process is alive ---"
+            adb shell pidof dev.mirror.app || echo "pidof failed, checking ps"
+            adb shell ps | grep mirror || true
+            echo "--- checking for crash in logcat ---"
+            if adb logcat -d | grep -i "Failed to create an instance of class androidx.work.impl.WorkDatabase" ; then
+              echo "::error::Found WorkDatabase crash - R8 keep rules missing"
+              exit 1
+            fi
+            if adb logcat -d | grep -i "Unable to get provider androidx.startup.InitializationProvider" ; then
+              echo "::error::Found InitializationProvider crash - WorkManager init failed"
+              exit 1
+            fi
+            echo "Smoke test passed - no WorkManager crash detected"
+
   release-preflight:
     name: Release Stage-1 preflight (no signing)
     if: github.event_name == 'workflow_dispatch'

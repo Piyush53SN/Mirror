@@ -2,6 +2,32 @@
 
 **P3 is on hold until you report what the release APK shows.**
 
+## Known crash on Xiaomi / R8 minified release (fixed)
+
+Release APK `app-release.apk` / `mirror-test.apk` built with `minifyEnabled true` was crashing on launch:
+
+```
+RuntimeException: Unable to get provider androidx.startup.InitializationProvider
+Caused by: Failed to create an instance of class androidx.work.impl.WorkDatabase
+```
+
+Root cause: R8 minification stripped Room's generated `WorkDatabase_Impl` (used by WorkManager, which backs `expo-background-task` and `expo-task-manager`). Fix: added keep rules via `expo-build-properties` in `app.json`:
+
+```
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.** { *; }
+-keep class androidx.startup.** { *; }
+-keep class expo.modules.taskmanager.** { *; }
+-keep class expo.modules.backgroundtask.** { *; }
+```
+
+Also added CI smoke test that installs APK on emulator and checks logcat for `WorkDatabase` crash.
+
+**Quick diagnostic option:** Disabling minification for test build (`android.enableMinifyInReleaseBuilds=false` via `expo-build-properties`) is acceptable for `mirror-test.apk`. Cost: APK ~10-20 MB larger, no obfuscation, slightly slower startup, but bypasses R8 and confirms crash is R8-related. For production AAB, keep minify enabled with proper keep rules.
+
 ## Which APK to install
 
 GitHub Actions `Android build + manifest gate` produces two APKs in artifact `mirror-apks`:

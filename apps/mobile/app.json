@@ -50,7 +50,17 @@
     },
     "plugins": [
       "expo-system-ui",
-      "./plugins/remove-forbidden-permissions"
+      "./plugins/remove-forbidden-permissions",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableMinifyInReleaseBuilds": true,
+            "enableProguardInReleaseBuilds": true,
+            "extraProguardRules": "# Keep Room database implementations - WorkManager uses Room\n-keep class * extends androidx.room.RoomDatabase\n-keep @androidx.room.Entity class *\n-keep @androidx.room.Dao class *\n-keep class androidx.room.RoomDatabase { *; }\n-dontwarn androidx.room.paging.**\n\n# WorkManager - keep WorkDatabase and its Impl (R8 was stripping WorkDatabase_Impl causing Failed to create instance)\n-keep class * extends androidx.work.Worker\n-keep class * extends androidx.work.ListenableWorker\n-keep class * extends androidx.work.InputMerger\n-keep class androidx.work.impl.WorkDatabase_Impl { *; }\n-keep class androidx.work.impl.WorkDatabase { *; }\n-keep class androidx.work.impl.* { *; }\n-keep class androidx.work.** { *; }\n\n# Startup initializer (InitializationProvider)\n-keep class androidx.startup.** { *; }\n\n# Expo TaskManager and BackgroundTask - keep their WorkManager workers\n-keep class expo.modules.taskmanager.** { *; }\n-keep class expo.modules.backgroundtask.** { *; }\n-keep class expo.modules.taskManager.** { *; }\n-keep class expo.modules.backgroundTask.** { *; }\n-keep class expo.modules.backgroundtask.workmanager.** { *; }\n\n# Expo modules core\n-keep class expo.modules.** { *; }\n\n# Keep Mirror native module\n-keep class dev.mirror.usagestats.** { *; }\n"
+          }
+        }
+      ]
     ]
   }
 }
