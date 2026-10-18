@@ -87,8 +87,8 @@ jobs:
           echo "PWD start=$(pwd)"
           make android-build
           echo "--- after make android-build, PWD=$(pwd) ---"
-          ls -lh "${{ github.workspace }}/.reports/" || echo ".reports missing at root after make"
-          echo "--- Running debug gate with --json and tee ---"
+          ls -lh "${{ github.workspace }}/.reports/"
+          echo "--- Running debug gate with --json and tee (fail loudly) ---"
           mkdir -p "${{ github.workspace }}/.reports"
           npm run android:manifest -- --variant debug --json "${{ github.workspace }}/.reports/merged-manifest-debug.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-debug.txt"
           echo "--- debug gate outputs ---"
@@ -97,7 +97,7 @@ jobs:
           cat "${{ github.workspace }}/.reports/merged-manifest-debug.txt" | head -n 30
           echo "--- APKs ---"
           find "${{ github.workspace }}/apps/mobile/android/app/build" -name "*.apk" -type f -exec ls -lh {} \;
-          echo "--- merged manifest debug path from gate log above should be: apps/mobile/android/app/build/intermediates/merged_manifests/debug/AndroidManifest.xml ---"
+          echo "--- merged manifest debug path should be: apps/mobile/android/app/build/intermediates/merged_manifests/debug/AndroidManifest.xml ---"
 
       - name: Build release manifest (unsigned) + gate release variant
         run: |
@@ -109,11 +109,11 @@ jobs:
           ./gradlew :app:processReleaseMainManifest --no-daemon
           echo "After processReleaseMainManifest, listing merged_manifests:"
           find app/build/intermediates -name "AndroidManifest.xml" | grep -i merged | head -n 20
-          ls -lh app/build/intermediates/merged_manifests/ || true
-          ls -lh app/build/intermediates/merged_manifests/release/ || true
+          ls -lh app/build/intermediates/merged_manifests/
+          ls -lh app/build/intermediates/merged_manifests/release/
           cd "${{ github.workspace }}"
           echo "PWD after cd back to workspace: $(pwd)"
-          echo "Step 2: gate release variant (must fail loudly if forbidden perms) with --json and tee"
+          echo "Step 2: gate release variant (must fail loudly) with --json and tee"
           mkdir -p "${{ github.workspace }}/.reports"
           npm run android:manifest -- --variant release --json "${{ github.workspace }}/.reports/merged-manifest-release.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-release.txt"
           echo "--- gate log above must show manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml ---"
@@ -175,6 +175,7 @@ jobs:
             ${{ github.workspace }}/.reports/merged-manifest.json
             ${{ github.workspace }}/.reports/
           if-no-files-found: error
+          include-hidden-files: true
 
   release-preflight:
     name: Release Stage-1 preflight (no signing)
@@ -207,3 +208,4 @@ jobs:
           path: |
             ${{ github.workspace }}/.reports/
           if-no-files-found: warn
+          include-hidden-files: true
