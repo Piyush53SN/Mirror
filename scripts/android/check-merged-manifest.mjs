@@ -146,21 +146,63 @@ export function findMergedManifest({ root = ROOT, variant = null } = {}) {
   const candidates = [
     join(root, 'apps/mobile/android/app/build/intermediates/merged_manifests'),
     join(root, 'apps/mobile/android/app/build/intermediates/merged_manifest'),
+    join(root, 'apps/mobile/android/app/build/intermediates'),
   ];
-  for (const base of candidates) {
-    if (!existsSync(base)) continue;
-    for (const entry of readdirSync(base)) {
-      if (variant && entry !== variant && !entry.startsWith(`${variant}/`)) continue;
-      const file = join(base, entry, 'AndroidManifest.xml');
-      if (existsSync(file)) return file;
-      const nested = join(base, entry);
-      if (existsSync(nested) && !entry.endsWith('.xml')) {
-        for (const inner of readdirSync(nested)) {
-          const deeper = join(nested, inner, 'AndroidManifest.xml');
-          if (existsSync(deeper)) return deeper;
+  function searchDir(dir, depth = 0) {
+    if (depth > 4) return null;
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const e of entries) {
+      const full = join(dir, e.name);
+      if (e.isFile() && e.name === 'AndroidManifest.xml') {
+        if (variant) {
+          if (full.includes(`/${variant}/`) || dir.endsWith(variant) || dir.includes(`/${variant}`) || full.includes(variant)) {
+            return full;
+          }
+        } else {
+          return full;
         }
       }
+      if (e.isDirectory()) {
+        if (variant && depth === 0 && e.name !== variant && !e.name.startsWith(variant) && !e.name.includes(variant) && e.name !== 'merged_manifests' && e.name !== 'merged_manifest') {
+          if (dir.endsWith('merged_manifests') || dir.endsWith('merged_manifest')) {
+            if (e.name !== variant && !e.name.startsWith(variant)) continue;
+          }
+        }
+        const found = searchDir(full, depth + 1);
+        if (found) return found;
+      }
     }
+    return null;
+  }
+  for (const base of candidates) {
+    if (!existsSync(base)) continue;
+    if (variant) {
+      const direct = join(base, variant, 'AndroidManifest.xml');
+      if (existsSync(direct)) return direct;
+      try {
+        for (const entry of readdirSync(base)) {
+          if (entry !== variant && !entry.startsWith(`${variant}/`)) continue;
+          const file = join(base, entry, 'AndroidManifest.xml');
+          if (existsSync(file)) return file;
+          const nested = join(base, entry);
+          if (existsSync(nested)) {
+            try {
+              for (const inner of readdirSync(nested)) {
+                const deeper = join(nested, inner, 'AndroidManifest.xml');
+                if (existsSync(deeper)) return deeper;
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    const recursive = searchDir(base);
+    if (recursive) return recursive;
   }
   return null;
 }
