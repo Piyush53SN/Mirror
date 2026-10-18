@@ -122,17 +122,36 @@ jobs:
           ls -lh "${{ github.workspace }}/.reports/"
           cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 60
           cat "${{ github.workspace }}/.reports/merged-manifest-release.txt" | head -n 60
-          echo "Step 4: try assembleRelease (unsigned, may fail without signing config, but gate already passed)"
+
+      - name: Build phone-testable APK (mirror-test.apk, debug-signed, not for stores)
+        run: |
+          set -eo pipefail
+          echo "=== Build phone-testable APK ==="
+          echo "Debug APK (app-debug.apk) from assembleDebug needs Metro bundler and shows 'Unable to load script' on phone."
+          echo "For phone testing we need a self-contained release APK signed with debug keystore."
           cd "${{ github.workspace }}/apps/mobile/android"
-          if ./gradlew :app:assembleRelease --no-daemon; then
-            echo "assembleRelease succeeded (using debug keystore)"
-            find app/build/outputs -name "*.apk" -o -name "*.aab" | xargs ls -lh || true
-          else
-            echo "::warning::assembleRelease failed (expected if no signing config), but release manifest gate passed - this is not a gate failure"
-            echo "Listing any release outputs that may exist:"
-            find app/build/outputs -type f | head -n 20 || true
+          DEBUG_KEYSTORE="app/debug.keystore"
+          if [ ! -f "$DEBUG_KEYSTORE" ]; then
+            echo "debug.keystore not found at $DEBUG_KEYSTORE, generating..."
+            mkdir -p app
+            keytool -genkeypair -v -storetype PKCS12 -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || echo "keytool failed, will try default"
           fi
-          cd "${{ github.workspace }}"
+          ls -lh app/debug.keystore || echo "no debug.keystore"
+          echo "Building release APK with debug signing (not for Play Store)..."
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="${{ github.workspace }}/apps/mobile/android/app/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
+          echo "--- release outputs ---"
+          find app/build/outputs -type f -name "*.apk" | xargs ls -lh || true
+          echo "--- copying to mirror-test.apk (phone-testable, debug-signed, not for stores) ---"
+          cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/mirror-test.apk"
+          cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/.reports/mirror-test.apk" || true
+          cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/mirror-test.apk || true
+          ls -lh "${{ github.workspace }}/mirror-test.apk"
+          ls -lh "${{ github.workspace }}/.reports/mirror-test.apk" || true
+          echo "mirror-test.apk is a self-contained release build signed with debug keystore for phone testing only. Not for Play Store."
 
       - name: Debug artifact paths before upload
         if: always()
@@ -146,15 +165,20 @@ jobs:
           find "${{ github.workspace }}" -type f -name "*.aab" | head -n 20
           echo "--- .reports ---"
           ls -R "${{ github.workspace }}/.reports/" || echo "no .reports"
-          echo "--- apps/mobile/android/app/build/outputs/apk/debug ---"
-          ls -lh "${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/debug/" || echo "no debug apk folder"
+          echo "--- mirror-test.apk ---"
+          ls -lh "${{ github.workspace }}/mirror-test.apk" || echo "no mirror-test.apk at root"
+          ls -lh "${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/" || true
 
-      - name: Upload APKs (debug + release if any)
+      - name: Upload APKs (debug + release + phone-testable)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mirror-apks
           path: |
+            ${{ github.workspace }}/mirror-test.apk
+            ${{ github.workspace }}/.reports/mirror-test.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/mirror-test.apk
+            ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/app-release.apk
             ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/debug/*.apk
             ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/*.apk
             ${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/**/*.apk
@@ -174,9 +198,72 @@ jobs:
             ${{ github.workspace }}/.reports/merged-manifest-debug.txt
             ${{ github.workspace }}/.reports/merged-manifest-release.txt
             ${{ github.workspace }}/.reports/merged-manifest.json
+            ${{ github.workspace }}/.reports/mirror-test.apk
             ${{ github.workspace }}/.reports/
+            ${{ github.workspace }}/mirror-test.apk
           if-no-files-found: error
           include-hidden-files: true
+
+  android-smoke-test:
+    name: Smoke test release APK on emulator
+    needs: android-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download mirror-test APK
+        uses: actions/download-artifact@v4
+        with:
+          name: mirror-apks
+          path: ${{ github.workspace }}/smoke-apks
+
+      - name: Find APK
+        run: |
+          set -eo pipefail
+          echo "--- downloaded APKs ---"
+          find "${{ github.workspace }}/smoke-apks" -type f -name "*.apk" | head -n 20
+          ls -lh "${{ github.workspace }}/smoke-apks/" || true
+          APK=$(find "${{ github.workspace }}/smoke-apks" -name "mirror-test.apk" | head -n 1)
+          if [ -z "$APK" ]; then
+            APK=$(find "${{ github.workspace }}/smoke-apks" -name "app-release.apk" | head -n 1)
+          fi
+          if [ -z "$APK" ]; then
+            APK=$(find "${{ github.workspace }}/smoke-apks" -name "*.apk" | head -n 1)
+          fi
+          echo "Using APK: $APK"
+          echo "APK=$APK" >> $GITHUB_ENV
+          ls -lh "$APK"
+
+      - name: Run emulator and smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 8192M
+          script: |
+            set -eo pipefail
+            echo "--- emulator started ---"
+            adb devices
+            echo "--- installing $APK ---"
+            adb install -r "$APK"
+            echo "--- launching app ---"
+            adb shell am start -n dev.mirror.app/.MainActivity || adb shell am start -n dev.mirror.app/dev.mirror.app.MainActivity || true
+            sleep 10
+            echo "--- logcat (check for WorkDatabase crash) ---"
+            adb logcat -d | grep -i -E "mirror|WorkDatabase|InitializationProvider|AndroidRuntime|FATAL" | head -n 100 || true
+            echo "--- checking for crash in logcat ---"
+            if adb logcat -d | grep -i "Failed to create an instance of class androidx.work.impl.WorkDatabase" ; then
+              echo "::error::Found WorkDatabase crash - R8 keep rules missing"
+              exit 1
+            fi
+            if adb logcat -d | grep -i "Unable to get provider androidx.startup.InitializationProvider" ; then
+              echo "::error::Found InitializationProvider crash - WorkManager init failed"
+              exit 1
+            fi
+            echo "Smoke test passed - no WorkManager crash detected"
 
   release-preflight:
     name: Release Stage-1 preflight (no signing)
