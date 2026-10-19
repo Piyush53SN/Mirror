@@ -141,17 +141,31 @@ jobs:
         run: |
           set -eo pipefail
           echo "=== Build phone-testable APK ==="
+          mkdir -p "${{ github.workspace }}/.reports"
           cd "${{ github.workspace }}/apps/mobile/android"
           DEBUG_KEYSTORE="app/debug.keystore"
           if [ ! -f "$DEBUG_KEYSTORE" ]; then
             mkdir -p app
             keytool -genkeypair -v -storetype PKCS12 -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
           fi
-          ./gradlew :app:assembleRelease --no-daemon \
+          set +e
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace \
             -Pandroid.injected.signing.store.file="${{ github.workspace }}/apps/mobile/android/app/debug.keystore" \
             -Pandroid.injected.signing.store.password=android \
             -Pandroid.injected.signing.key.alias=androiddebugkey \
             -Pandroid.injected.signing.key.password=android 2>&1 | tee "${{ github.workspace }}/.reports/gradle-assembleRelease.log"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          echo "Gradle assembleRelease exit code: $EXIT_CODE"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== What went wrong block (assembleRelease) ==="
+            grep -n -A 150 "What went wrong" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 300 || true
+            echo "=== createBundleReleaseJsAndAssets failure ==="
+            grep -n -i -A 10 -B 10 "createBundleReleaseJsAndAssets\|Bundling failed\|SyntaxError\|Unexpected token" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 500 || true
+            echo "=== Full gradle-assembleRelease.log tail ==="
+            tail -n 800 "${{ github.workspace }}/.reports/gradle-assembleRelease.log" || true
+            exit $EXIT_CODE
+          fi
           find app/build/outputs -type f -name "*.apk" | xargs ls -lh || true
           cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/mirror-test.apk"
           cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/.reports/mirror-test.apk" || true

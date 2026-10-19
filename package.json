@@ -23,7 +23,7 @@
     "test:mockups": "npm run mockups && node --test packages/ui/tests/mockups.test.mjs",
     "check:prototype": "node scripts/check-prototype.mjs",
     "check:lockfile": "npm ci --dry-run",
-    "verify": "npm run tokens && npm run check:lockfile && npm run typecheck && npm run lint && npm test && npm run security:secrets",
+    "verify": "npm run tokens && npm run check:lockfile && npm run typecheck && npm run lint && npm test && npm run security:secrets && npm run security:bundle",
     "test:packages": "node --test packages/shared-types/tests/*.test.mjs packages/core-analytics/tests/*.test.mjs packages/connectors/tests/*.test.mjs packages/store/tests/*.test.mjs packages/ml/tests/*.test.mjs packages/importers/tests/*.test.mjs",
     "test:config": "node --test tests/config.test.mjs",
     "test:privacy": "node --test tests/privacy.test.mjs && npm run privacy:self-test && npm run privacy:addon",

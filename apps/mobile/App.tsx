@@ -365,7 +365,7 @@ export default function App(): React.ReactElement {
               No sessions yet - use some apps, then come back and tap Refresh.
             </Text>
             <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-              Mirror reads UsageStats every time you open it and on a daily background job. Single foreground enforced, launcher closes previous, gap <=2s merged.
+              Mirror reads UsageStats every time you open it and on a daily background job. Single foreground enforced, launcher closes previous, gap ≤2s merged.
             </Text>
           </View>
         ) : (

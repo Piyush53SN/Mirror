@@ -10,13 +10,8 @@
  * are forbidden by product decision (overlays forbidden) and must be removed
  * even in debug, otherwise the merged-manifest gate fails.
  *
- * This plugin also fixes expo-clipboard's ClipboardFileProvider which declares
- * android:exported="true" (should be false for FileProvider) and causes
- * processReleaseManifest to fail on API 34+ / AGP 8+ with strict checks.
- * We override it to exported="false" via tools:replace.
- *
  * This plugin runs after prebuild via withDangerousMod and edits the XML files
- * directly.
+ * directly, adding tools:node="remove" for each blocked permission.
  */
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Expo plugins are CommonJS */
@@ -50,37 +45,15 @@ function withRemoveForbiddenPermissions(config) {
         }
 
         for (const perm of BLOCKED) {
+          // Remove any existing <uses-permission> for this permission (with or without tools:node)
           const regex = new RegExp(`<uses-permission[^>]*android:name="${perm.replace(/\./g, '\\.')}"[^>]*\\/?>\\s*`, 'g');
           content = content.replace(regex, '');
 
+          // Add a remove tag if not already present
           const removeTag = `    <uses-permission android:name="${perm}" tools:node="remove" />`;
           if (!content.includes(`android:name="${perm}"`)) {
+            // Insert before </manifest>
             content = content.replace('</manifest>', `${removeTag}\n</manifest>`);
-          }
-        }
-
-        // Fix expo-clipboard provider: exported true -> false
-        if (manifestPath.includes('/main/AndroidManifest.xml')) {
-          if (!content.includes('ClipboardFileProvider')) {
-            if (content.includes('</application>')) {
-              const providerBlock = `        <provider
-            android:name="expo.modules.clipboard.ClipboardFileProvider"
-            android:authorities="\${applicationId}.ClipboardFileProvider"
-            android:exported="false"
-            tools:replace="android:exported">
-            <meta-data
-                android:name="expo.modules.clipboard.CLIPBOARD_FILE_PROVIDER_PATHS"
-                android:resource="@xml/clipboard_provider_paths" />
-        </provider>
-`;
-              content = content.replace('</application>', `${providerBlock}    </application>`);
-            }
-          } else {
-            content = content.replace(/android:name="expo\.modules\.clipboard\.ClipboardFileProvider"[^>]*android:exported="true"/g, 'android:name="expo.modules.clipboard.ClipboardFileProvider"\n            android:authorities="${applicationId}.ClipboardFileProvider"\n            android:exported="false"\n            tools:replace="android:exported"');
-            if (!content.includes('tools:replace="android:exported"') && content.includes('ClipboardFileProvider')) {
-              content = content.replace(/android:name="expo\.modules\.clipboard\.ClipboardFileProvider"/g, 'android:name="expo.modules.clipboard.ClipboardFileProvider"\n            tools:replace="android:exported"');
-            }
-            content = content.replace(/(ClipboardFileProvider"[^>]*android:exported=")true"/g, '$1false"');
           }
         }
 
