@@ -104,9 +104,9 @@ jobs:
           set -eo pipefail
           echo "=== Build release manifest + gate ==="
           echo "PWD start=$(pwd)"
-          echo "Step 1: processReleaseManifest (full merge, NOT processReleaseMainManifest which is partial)"
+          echo "Step 1: processReleaseManifest (full merge, NOT processReleaseMainManifest which is partial) with --stacktrace for diagnostics"
           cd "${{ github.workspace }}/apps/mobile/android"
-          ./gradlew :app:processReleaseManifest --no-daemon
+          ./gradlew :app:processReleaseManifest --no-daemon --stacktrace --info || (echo "=== FAILED, dumping merger logs ==="; find app/build -name "*.log" -o -name "manifest-merger-*.xml" | head -n 20; cat app/build/outputs/logs/manifest-merger-release-report.txt 2>/dev/null | tail -n 300 || true; ./gradlew :app:processReleaseManifest --no-daemon --stacktrace; exit 1)
           echo "After processReleaseManifest, listing merged manifests (find-based, not strict ls):"
           find app/build/intermediates -type f -name "AndroidManifest.xml" | grep -i merged | sort | head -n 40
           echo "--- listing merged_manifests folder if exists ---"
