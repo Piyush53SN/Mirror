@@ -93,7 +93,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           const mirrorTotals = [...mirrorMap.entries()].map(([app, totalMs]) => ({ app, totalMs }));
           return validateDailyTotals(mirrorTotals, osTotals);
         } catch {
-          return { rows: [], maxAbsPct: 0, overThreshold: [], ok: true };
+          return { rows: [], maxAbsPct: 0, maxAbsMs: 0, overThreshold: [], ok: true };
         }
       },
     };

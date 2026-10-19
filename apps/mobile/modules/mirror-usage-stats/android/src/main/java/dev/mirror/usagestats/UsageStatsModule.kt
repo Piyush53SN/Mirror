@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Process
 import android.provider.Settings
+import android.util.Log
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -25,6 +26,14 @@ import expo.modules.kotlin.modules.ModuleDefinition
  *     the device;
  *   - no content: package names, class names and timestamps only. The class name
  *     is returned so the JS layer can skip system dialogs, and is not stored.
+ *
+ * Verified constants against Android SDK (UsageEvents.Event):
+ *   ACTIVITY_RESUMED=1, ACTIVITY_PAUSED=2, SCREEN_INTERACTIVE=15,
+ *   SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, KEYGUARD_HIDDEN=18,
+ *   FOREGROUND_SERVICE_START=19, FOREGROUND_SERVICE_STOP=20,
+ *   CONTINUING_FOREGROUND_SERVICE=21, ROLLOVER_FOREGROUND_SERVICE=22,
+ *   ACTIVITY_STOPPED=23, ACTIVITY_DESTROYED=24 (hide), FLUSH_TO_DISK=25 (hide),
+ *   DEVICE_SHUTDOWN=26, DEVICE_STARTUP=27.
  */
 class UsageStatsModule : Module() {
   override fun definition() = ModuleDefinition {
@@ -52,13 +61,23 @@ class UsageStatsModule : Module() {
       val events = manager.queryEvents(sinceMs.toLong(), untilMs.toLong()) ?: return@Function emptyList<Map<String, Any?>>()
       val out = ArrayList<Map<String, Any?>>()
       val event = UsageEvents.Event()
+      val invalidCounts = HashMap<String, Int>()
+      val pkgRegex = Regex("^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z0-9_]+)+$")
       while (events.getNextEvent(event)) {
+        val pkg = event.packageName ?: ""
+        if (pkg.isEmpty() || !pkg.matches(pkgRegex)) {
+          invalidCounts[pkg] = (invalidCounts[pkg] ?: 0) + 1
+        }
         val row = HashMap<String, Any?>()
         row["packageName"] = event.packageName
         row["className"] = event.className
         row["eventType"] = event.eventType
         row["timeStamp"] = event.timeStamp
         out.add(row)
+      }
+      if (invalidCounts.isNotEmpty()) {
+        val top10 = invalidCounts.entries.sortedByDescending { it.value }.take(10)
+        Log.d("MirrorUsageStats", "Top invalid_package: ${top10.joinToString { "'${it.key}'=${it.value}" }}")
       }
       out
     }
@@ -116,15 +135,22 @@ class UsageStatsModule : Module() {
       val events = manager.queryEvents(sinceMs.toLong(), untilMs.toLong()) ?: return@Function emptyList<Map<String, Any?>>()
       val out = ArrayList<Map<String, Any?>>()
       val event = UsageEvents.Event()
+      val invalidCounts = HashMap<String, Int>()
+      val pkgRegex = Regex("^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z0-9_]+)+$")
       while (events.getNextEvent(event)) {
+        val pkg = event.packageName ?: ""
+        if (pkg.isEmpty() || !pkg.matches(pkgRegex)) {
+          invalidCounts[pkg] = (invalidCounts[pkg] ?: 0) + 1
+        }
         val row = HashMap<String, Any?>()
         row["packageName"] = event.packageName
         row["className"] = event.className
         row["eventType"] = event.eventType
         row["timeStamp"] = event.timeStamp
         row["typeName"] = when (event.eventType) {
-          1 -> "MOVE_TO_FOREGROUND"
-          2 -> "MOVE_TO_BACKGROUND"
+          0 -> "NONE"
+          1 -> "ACTIVITY_RESUMED" // MOVE_TO_FOREGROUND deprecated same value
+          2 -> "ACTIVITY_PAUSED" // MOVE_TO_BACKGROUND deprecated same value
           3 -> "END_OF_DAY"
           4 -> "CONTINUE_PREVIOUS_DAY"
           5 -> "CONFIGURATION_CHANGE"
@@ -143,17 +169,20 @@ class UsageStatsModule : Module() {
           18 -> "KEYGUARD_HIDDEN"
           19 -> "FOREGROUND_SERVICE_START"
           20 -> "FOREGROUND_SERVICE_STOP"
-          21 -> "CONTINUATION_MASK"
-          22 -> "ROLLOVER_FOREGROUND"
-          23 -> "ACTIVITY_RESUMED"
-          24 -> "ACTIVITY_PAUSED"
-          25 -> "ACTIVITY_STOPPED"
+          21 -> "CONTINUING_FOREGROUND_SERVICE"
+          22 -> "ROLLOVER_FOREGROUND_SERVICE"
+          23 -> "ACTIVITY_STOPPED"
+          24 -> "ACTIVITY_DESTROYED"
+          25 -> "FLUSH_TO_DISK"
           26 -> "DEVICE_SHUTDOWN"
           27 -> "DEVICE_STARTUP"
-          28 -> "USER_UNLOCKED"
           else -> "UNKNOWN_${event.eventType}"
         }
         out.add(row)
+      }
+      if (invalidCounts.isNotEmpty()) {
+        val top10 = invalidCounts.entries.sortedByDescending { it.value }.take(10)
+        Log.d("MirrorUsageStats", "Debug Top invalid_package: ${top10.joinToString { "'${it.key}'=${it.value}" }}")
       }
       out
     }

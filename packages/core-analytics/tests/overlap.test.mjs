@@ -129,3 +129,47 @@ test('launcher foreground closes previous app but not counted', () => {
   // Launcher itself not counted
   assert.equal(result.events.filter((e) => e.app === 'com.miui.home').length, 0);
 });
+
+test('STOPPED must not close app whose other activity is still resumed (per className tracking)', () => {
+  // WhatsApp Main resumed, Conversation resumed, Main STOPPED (23), Conversation PAUSED (2)
+  // App should stay open after Main STOPPED, close only at Conversation PAUSED
+  const rows = [
+    { packageName: 'com.whatsapp', className: 'com.whatsapp.Main', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(0) },
+    { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(1) },
+    { packageName: 'com.whatsapp', className: 'com.whatsapp.Main', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: at(5) },
+    { packageName: 'com.whatsapp', className: 'com.whatsapp.Conversation', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(10) },
+  ];
+  const result = buildUsageEvents(rows, base);
+  assert.equal(result.stats.intervals, 1, 'should have 1 interval (not closed at 5)');
+  const bg = result.events.find((e) => e.app === 'com.whatsapp' && e.kind === 'app_background');
+  assert.ok(bg, 'should have bg');
+  assert.equal(bg.duration_ms, 10 * 60_000, 'duration from earliest fg 0 to last bg 10, not 5');
+});
+
+test('multiple activities same app: close only when last activity paused', () => {
+  const rows = [
+    { packageName: 'com.a', className: 'A', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(0) },
+    { packageName: 'com.a', className: 'B', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: at(2) },
+    { packageName: 'com.a', className: 'A', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(4) },
+    { packageName: 'com.a', className: 'B', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(8) },
+  ];
+  const result = buildUsageEvents(rows, base);
+  assert.equal(result.stats.intervals, 1);
+  assert.equal(result.events.find((e) => e.kind === 'app_background').duration_ms, 8 * 60_000);
+});
+
+test('invalid_package top 10 logging: empty and special chars counted', () => {
+  const rows = [
+    { packageName: '', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(0) },
+    { packageName: 'com.invalid.package!', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(1) },
+    fg('com.valid.app', 2),
+    bg('com.valid.app', 5),
+  ];
+  const result = buildUsageEvents(rows, base);
+  // Should have 1 valid interval, 2 invalid drops
+  assert.equal(result.stats.intervals, 1);
+  const { getTopInvalidPackages } = core;
+  const top = getTopInvalidPackages(result.dropped);
+  assert.ok(top.length >= 2, 'should have at least 2 invalid');
+  assert.ok(top.some((t) => t.pkg === '' || t.pkg === '<empty>'), 'empty should be counted');
+});

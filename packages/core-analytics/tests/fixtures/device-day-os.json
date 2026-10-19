@@ -1,0 +1,8 @@
+[
+  { "packageName": "com.miHoYo.GenshinImpact", "totalMs": 1620000 },
+  { "packageName": "com.google.android.youtube", "totalMs": 780000 },
+  { "packageName": "com.whatsapp", "totalMs": 720000 },
+  { "packageName": "com.supercell.brawlstars", "totalMs": 420000 },
+  { "packageName": "com.reddit.frontpage", "totalMs": 360000 },
+  { "packageName": "com.android.chrome", "totalMs": 360000 }
+]
