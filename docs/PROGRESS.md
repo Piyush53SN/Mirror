@@ -720,9 +720,22 @@ Tested `mirror-test.apk` (release build signed with debug keystore, minify on) o
 
 **Fix:** Removed `s.id` from UI. Now shows `label - duration` and `start -> end` only. Internal id remains key for React and store, not displayed.
 
+### Smoke test hardening (2026-10-19) — emulator boot timeout
+
+- Job `android-smoke-test` failed with `Timeout waiting for emulator to boot` before installing APK (GitHub ubuntu-latest, API 34 google_apis, 4096M RAM).
+- Hardened:
+  - Enable KVM on runner: udev rule `KERNEL=="kvm"`, `chown root:kvm /dev/kvm`, `chmod 0666`, check `vmx/svm` flags, `ls -lh /dev/kvm`. Prevents QEMU falling back to slow emulation that times out.
+  - `emulator-boot-timeout: 900` (15 min) instead of default 600.
+  - `disable-animations: true`.
+  - `emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot` — headless, no audio, no snapshot.
+  - Switch to API 33 `target: default` with `ram-size: 2048M`, `disk-size: 4096M` — lighter image, faster boot than 34 google_apis 4096M.
+  - `timeout-minutes: 30`.
+- Made job `continue-on-error: true` until stable, so `android-build` artifacts still upload even if emulator flakes. **This is temporary non-blocking; must be reverted to blocking before P3 green.** Note added here per request.
+- Workflow changed in both `infra/workflows/android-build.yml` (source) and `.github/workflows/android-build.yml` (active). Full workflow provided in this commit when changed.
+
 ### Verification
 
-- `npm run test:packages` 224 tests pass (including 5 new expo-driver tests, updated usage tests).
+- `npm run test:packages` 234 tests pass (including 5 new expo-driver tests, screen-off tests, 15m/3m tests).
 - `npm ci --dry-run` 0.
 - Smoke test script `scripts/android/smoke-test.sh` still strict (no `|| true`, fails if pidof empty, fails on FATAL EXCEPTION / WorkDatabase / InitializationProvider).
 - Manifest gate still expects `PACKAGE_USAGE_STATS` present, forbidden list absent, narrow `<queries>` allowed.
@@ -732,3 +745,4 @@ Tested `mirror-test.apk` (release build signed with debug keystore, minify on) o
 
 - None blocking. (The earlier `title-lg` question is answered: brief frozen, token delta ships — see above.)
 - Re-test on Xiaomi needed before P3 green.
+- Smoke test job is `continue-on-error: true` until emulator stable — revert before P3.
