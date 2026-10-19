@@ -32,18 +32,40 @@
 export const USAGE_EVENT_TYPE = {
   MOVE_TO_FOREGROUND: 1,
   MOVE_TO_BACKGROUND: 2,
+  END_OF_DAY: 3,
+  CONTINUE_PREVIOUS_DAY: 4,
+  CONFIGURATION_CHANGE: 5,
+  SYSTEM_INTERACTION: 6,
+  USER_INTERACTION: 7,
+  SHORTCUT_INVOCATION: 8,
+  CHOOSER_ACTION: 9,
+  NOTIFICATION_SEEN: 10,
+  STANDBY_BUCKET_CHANGED: 11,
+  NOTIFICATION_INTERRUPTION: 12,
+  SLICE_PINNED_PRIV: 13,
+  SLICE_PINNED: 14,
   SCREEN_INTERACTIVE: 15,
   SCREEN_NON_INTERACTIVE: 16,
   KEYGUARD_SHOWN: 17,
   KEYGUARD_HIDDEN: 18,
+  FOREGROUND_SERVICE_START: 19,
+  FOREGROUND_SERVICE_STOP: 20,
+  CONTINUATION_MASK: 21,
+  ROLLOVER_FOREGROUND: 22,
   ACTIVITY_RESUMED: 23,
   ACTIVITY_PAUSED: 24,
+  ACTIVITY_STOPPED: 25,
   DEVICE_SHUTDOWN: 26,
   DEVICE_STARTUP: 27,
+  USER_UNLOCKED: 28,
 } as const;
 
 const FOREGROUND_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, USAGE_EVENT_TYPE.ACTIVITY_RESUMED]);
-const BACKGROUND_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, USAGE_EVENT_TYPE.ACTIVITY_PAUSED]);
+const BACKGROUND_TYPES = new Set<number>([
+  USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND,
+  USAGE_EVENT_TYPE.ACTIVITY_PAUSED,
+  USAGE_EVENT_TYPE.ACTIVITY_STOPPED,
+]);
 // Screen-off, keyguard shown and shutdown implicitly end any foreground interval.
 // Without this, a phone that goes to sleep while an app is in front leaves that
 // interval open, producing the 8h53m Google app and 3h9m permission-controller
@@ -127,9 +149,17 @@ export type BuildUsageResult = {
   nextCursor: number;
 };
 
-const PACKAGE = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i;
+// Package name validation: Android packages are typically dot-separated, but
+// some system events report single-segment names like "android". Allow both,
+// but still require basic sanity (letters, digits, underscore, dot). Hyphens
+// and empty strings are invalid and become counted gaps.
+const PACKAGE = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)*$/i;
 export const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
+// Packages that are never counted as usage, but their foreground events *do*
+// close the previous app (see buildUsageEvents). This resolves the HOME role:
+// when user goes to launcher, previous app ends. Includes resolver, installer,
+// permission controller, systemui, and all OEM launchers.
 export const DEFAULT_IGNORED_PACKAGES = [
   'dev.mirror.app',
   'com.android.systemui',
@@ -146,13 +176,32 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.vivo.launcher',
   'com.transsion.XOSLauncher',
   'com.lge.launcher2',
-  // System UI that appears as foreground during permission dialogs, etc.
-  // com.google.android.permissioncontroller was seen as 3h9m when screen-off
-  // did not close it; it should be ignored even after the screen-off fix.
+  'com.google.android.apps.nexuslauncher',
+  // System components that appear as foreground during dialogs, install, resolver
   'com.google.android.permissioncontroller',
   'com.android.packageinstaller',
   'com.google.android.packageinstaller',
+  'com.android.intentresolver',
+  'com.google.android.intentresolver',
+  'com.android.settings',
+  'com.miui.securitycenter',
 ] as const;
+
+// Resolver / installer / permission controller / systemui that should close
+// previous app but never be counted. Includes DEFAULT_IGNORED_PACKAGES plus
+// generic resolver names.
+export const SYSTEM_CLOSER_PACKAGES = new Set<string>([
+  ...DEFAULT_IGNORED_PACKAGES,
+  'android',
+  'com.android.systemui',
+  'com.android.launcher',
+  'com.android.launcher3',
+  'com.google.android.packageinstaller',
+  'com.android.packageinstaller',
+  'com.android.intentresolver',
+  'com.google.android.intentresolver',
+  'com.google.android.permissioncontroller',
+]);
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -172,6 +221,28 @@ function addGap(gaps: UsageGap[], gap: UsageGap): void {
   const existing = gaps.find((entry) => entry.reason === gap.reason && entry.fromMs === gap.fromMs && entry.toMs === gap.toMs);
   if (existing) existing.count += gap.count;
   else gaps.push({ ...gap });
+}
+
+function closeInterval(
+  app: string,
+  start: number,
+  end: number,
+  options: { sinceMs: number; maxIntervalMs: number; minIntervalMs: number },
+  intervals: { app: string; start: number; end: number; carried: boolean }[],
+  drops: UsageDrop[],
+  gaps: UsageGap[],
+): void {
+  const duration = end - start;
+  if (duration > options.maxIntervalMs) {
+    drops.push({ reason: 'too_long', app, at: start });
+    addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: end });
+    return;
+  }
+  if (duration <= 0 || duration < options.minIntervalMs) {
+    drops.push({ reason: 'below_minimum', app, at: start });
+    return;
+  }
+  intervals.push({ app, start, end, carried: start < options.sinceMs });
 }
 
 export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageOptions): BuildUsageResult {
@@ -200,49 +271,64 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
         continue;
       }
-      // Close every open interval at this timestamp.
       for (const [app, start] of open) {
-        const duration = row.timeStamp - start;
-        if (duration > maxIntervalMs) {
-          drops.push({ reason: 'too_long', app, at: start });
-          addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: row.timeStamp });
-          continue;
-        }
-        if (duration <= 0 || duration < minIntervalMs) {
-          drops.push({ reason: 'below_minimum', app, at: start });
-          continue;
-        }
-        intervals.push({ app, start, end: row.timeStamp, carried: start < options.sinceMs });
+        closeInterval(app, start, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
       }
       open.clear();
       continue;
     }
 
     if (!PACKAGE.test(row.packageName)) {
+      // Invalid package names are often empty or single-char artifacts from
+      // UsageEvents (e.g. empty string, or "android" before we allowed it).
+      // Count them as gaps but don't let them pollute intervals.
       drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
       addGap(gaps, { reason: 'invalid_package', count: 1 });
       continue;
     }
-    if (ignore.has(row.packageName)) {
-      drops.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp });
-      continue;
-    }
+
     if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
       drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
       continue;
     }
+
+    // Ignored packages (launchers, systemui, resolver, installer, permission
+    // controller) are never counted, but their foreground events DO close the
+    // previous app. This fixes the 39m vs 12m WhatsApp bug: previously going
+    // home left WhatsApp open.
+    if (ignore.has(row.packageName)) {
+      if (FOREGROUND_TYPES.has(row.eventType)) {
+        // Treat as implicit background for all open apps
+        for (const [app, start] of open) {
+          closeInterval(app, start, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        }
+        open.clear();
+      }
+      drops.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp });
+      continue;
+    }
+
     if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType)) {
       drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp });
       continue;
     }
 
     if (FOREGROUND_TYPES.has(row.eventType)) {
-      // A second foreground for one app means we missed its close. Keep the
-      // earlier start: the sitting did not restart.
+      // Enforce single foreground app: a new foreground closes any other open
+      // interval at this timestamp. This prevents overlapping sessions like
+      // YouTube, Genshin and Brawl Stars all ending at 3:17:44-45.
+      // Keep earlier start for same app (missed close), but close others.
+      for (const [otherApp, otherStart] of [...open.entries()]) {
+        if (otherApp !== row.packageName) {
+          closeInterval(otherApp, otherStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+          open.delete(otherApp);
+        }
+      }
       if (!open.has(row.packageName)) open.set(row.packageName, row.timeStamp);
       continue;
     }
 
+    // Background
     const start = open.get(row.packageName);
     if (start === undefined) {
       drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
@@ -250,18 +336,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
     open.delete(row.packageName);
-    const duration = row.timeStamp - start;
-    if (duration > maxIntervalMs) {
-      // The span is known, so the gap is countable in time as well as in number.
-      drops.push({ reason: 'too_long', app: row.packageName, at: start });
-      addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: row.timeStamp });
-      continue;
-    }
-    if (duration <= 0 || duration < minIntervalMs) {
-      drops.push({ reason: 'below_minimum', app: row.packageName, at: start });
-      continue;
-    }
-    intervals.push({ app: row.packageName, start, end: row.timeStamp, carried: start < options.sinceMs });
+    closeInterval(row.packageName, start, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
   }
 
   // Anything still open becomes the next run's responsibility, unless it is so

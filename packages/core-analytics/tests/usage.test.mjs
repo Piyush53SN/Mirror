@@ -106,14 +106,23 @@ test('a duplicated foreground keeps the earlier start', () => {
   assert.equal(result.events[1].duration_ms, 2 * 60_000);
 });
 
-test('interleaved apps stay separate and are emitted in start order', () => {
+test('interleaved apps: new foreground closes previous (single foreground, no overlap)', () => {
+  // Previously this test allowed overlapping sittings (a 0-2, b 1-3) which caused
+  // YouTube/Genshin/Brawl all ending at 3:17:44. Now single foreground is enforced:
+  // b fg at 1 closes a at 1, so a is 0-1, b is 1-3.
   const result = buildUsageEvents(
     [fg('com.a.one', 0), fg('com.b.two', 1), bg('com.a.one', 2), bg('com.b.two', 3)],
     base,
   );
   assert.deepEqual(result.events.filter((e) => e.kind === 'app_foreground').map((e) => e.app), ['com.a.one', 'com.b.two']);
-  // Two overlapping app sittings: 2 minutes each, so 4 minutes of foreground time.
-  assert.equal(result.stats.totalMs, 4 * 60_000);
+  // a 0-1, b 1-3 = 1 + 2 = 3 minutes total, not 4, and no overlap
+  assert.equal(result.stats.totalMs, 3 * 60_000);
+  // Ensure no overlap: b starts when a ends
+  const fgEvents = result.events.filter((e) => e.kind === 'app_foreground').sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const bgEvents = result.events.filter((e) => e.kind === 'app_background').sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  // a should have been closed by b fg, so its bg is at 1, not 2
+  const aBg = bgEvents.find((e) => e.app === 'com.a.one');
+  assert.equal(Date.parse(aBg.at) - Date.parse(fgEvents[0].at), 1 * 60_000);
 });
 
 test('system UI, launchers and Mirror itself are ignored, and produce no gaps', () => {

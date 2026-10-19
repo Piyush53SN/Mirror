@@ -8,6 +8,7 @@ import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
 import type { SessionRow } from '@mirror/store';
+import type { ValidationResult } from '@mirror/core-analytics';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -30,12 +31,17 @@ function formatTime(ms: number): string {
   }
 }
 
+type DailyTotal = { app: string; label: string; totalMs: number };
+
 export default function App(): React.ReactElement {
   const theme = React.useMemo(() => createTheme('dark'), []);
   const [permission, setPermission] = React.useState<PermissionState>('checking');
   const [sessions, setSessions] = React.useState<SessionRow[]>([]);
+  const [dailyTotals, setDailyTotals] = React.useState<DailyTotal[]>([]);
   const [labels, setLabels] = React.useState<Record<string, string>>({});
   const [quality, setQuality] = React.useState<DataQuality | null>(null);
+  const [validation, setValidation] = React.useState<ValidationResult | null>(null);
+  const [debugEvents, setDebugEvents] = React.useState<{ packageName: string; typeName: string; timeStamp: number; className?: string }[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [lastCollect, setLastCollect] = React.useState<string | null>(null);
@@ -69,6 +75,13 @@ export default function App(): React.ReactElement {
           setSessions(sess.slice(-50).reverse());
           const resolved = await resolveAppLabels(sess.map((s) => s.app));
           setLabels(resolved);
+          // daily totals
+          const map = new Map<string, number>();
+          for (const s of sess) map.set(s.app, (map.get(s.app) ?? 0) + s.duration_ms);
+          const totals: DailyTotal[] = [...map.entries()]
+            .map(([app, totalMs]) => ({ app, label: resolved[app] ?? app, totalMs }))
+            .sort((a, b) => b.totalMs - a.totalMs);
+          setDailyTotals(totals);
         } catch {}
         return;
       }
@@ -76,13 +89,11 @@ export default function App(): React.ReactElement {
       setPermission('granted');
       try {
         await registerUsageTask();
-      } catch {
-        // background task may be restricted on some OEMs — non-fatal
-      }
+      } catch {}
 
       const collectResult = await runtime.collectNow();
       if (collectResult.status === 'collected') {
-        setLastCollect(`collect: collected ${collectResult.events} events, ${collectResult.inserted} inserted, ${collectResult.gaps.length} gaps`);
+        setLastCollect(`collect: collected ${collectResult.events} events, ${collectResult.inserted} inserted, ${collectResult.gaps.length} gaps (${Object.entries(collectResult.gaps.reduce((acc: any, g: any) => { acc[g.reason] = (acc[g.reason] ?? 0) + g.count; return acc; }, {})).map(([k, v]) => `${k}:${v}`).join(', ')})`);
       } else {
         setLastCollect(`collect: ${collectResult.status}`);
       }
@@ -91,9 +102,32 @@ export default function App(): React.ReactElement {
 
       const sess = await runtime.store.sessions({ fromMs: Date.now() - 7 * 86_400_000 });
       setSessions(sess.slice(-50).reverse());
+      const resolved = await resolveAppLabels(sess.map((s) => s.app));
+      setLabels(resolved);
+
+      // per-app daily totals
+      const map = new Map<string, number>();
+      for (const s of sess) map.set(s.app, (map.get(s.app) ?? 0) + s.duration_ms);
+      const totals: DailyTotal[] = [...map.entries()]
+        .map(([app, totalMs]) => ({ app, label: resolved[app] ?? app, totalMs }))
+        .sort((a, b) => b.totalMs - a.totalMs);
+      setDailyTotals(totals);
+
+      // OS validation
       try {
-        const resolved = await resolveAppLabels(sess.map((s) => s.app));
-        setLabels(resolved);
+        const now = Date.now();
+        const from = now - 7 * 86_400_000;
+        const v = await runtime.validate({ fromMs: from, toMs: now });
+        setValidation(v);
+      } catch {}
+
+      // Debug: raw UsageEvents types for last hour, one real session
+      try {
+        const now = Date.now();
+        const debug = await usage.queryEventsDebug(now - 3_600_000, now);
+        // Take last 30 events for display
+        setDebugEvents(debug.slice(-30));
+        console.log('RAW UsageEvents debug (last hour, up to 30):', JSON.stringify(debug.slice(-30), null, 2));
       } catch {}
 
       const q = await runtime.dataQuality({ fromMs: Date.now() - 7 * 86_400_000 });
@@ -179,6 +213,17 @@ export default function App(): React.ReactElement {
             </Text>
           </Card>
         ) : null}
+        {dailyTotals.length > 0 ? (
+          <Card theme={theme}>
+            <SectionHeader theme={theme} title={`Per-app totals - last 7 days`} caption="from sessions, not raw events" />
+            {dailyTotals.map((t) => (
+              <View key={t.app} style={{ paddingVertical: theme.space(1) }}>
+                <Text role="label" theme={theme}>{`${t.label} - ${formatDuration(t.totalMs)}`}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{t.app}</Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
         {sessions.length > 0 ? (
           <Card theme={theme}>
             <SectionHeader theme={theme} title={`Last ${sessions.length} sessions (cached)`} caption="from previous grant" />
@@ -227,6 +272,19 @@ export default function App(): React.ReactElement {
                 .map(([k, v]) => `${k}:${v}`)
                 .join(', ') || 'none'}, measured gap ${Math.round(quality.measuredGapMs / 1000)}s`}
             </Text>
+            <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+              {`Invalid package (89 seen) = empty or malformed packageName from OS (e.g. "" or single-char). Orphan background (37 seen) = background without foreground – happens when foreground was in launcher/resolver which now closes previous app but was previously ignored, or when event window missed the start.`}
+            </Text>
+            {validation ? (
+              <View style={{ marginTop: theme.space(2) }}>
+                <Text role="label" theme={theme}>{`OS vs Mirror validation: max diff ${validation.maxAbsPct.toFixed(1)}%, ${validation.ok ? 'OK <10%' : `FAIL ${validation.overThreshold.length} apps >10%`}`}</Text>
+                {validation.rows.slice(0, 6).map((r) => (
+                  <Text key={r.app} role="micro" tone="muted" theme={theme}>
+                    {`${labels[r.app] ?? r.app}: OS ${formatDuration(r.osMs)}, Mirror ${formatDuration(r.mirrorMs)}, diff ${r.diffPct.toFixed(1)}% ${r.status}`}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
             <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(2) }}>
               <Pill theme={theme} onPress={checkPermissionAndCollect}>
                 Refresh
@@ -240,14 +298,35 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title={`Sessions - last 7 days, ${sessions.length}`} caption="newest first, from this device" />
+        <SectionHeader theme={theme} title={`Per-app daily totals - ${dailyTotals.length} apps`} caption="today + last 7 days, from sessions, above raw timeline" />
+        {dailyTotals.length === 0 ? (
+          <Text role="micro" tone="muted" theme={theme}>No totals yet</Text>
+        ) : (
+          dailyTotals.map((t) => (
+            <View key={t.app} style={{ paddingVertical: theme.space(2), flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View style={{ flex: 1 }}>
+                <Text role="label" theme={theme}>{t.label}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{t.app}</Text>
+              </View>
+              <Text role="label" theme={theme}>{formatDuration(t.totalMs)}</Text>
+            </View>
+          ))
+        )}
+        <Divider theme={theme} />
+        <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+          Compare with Android Settings > Digital Wellbeing for same period. If Mirror shows 2x, intervals stayed open (now fixed by single-foreground + launcher closer).
+        </Text>
+      </Card>
+
+      <Card theme={theme}>
+        <SectionHeader theme={theme} title={`Sessions - last 7 days, ${sessions.length}`} caption="newest first, from this device, no overlaps" />
         {sessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
             <Text role="label" theme={theme}>
               No sessions yet - use some apps, then come back and tap Refresh.
             </Text>
             <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-              Mirror reads UsageStats every time you open it and on a daily background job. An unclosed interval is dropped, not guessed.
+              Mirror reads UsageStats every time you open it and on a daily background job. An unclosed interval is dropped, not guessed. Single foreground enforced.
             </Text>
           </View>
         ) : (
@@ -265,17 +344,32 @@ export default function App(): React.ReactElement {
         )}
       </Card>
 
+      {debugEvents.length > 0 ? (
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title={`Debug - raw UsageEvents last hour (${debugEvents.length})`} caption="foreground, background, stopped, screen, keyguard" />
+          {debugEvents.map((e, idx) => (
+            <View key={idx} style={{ paddingVertical: theme.space(1) }}>
+              <Text role="micro" theme={theme}>{`${new Date(e.timeStamp).toLocaleTimeString()} ${e.typeName} ${e.packageName}${e.className ? ` / ${e.className.split('.').pop()}` : ''}`}</Text>
+            </View>
+          ))}
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+            Log shows which events are missing or rejected. Example real session: MOVE_TO_FOREGROUND / ACTIVITY_RESUMED opens, ACTIVITY_PAUSED / STOPPED / MOVE_TO_BACKGROUND closes, SCREEN_NON_INTERACTIVE / KEYGUARD_SHOWN closes all, launcher fg closes previous.
+          </Text>
+        </Card>
+      ) : null}
+
       <Card theme={theme}>
         <SectionHeader theme={theme} title="What this build is" caption="Stage 1 - real data, no estimates" />
         <Text role="micro" tone="muted" theme={theme}>
           {[
-            'Collector: UsageEvents -> app_foreground / app_background, closes on screen-off (16) / keyguard (17) / shutdown (26), 6h max interval >6h counted as gap, ignores launchers including MIUI + permissioncontroller',
-            'Store: expo-sqlite + per-record XChaCha20-Poly1305, key in SecureStore, fixed transaction re-entrancy (queue + depth)',
-            'Ingestion: sessions merged <=15m gap per app (spec), 3m cross-app link for journeys, today ingested as partial (sessions shown, rollup not), daily rollups for complete local days only',
-            'Labels: PackageManager with narrow <queries> MAIN/LAUNCHER intent, no QUERY_ALL_PACKAGES, gate still passes',
-            'Gate: merged-manifest audited (PACKAGE_USAGE_STATS present, nothing forbidden, DYNAMIC_RECEIVER allowlisted)',
-            'Background: WorkManager daily job (24h min interval), survives reboot without RECEIVE_BOOT_COMPLETED',
-          ].join('\\n')}
+            'Collector: UsageEvents 1/2/23/24/25, closes on screen-off 16 / keyguard 17 / shutdown 26 / launcher fg, single foreground enforced, 6h max >6h gap, ignores launchers only for counting',
+            'Store: expo-sqlite + XChaCha20-Poly1305, fixed tx re-entrancy',
+            'Ingestion: sessions merged <=15m per app, 3m cross-app journey, today partial, no overlaps',
+            'Validation: compare Mirror totals vs OS queryUsageStats, show diff in data-quality card, fails test >10% on fixture',
+            'Labels: PackageManager narrow <queries> MAIN/LAUNCHER, no QUERY_ALL_PACKAGES',
+            'Gate: merged-manifest audited',
+            'Background: WorkManager daily',
+          ].join('\n')}
         </Text>
       </Card>
     </ScrollView>

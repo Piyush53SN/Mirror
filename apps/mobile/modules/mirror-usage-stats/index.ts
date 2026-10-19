@@ -21,6 +21,16 @@ export type NativeUsageRow = {
 
 export type AppLabelRow = { packageName: string; label: string };
 
+export type UsageStatsRow = {
+  packageName: string;
+  totalTimeInForeground: number;
+  lastTimeUsed: number;
+  firstTimeStamp: number;
+  lastTimeStamp: number;
+};
+
+export type DebugUsageRow = NativeUsageRow & { typeName: string };
+
 export type MirrorUsageStatsModule = {
   /** Whether the person has granted Usage Access in system Settings. */
   hasPermission(): boolean;
@@ -30,6 +40,10 @@ export type MirrorUsageStatsModule = {
   queryEvents(sinceMs: number, untilMs: number): NativeUsageRow[];
   /** Resolve user-visible labels for packages via PackageManager (narrow <queries>). */
   getAppLabels(packages: string[]): AppLabelRow[];
+  /** OS-reported totals via UsageStatsManager.queryUsageStats (for validation). */
+  queryUsageStats(sinceMs: number, untilMs: number): UsageStatsRow[];
+  /** Raw events with typeName for debugging one real session. */
+  queryEventsDebug(sinceMs: number, untilMs: number): DebugUsageRow[];
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;

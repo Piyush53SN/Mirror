@@ -49,8 +49,6 @@ class UsageStatsModule : Module() {
       if (untilMs <= sinceMs) return@Function emptyList<Map<String, Any?>>()
 
       val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
-      // The OS may have no events for a window that is too old; an empty list is a
-      // legitimate answer, not an error.
       val events = manager.queryEvents(sinceMs.toLong(), untilMs.toLong()) ?: return@Function emptyList<Map<String, Any?>>()
       val out = ArrayList<Map<String, Any?>>()
       val event = UsageEvents.Event()
@@ -71,8 +69,6 @@ class UsageStatsModule : Module() {
       val out = ArrayList<Map<String, String>>()
       for (pkg in packages) {
         try {
-          // getApplicationInfo with 0 works on API <33; on 33+ it still works via compat,
-          // but we try the new API first when available.
           val label = try {
             val ai = if (android.os.Build.VERSION.SDK_INT >= 33) {
               pm.getApplicationInfo(pkg, android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
@@ -91,6 +87,76 @@ class UsageStatsModule : Module() {
       }
       out
     }
+
+    Function("queryUsageStats") { sinceMs: Double, untilMs: Double ->
+      val context = appContext.reactContext ?: throw CodedException("NO_CONTEXT", "no Android context", null)
+      if (!hasUsageAccess(context)) throw CodedException("NO_PERMISSION", "Usage Access is not granted", null)
+      if (untilMs <= sinceMs) return@Function emptyList<Map<String, Any?>>()
+      val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+      val stats = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, sinceMs.toLong(), untilMs.toLong()) ?: emptyList()
+      val out = ArrayList<Map<String, Any?>>()
+      for (s in stats) {
+        if (s.totalTimeInForeground <= 0) continue
+        val row = HashMap<String, Any?>()
+        row["packageName"] = s.packageName
+        row["totalTimeInForeground"] = s.totalTimeInForeground
+        row["lastTimeUsed"] = s.lastTimeUsed
+        row["firstTimeStamp"] = s.firstTimeStamp
+        row["lastTimeStamp"] = s.lastTimeStamp
+        out.add(row)
+      }
+      out
+    }
+
+    Function("queryEventsDebug") { sinceMs: Double, untilMs: Double ->
+      val context = appContext.reactContext ?: throw CodedException("NO_CONTEXT", "no Android context", null)
+      if (!hasUsageAccess(context)) throw CodedException("NO_PERMISSION", "Usage Access is not granted", null)
+      if (untilMs <= sinceMs) return@Function emptyList<Map<String, Any?>>()
+      val manager = context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+      val events = manager.queryEvents(sinceMs.toLong(), untilMs.toLong()) ?: return@Function emptyList<Map<String, Any?>>()
+      val out = ArrayList<Map<String, Any?>>()
+      val event = UsageEvents.Event()
+      while (events.getNextEvent(event)) {
+        val row = HashMap<String, Any?>()
+        row["packageName"] = event.packageName
+        row["className"] = event.className
+        row["eventType"] = event.eventType
+        row["timeStamp"] = event.timeStamp
+        row["typeName"] = when (event.eventType) {
+          1 -> "MOVE_TO_FOREGROUND"
+          2 -> "MOVE_TO_BACKGROUND"
+          3 -> "END_OF_DAY"
+          4 -> "CONTINUE_PREVIOUS_DAY"
+          5 -> "CONFIGURATION_CHANGE"
+          6 -> "SYSTEM_INTERACTION"
+          7 -> "USER_INTERACTION"
+          8 -> "SHORTCUT_INVOCATION"
+          9 -> "CHOOSER_ACTION"
+          10 -> "NOTIFICATION_SEEN"
+          11 -> "STANDBY_BUCKET_CHANGED"
+          12 -> "NOTIFICATION_INTERRUPTION"
+          13 -> "SLICE_PINNED_PRIV"
+          14 -> "SLICE_PINNED"
+          15 -> "SCREEN_INTERACTIVE"
+          16 -> "SCREEN_NON_INTERACTIVE"
+          17 -> "KEYGUARD_SHOWN"
+          18 -> "KEYGUARD_HIDDEN"
+          19 -> "FOREGROUND_SERVICE_START"
+          20 -> "FOREGROUND_SERVICE_STOP"
+          21 -> "CONTINUATION_MASK"
+          22 -> "ROLLOVER_FOREGROUND"
+          23 -> "ACTIVITY_RESUMED"
+          24 -> "ACTIVITY_PAUSED"
+          25 -> "ACTIVITY_STOPPED"
+          26 -> "DEVICE_SHUTDOWN"
+          27 -> "DEVICE_STARTUP"
+          28 -> "USER_UNLOCKED"
+          else -> "UNKNOWN_${event.eventType}"
+        }
+        out.add(row)
+      }
+      out
+    }
   }
 
   private fun hasUsageAccess(context: Context): Boolean {
@@ -101,7 +167,6 @@ class UsageStatsModule : Module() {
       context.packageName
     )
     if (mode == AppOpsManager.MODE_DEFAULT) {
-      // Some OEMs report DEFAULT when the app-level special access is granted.
       return context.checkCallingOrSelfPermission(android.Manifest.permission.PACKAGE_USAGE_STATS) ==
         android.content.pm.PackageManager.PERMISSION_GRANTED
     }

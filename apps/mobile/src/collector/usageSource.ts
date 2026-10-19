@@ -7,9 +7,14 @@
  * no usage to show.
  */
 import type { UsageSourcePort } from '@mirror/core-analytics';
-import { getUsageStatsModule, type NativeUsageRow } from '../../modules/mirror-usage-stats';
+import { getUsageStatsModule, type NativeUsageRow, type UsageStatsRow, type DebugUsageRow } from '../../modules/mirror-usage-stats';
 
-export type UsageSource = UsageSourcePort & { available: boolean; openSettings(): void };
+export type UsageSource = UsageSourcePort & {
+  available: boolean;
+  openSettings(): void;
+  queryUsageStats(sinceMs: number, untilMs: number): Promise<UsageStatsRow[]>;
+  queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]>;
+};
 
 export function nativeUsageSource(): UsageSource {
   const native = getUsageStatsModule();
@@ -20,6 +25,12 @@ export function nativeUsageSource(): UsageSource {
     },
     async queryEvents(sinceMs: number, untilMs: number): Promise<NativeUsageRow[]> {
       return native ? native.queryEvents(sinceMs, untilMs) : [];
+    },
+    async queryUsageStats(sinceMs: number, untilMs: number): Promise<UsageStatsRow[]> {
+      return native && (native as any).queryUsageStats ? (native as any).queryUsageStats(sinceMs, untilMs) : [];
+    },
+    async queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]> {
+      return native && (native as any).queryEventsDebug ? (native as any).queryEventsDebug(sinceMs, untilMs) : [];
     },
     openSettings() {
       native?.openSettings();

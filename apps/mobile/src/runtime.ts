@@ -11,7 +11,8 @@
  */
 import * as SQLite from 'expo-sqlite';
 import { MirrorStore } from '@mirror/store';
-import { collectUsage, describeGapSummary } from '@mirror/core-analytics';
+import { collectUsage, describeGapSummary, validateDailyTotals } from '@mirror/core-analytics';
+import type { OsTotal } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
 import { ingestDay, ingestRecentDays } from './collector/ingest';
@@ -35,6 +36,10 @@ export type MirrorRuntime = {
   ingestRecent(now?: number): ReturnType<typeof ingestRecentDays>;
   /** What Mirror could not measure, in words and numbers. */
   dataQuality(range?: { fromMs?: number; toMs?: number }): Promise<DataQuality>;
+  /** OS-reported totals for validation */
+  osTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
+  /** Validate Mirror vs OS totals */
+  validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -67,6 +72,29 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       dataQuality: async (range = {}) => {
         const summary = await store.gapSummary(range);
         return { ...summary, sentence: describeGapSummary(summary) };
+      },
+      osTotals: async (range) => {
+        try {
+          const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
+          return rows.map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
+        } catch {
+          return [];
+        }
+      },
+      validate: async (range) => {
+        try {
+          const osRows = await usage.queryUsageStats(range.fromMs, range.toMs);
+          const osTotals: OsTotal[] = osRows.map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
+          const sessions = await store.sessions({ fromMs: range.fromMs, toMs: range.toMs });
+          const mirrorMap = new Map<string, number>();
+          for (const s of sessions) {
+            mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
+          }
+          const mirrorTotals = [...mirrorMap.entries()].map(([app, totalMs]) => ({ app, totalMs }));
+          return validateDailyTotals(mirrorTotals, osTotals);
+        } catch {
+          return { rows: [], maxAbsPct: 0, overThreshold: [], ok: true };
+        }
       },
     };
     return singleton;
