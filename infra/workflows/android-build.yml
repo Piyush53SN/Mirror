@@ -103,21 +103,35 @@ jobs:
         run: |
           set -eo pipefail
           echo "=== Build release manifest + gate ==="
-          echo "PWD start=$(pwd)"
-          echo "Step 1: processReleaseManifest (full merge, NOT processReleaseMainManifest which is partial) with --stacktrace for diagnostics"
+          mkdir -p "${{ github.workspace }}/.reports"
+          echo "Step 1: processReleaseManifest (full merge) with full log to .reports/gradle-release.log"
           cd "${{ github.workspace }}/apps/mobile/android"
-          ./gradlew :app:processReleaseManifest --no-daemon --stacktrace --info || (echo "=== FAILED, dumping merger logs ==="; find app/build -name "*.log" -o -name "manifest-merger-*.xml" | head -n 20; cat app/build/outputs/logs/manifest-merger-release-report.txt 2>/dev/null | tail -n 300 || true; ./gradlew :app:processReleaseManifest --no-daemon --stacktrace; exit 1)
-          echo "After processReleaseManifest, listing merged manifests (find-based, not strict ls):"
+          set +e
+          ./gradlew :app:processReleaseManifest --no-daemon --stacktrace 2>&1 | tee "${{ github.workspace }}/.reports/gradle-release.log"
+          EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          echo "Gradle exit code: $EXIT_CODE"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "=== What went wrong block ==="
+            grep -n -A 100 "What went wrong" "${{ github.workspace }}/.reports/gradle-release.log" | head -n 200 || true
+            echo "=== Manifest merger failed lines ==="
+            grep -n -i -A 5 -B 5 "Manifest merger failed" "${{ github.workspace }}/.reports/gradle-release.log" | head -n 300 || true
+            echo "=== AndroidManifest.xml Error lines ==="
+            grep -n -i "AndroidManifest.xml.*Error" "${{ github.workspace }}/.reports/gradle-release.log" | head -n 100 || true
+            echo "=== manifest-merger-release-report.txt ==="
+            find app/build -name "manifest-merger-release-report.txt" -type f | while read f; do echo "--- $f ---"; cat "$f" | tail -n 500; done || true
+            echo "=== Full gradle-release.log tail ==="
+            tail -n 500 "${{ github.workspace }}/.reports/gradle-release.log" || true
+            exit $EXIT_CODE
+          fi
+          echo "After processReleaseManifest, listing merged manifests:"
           find app/build/intermediates -type f -name "AndroidManifest.xml" | grep -i merged | sort | head -n 40
-          echo "--- listing merged_manifests folder if exists ---"
           find app/build/intermediates/merged_manifests -type f 2>/dev/null | sort | head -n 40 || echo "merged_manifests not found, checking merged_manifest"
           find app/build/intermediates/merged_manifest -type f 2>/dev/null | sort | head -n 40 || echo "merged_manifest not found"
           cd "${{ github.workspace }}"
-          echo "PWD after cd back to workspace: $(pwd)"
-          echo "Step 2: gate release variant (must read FINAL merged release manifest at merged_manifests/release/... not partial MainManifest)"
+          echo "Step 2: gate release variant"
           mkdir -p "${{ github.workspace }}/.reports"
           npm run android:manifest -- --variant release --json "${{ github.workspace }}/.reports/merged-manifest-release.json" 2>&1 | tee "${{ github.workspace }}/.reports/merged-manifest-release.txt"
-          echo "--- gate log above must show FINAL manifest path like apps/mobile/android/app/build/intermediates/merged_manifests/release/AndroidManifest.xml (not .../processReleaseMainManifest/...) ---"
           echo "Step 3: verify .reports"
           ls -lh "${{ github.workspace }}/.reports/"
           cat "${{ github.workspace }}/.reports/merged-manifest-release.json" | head -n 60
@@ -127,47 +141,32 @@ jobs:
         run: |
           set -eo pipefail
           echo "=== Build phone-testable APK ==="
-          echo "Debug APK (app-debug.apk) from assembleDebug needs Metro bundler and shows 'Unable to load script' on phone."
-          echo "For phone testing we need a self-contained release APK signed with debug keystore."
           cd "${{ github.workspace }}/apps/mobile/android"
           DEBUG_KEYSTORE="app/debug.keystore"
           if [ ! -f "$DEBUG_KEYSTORE" ]; then
-            echo "debug.keystore not found at $DEBUG_KEYSTORE, generating..."
             mkdir -p app
-            keytool -genkeypair -v -storetype PKCS12 -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || echo "keytool failed, will try default"
+            keytool -genkeypair -v -storetype PKCS12 -keystore "$DEBUG_KEYSTORE" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
           fi
-          ls -lh app/debug.keystore || echo "no debug.keystore"
-          echo "Building release APK with debug signing (not for Play Store)..."
           ./gradlew :app:assembleRelease --no-daemon \
             -Pandroid.injected.signing.store.file="${{ github.workspace }}/apps/mobile/android/app/debug.keystore" \
             -Pandroid.injected.signing.store.password=android \
             -Pandroid.injected.signing.key.alias=androiddebugkey \
-            -Pandroid.injected.signing.key.password=android
-          echo "--- release outputs ---"
+            -Pandroid.injected.signing.key.password=android 2>&1 | tee "${{ github.workspace }}/.reports/gradle-assembleRelease.log"
           find app/build/outputs -type f -name "*.apk" | xargs ls -lh || true
-          echo "--- copying to mirror-test.apk (phone-testable, debug-signed, not for stores) ---"
           cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/mirror-test.apk"
           cp app/build/outputs/apk/release/app-release.apk "${{ github.workspace }}/.reports/mirror-test.apk" || true
           cp app/build/outputs/apk/release/app-release.apk app/build/outputs/apk/release/mirror-test.apk || true
           ls -lh "${{ github.workspace }}/mirror-test.apk"
-          ls -lh "${{ github.workspace }}/.reports/mirror-test.apk" || true
-          echo "mirror-test.apk is a self-contained release build signed with debug keystore for phone testing only. Not for Play Store."
 
       - name: Debug artifact paths before upload
         if: always()
         run: |
           echo "=== Final artifact debug ==="
           echo "PWD=$(pwd)"
-          echo "Workspace=${{ github.workspace }}"
-          echo "--- find APKs ---"
           find "${{ github.workspace }}" -type f -name "*.apk" | head -n 20
-          echo "--- find AABs ---"
           find "${{ github.workspace }}" -type f -name "*.aab" | head -n 20
-          echo "--- .reports ---"
           ls -R "${{ github.workspace }}/.reports/" || echo "no .reports"
-          echo "--- mirror-test.apk ---"
           ls -lh "${{ github.workspace }}/mirror-test.apk" || echo "no mirror-test.apk at root"
-          ls -lh "${{ github.workspace }}/apps/mobile/android/app/build/outputs/apk/release/" || true
 
       - name: Upload APKs (debug + release + phone-testable)
         if: always()
@@ -198,6 +197,8 @@ jobs:
             ${{ github.workspace }}/.reports/merged-manifest-debug.txt
             ${{ github.workspace }}/.reports/merged-manifest-release.txt
             ${{ github.workspace }}/.reports/merged-manifest.json
+            ${{ github.workspace }}/.reports/gradle-release.log
+            ${{ github.workspace }}/.reports/gradle-assembleRelease.log
             ${{ github.workspace }}/.reports/mirror-test.apk
             ${{ github.workspace }}/.reports/
             ${{ github.workspace }}/mirror-test.apk
@@ -213,20 +214,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Enable KVM for emulator (hardening against boot timeout)
+      - name: Enable KVM for emulator
         run: |
-          echo "=== KVM setup ==="
-          # GitHub ubuntu-latest has /dev/kvm but permissions may block emulator
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm || true
           sudo chown root:kvm /dev/kvm || true
           sudo chmod 0666 /dev/kvm || true
-          ls -lh /dev/kvm || echo "no /dev/kvm"
-          # cpu check
-          egrep -c '(vmx|svm)' /proc/cpuinfo || echo "no vmx/svm"
-          id
-          groups || true
+          ls -lh /dev/kvm || true
+          egrep -c '(vmx|svm)' /proc/cpuinfo || true
 
       - name: Download mirror-test APK
         uses: actions/download-artifact@v4
@@ -237,22 +233,13 @@ jobs:
       - name: Find APK
         run: |
           set -eo pipefail
-          echo "--- downloaded APKs ---"
-          find "${{ github.workspace }}/smoke-apks" -type f -name "*.apk" | head -n 20
-          ls -lh "${{ github.workspace }}/smoke-apks/" || true
-          # Prefer mirror-test.apk, fallback to app-release.apk
           APK=$(find "${{ github.workspace }}/smoke-apks" -name "mirror-test.apk" | head -n 1)
-          if [ -z "$APK" ]; then
-            APK=$(find "${{ github.workspace }}/smoke-apks" -name "app-release.apk" | head -n 1)
-          fi
-          if [ -z "$APK" ]; then
-            APK=$(find "${{ github.workspace }}/smoke-apks" -name "*.apk" | head -n 1)
-          fi
-          echo "Using APK: $APK"
+          if [ -z "$APK" ]; then APK=$(find "${{ github.workspace }}/smoke-apks" -name "app-release.apk" | head -n 1); fi
+          if [ -z "$APK" ]; then APK=$(find "${{ github.workspace }}/smoke-apks" -name "*.apk" | head -n 1); fi
           echo "APK=$APK" >> $GITHUB_ENV
           ls -lh "$APK"
 
-      - name: Run emulator and smoke test (API 33 default, KVM, 900s boot timeout)
+      - name: Run emulator and smoke test
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -282,10 +269,9 @@ jobs:
       - name: Install node deps
         run: npm ci
 
-      - name: Run release Stage-1 preflight (no signing)
+      - name: Run release Stage-1 preflight
         run: |
           make release-stage1
-          echo "--- preflight .reports ---"
           ls -lh .reports/ || true
 
       - name: Upload preflight log
