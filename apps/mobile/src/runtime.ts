@@ -38,11 +38,14 @@ export type MirrorRuntime = {
 };
 
 let singleton: MirrorRuntime | null = null;
+let creating: Promise<MirrorRuntime> | null = null;
 
 export async function createRuntime(options: { allowContent?: boolean; retentionDays?: 90 | 180 | 365 } = {}): Promise<MirrorRuntime> {
   if (singleton) return singleton;
+  if (creating) return creating;
 
-  const db = await SQLite.openDatabaseAsync('mirror.db');
+  creating = (async () => {
+    const db = await SQLite.openDatabaseAsync('mirror.db');
   const store = new MirrorStore({
     driver: expoDriver(db),
     keys: secureStoreKeys(),
@@ -55,21 +58,29 @@ export async function createRuntime(options: { allowContent?: boolean; retention
   const usage = nativeUsageSource();
   const offsetNow = () => -new Date().getTimezoneOffset();
 
-  singleton = {
-    store,
-    usage: () => usage,
-    collectNow: (now = Date.now()) => collectUsage(usage, store, { now }),
-    ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
-    ingestRecent: (now = Date.now()) => ingestRecentDays(store, now, offsetNow()),
-    dataQuality: async (range = {}) => {
-      const summary = await store.gapSummary(range);
-      return { ...summary, sentence: describeGapSummary(summary) };
-    },
-  };
-  return singleton;
+    singleton = {
+      store,
+      usage: () => usage,
+      collectNow: (now = Date.now()) => collectUsage(usage, store, { now }),
+      ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
+      ingestRecent: (now = Date.now()) => ingestRecentDays(store, now, offsetNow()),
+      dataQuality: async (range = {}) => {
+        const summary = await store.gapSummary(range);
+        return { ...summary, sentence: describeGapSummary(summary) };
+      },
+    };
+    return singleton;
+  })();
+
+  try {
+    return await creating;
+  } finally {
+    creating = null;
+  }
 }
 
 /** Tests and a future "sign out" path need a way to forget the singleton. */
 export function resetRuntime(): void {
   singleton = null;
+  creating = null;
 }

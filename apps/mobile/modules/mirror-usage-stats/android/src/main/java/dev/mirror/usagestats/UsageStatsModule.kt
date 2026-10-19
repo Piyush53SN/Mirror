@@ -64,6 +64,33 @@ class UsageStatsModule : Module() {
       }
       out
     }
+
+    Function("getAppLabels") { packages: List<String> ->
+      val context = appContext.reactContext ?: throw CodedException("NO_CONTEXT", "no Android context", null)
+      val pm = context.packageManager
+      val out = ArrayList<Map<String, String>>()
+      for (pkg in packages) {
+        try {
+          // getApplicationInfo with 0 works on API <33; on 33+ it still works via compat,
+          // but we try the new API first when available.
+          val label = try {
+            val ai = if (android.os.Build.VERSION.SDK_INT >= 33) {
+              pm.getApplicationInfo(pkg, android.content.pm.PackageManager.ApplicationInfoFlags.of(0))
+            } else {
+              @Suppress("DEPRECATION")
+              pm.getApplicationInfo(pkg, 0)
+            }
+            pm.getApplicationLabel(ai).toString()
+          } catch (e: Exception) {
+            pkg
+          }
+          out.add(mapOf("packageName" to pkg, "label" to label))
+        } catch (e: Exception) {
+          out.add(mapOf("packageName" to pkg, "label" to pkg))
+        }
+      }
+      out
+    }
   }
 
   private fun hasUsageAccess(context: Context): Boolean {

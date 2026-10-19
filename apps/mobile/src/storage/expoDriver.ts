@@ -8,6 +8,17 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { SqlDriver } from '@mirror/store';
 
 export function expoDriver(db: SQLiteDatabase): SqlDriver {
+  // Serialize transactions and allow nesting via depth counter.
+  // The original implementation called `withTransactionAsync` directly, which
+  // fails with "cannot commit - no transaction is active" when two transactions
+  // run concurrently or when a transaction is started inside another (e.g. a
+  // migration calling exec inside a transaction wrapper, or two runtime calls
+  // racing on first launch). SQLite itself does not support nested BEGINs, so
+  // we track depth: if we are already inside a transaction, just run the fn.
+  // Concurrent top-level transactions are queued.
+  let depth = 0;
+  let queue: Promise<void> = Promise.resolve();
+
   return {
     async exec(sql) {
       await db.execAsync(sql);
@@ -18,14 +29,41 @@ export function expoDriver(db: SQLiteDatabase): SqlDriver {
     async all(sql, params = []) {
       return (await db.getAllAsync(sql, params as never[])) as never;
     },
-    async transaction(fn) {
-      // expo-sqlite's transaction scope returns void, so the result is carried
-      // out through a closure rather than relying on its return value.
-      let result: unknown;
-      await db.withTransactionAsync(async () => {
-        result = await fn();
+    async transaction<T>(fn: () => Promise<T>): Promise<T> {
+      if (depth > 0) {
+        depth += 1;
+        try {
+          return (await fn()) as unknown as T;
+        } finally {
+          depth -= 1;
+        }
+      }
+
+      let release!: () => void;
+      const next = new Promise<void>((res) => {
+        release = res;
       });
-      return result as never;
+      const prev = queue;
+      queue = next;
+      await prev;
+
+      depth += 1;
+      try {
+        let result: T | undefined;
+        let error: unknown;
+        try {
+          await db.withTransactionAsync(async () => {
+            result = await fn();
+          });
+        } catch (e) {
+          error = e;
+        }
+        if (error) throw error;
+        return result as T;
+      } finally {
+        depth -= 1;
+        release();
+      }
     },
   };
 }

@@ -4,5 +4,15 @@
     once, in app.json, and checked in the *merged* manifest by
     scripts/android/check-merged-manifest.mjs. Declaring it here as well would
     make the two sources disagree the moment one changes.
+
+    <queries> is intentionally narrow: only an intent for MAIN/LAUNCHER.
+    That lets PackageManager resolve labels for user-visible apps without
+    QUERY_ALL_PACKAGES (which is blocked in app.json and checked by the gate).
   -->
+  <queries>
+    <intent>
+      <action android:name="android.intent.action.MAIN" />
+      <category android:name="android.intent.category.LAUNCHER" />
+    </intent>
+  </queries>
 </manifest>

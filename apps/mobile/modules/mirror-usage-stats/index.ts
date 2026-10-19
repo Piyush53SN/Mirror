@@ -19,6 +19,8 @@ export type NativeUsageRow = {
   timeStamp: number;
 };
 
+export type AppLabelRow = { packageName: string; label: string };
+
 export type MirrorUsageStatsModule = {
   /** Whether the person has granted Usage Access in system Settings. */
   hasPermission(): boolean;
@@ -26,6 +28,8 @@ export type MirrorUsageStatsModule = {
   openSettings(): void;
   /** Raw events in [sinceMs, untilMs). Throws on a missing permission. */
   queryEvents(sinceMs: number, untilMs: number): NativeUsageRow[];
+  /** Resolve user-visible labels for packages via PackageManager (narrow <queries>). */
+  getAppLabels(packages: string[]): AppLabelRow[];
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;

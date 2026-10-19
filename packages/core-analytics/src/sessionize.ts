@@ -6,9 +6,9 @@
  *
  *   - an interval opens on `app_foreground` and closes on `app_background`;
  *   - two intervals of the same app merge when the gap between them is at most
- *     `mergeGapMs` (default 60 s: switching to a notification and back is still
- *     the same sitting);
- *   - an unclosed interval is dropped, not extended to "now" — an inferred end
+ *     `mergeGapMs` (default 15 min: switching to a notification and back is still
+ *     the same sitting; spec says 15 min idle per app, 3 min cross-app link);
+ *   - an unclosed interval is dropped, not extended to \"now\" — an inferred end
  *     would be a fabricated duration;
  *   - a background with no matching foreground is ignored;
  *   - zero-length intervals are dropped.
@@ -68,8 +68,11 @@ export type SessionizeResult = {
 
 const ms = (iso: string) => Date.parse(iso);
 
+export const DEFAULT_MERGE_GAP_MS = 15 * 60 * 1000; // 15 min idle per app (spec)
+export const DEFAULT_CROSS_APP_LINK_GAP_MS = 3 * 60 * 1000; // 3 min to link cross-app switches (journey)
+
 export function sessionize(events: readonly MirrorEvent[], options: SessionizeOptions = {}): SessionizeResult {
-  const mergeGapMs = options.mergeGapMs ?? 60_000;
+  const mergeGapMs = options.mergeGapMs ?? DEFAULT_MERGE_GAP_MS;
   const minDurationMs = options.minDurationMs ?? 0;
 
   const ordered = [...events]
@@ -144,8 +147,8 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
 const toSession = (i: { app: string; start: number; end: number; eventIds: string[] }): Session => ({
   id: sessionId(i.app, i.start, i.end),
   app: i.app,
-  start: new Date(i.start).toISOString().replace(/\.\d{3}Z$/, 'Z'),
-  end: new Date(i.end).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  start: new Date(i.start).toISOString().replace(/\.\\d{3}Z$/, 'Z'),
+  end: new Date(i.end).toISOString().replace(/\.\\d{3}Z$/, 'Z'),
   startMs: i.start,
   endMs: i.end,
   durationMs: i.end - i.start,
@@ -153,6 +156,61 @@ const toSession = (i: { app: string; start: number; end: number; eventIds: strin
   // store's assignment path is idempotent either way, but a set keeps it honest.
   eventIds: [...new Set(i.eventIds)],
 });
+
+export type Journey = {
+  id: string;
+  startMs: number;
+  endMs: number;
+  durationMs: number;
+  sessions: Session[];
+  apps: string[];
+};
+
+export type JourneyOptions = {
+  /** Gap between sessions of different apps to still be same journey. Default 3 min. */
+  crossAppGapMs?: number;
+};
+
+/**
+ * Group sessions into journeys: a journey is a sequence of sessions where the
+ * gap between one session's end and the next session's start is <= crossAppGapMs.
+ * This implements the spec's "3 minutes to link cross-app switches".
+ * Sessions are assumed already merged per-app with 15 min gap.
+ */
+export function buildJourneys(sessions: readonly Session[], options: JourneyOptions = {}): Journey[] {
+  const crossAppGapMs = options.crossAppGapMs ?? DEFAULT_CROSS_APP_LINK_GAP_MS;
+  if (sessions.length === 0) return [];
+  const ordered = [...sessions].sort((a, b) => a.startMs - b.startMs);
+  const journeys: Journey[] = [];
+  let current: Session[] = [ordered[0]!];
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = current[current.length - 1]!;
+    const next = ordered[i]!;
+    if (next.startMs - prev.endMs <= crossAppGapMs) {
+      current.push(next);
+    } else {
+      journeys.push(toJourney(current));
+      current = [next];
+    }
+  }
+  journeys.push(toJourney(current));
+  return journeys;
+}
+
+function toJourney(sessions: Session[]): Journey {
+  const startMs = sessions[0]!.startMs;
+  const endMs = Math.max(...sessions.map((s) => s.endMs));
+  const apps = [...new Set(sessions.map((s) => s.app))];
+  const id = `jny_${startMs.toString(36)}${endMs.toString(36)}_${apps.length}`;
+  return {
+    id,
+    startMs,
+    endMs,
+    durationMs: endMs - startMs,
+    sessions,
+    apps,
+  };
+}
 
 /** Sessions shorter than this are the "under 8 seconds" edge the brief names. */
 export const SHORT_SESSION_MS = 8_000;

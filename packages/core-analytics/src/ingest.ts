@@ -55,7 +55,7 @@ export type IngestBatch = {
 };
 
 export type IngestOptions = {
-  /** Two intervals of the same app merge when this close. Default 60 s. */
+  /** Two intervals of the same app merge when this close. Default 15 min (spec). */
   mergeGapMs?: number;
   /** Minutes east of UTC for day buckets. IST is `330`. */
   utcOffsetMinutes?: number;

@@ -32,12 +32,27 @@
 export const USAGE_EVENT_TYPE = {
   MOVE_TO_FOREGROUND: 1,
   MOVE_TO_BACKGROUND: 2,
+  SCREEN_INTERACTIVE: 15,
+  SCREEN_NON_INTERACTIVE: 16,
+  KEYGUARD_SHOWN: 17,
+  KEYGUARD_HIDDEN: 18,
   ACTIVITY_RESUMED: 23,
   ACTIVITY_PAUSED: 24,
+  DEVICE_SHUTDOWN: 26,
+  DEVICE_STARTUP: 27,
 } as const;
 
 const FOREGROUND_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, USAGE_EVENT_TYPE.ACTIVITY_RESUMED]);
 const BACKGROUND_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, USAGE_EVENT_TYPE.ACTIVITY_PAUSED]);
+// Screen-off, keyguard shown and shutdown implicitly end any foreground interval.
+// Without this, a phone that goes to sleep while an app is in front leaves that
+// interval open, producing the 8h53m Google app and 3h9m permission-controller
+// sittings seen on Xiaomi.
+const IMPLICIT_BACKGROUND_TYPES = new Set<number>([
+  USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE,
+  USAGE_EVENT_TYPE.KEYGUARD_SHOWN,
+  USAGE_EVENT_TYPE.DEVICE_SHUTDOWN,
+]);
 
 export type UsageRow = {
   /** Android package name, e.g. `com.google.android.youtube`. */
@@ -121,6 +136,22 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.android.launcher',
   'com.android.launcher3',
   'com.google.android.apps.nexuslauncher',
+  // OEM launchers — MIUI (Xiaomi) was producing 8h+ sessions when left as foreground
+  'com.miui.home',
+  'com.miui.securitycenter',
+  'com.miui.securityadd',
+  'com.sec.android.app.launcher',
+  'com.huawei.android.launcher',
+  'com.oppo.launcher',
+  'com.vivo.launcher',
+  'com.transsion.XOSLauncher',
+  'com.lge.launcher2',
+  // System UI that appears as foreground during permission dialogs, etc.
+  // com.google.android.permissioncontroller was seen as 3h9m when screen-off
+  // did not close it; it should be ignored even after the screen-off fix.
+  'com.google.android.permissioncontroller',
+  'com.android.packageinstaller',
+  'com.google.android.packageinstaller',
 ] as const;
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -160,6 +191,33 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
 
   for (const row of ordered) {
+    // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
+    // intervals. They must be handled before the ignore-package check because
+    // the event itself may come from systemui which is ignored, but its effect
+    // is global: the user is no longer looking at any app.
+    if (IMPLICIT_BACKGROUND_TYPES.has(row.eventType)) {
+      if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
+        drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
+        continue;
+      }
+      // Close every open interval at this timestamp.
+      for (const [app, start] of open) {
+        const duration = row.timeStamp - start;
+        if (duration > maxIntervalMs) {
+          drops.push({ reason: 'too_long', app, at: start });
+          addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: row.timeStamp });
+          continue;
+        }
+        if (duration <= 0 || duration < minIntervalMs) {
+          drops.push({ reason: 'below_minimum', app, at: start });
+          continue;
+        }
+        intervals.push({ app, start, end: row.timeStamp, carried: start < options.sinceMs });
+      }
+      open.clear();
+      continue;
+    }
+
     if (!PACKAGE.test(row.packageName)) {
       drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
       addGap(gaps, { reason: 'invalid_package', count: 1 });

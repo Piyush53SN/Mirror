@@ -90,14 +90,25 @@ export async function ingestDay(store: MirrorStore, day: string, utcOffsetMinute
 }
 
 /**
- * Ingest yesterday and the day before, in the phone's current offset.
+ * Ingest today, yesterday and the day before, in the phone's current offset.
  *
- * Two days, not one: a syncing phone can miss the midnight boundary, and
- * recomputing yesterday is cheap and idempotent. Running this on every app open
- * keeps the derived tables warm without a second background job.
+ * Three days: today is partial (its rollup is not written, but its sessions are,
+ * so the UI shows today's sessions immediately), and yesterday + day-before are
+ * complete days that may need re-computation if a sync missed midnight. Running
+ * this on every app open keeps the derived tables warm without a second
+ * background job.
+ *
+ * Before this fix, only yesterday and day-before were ingested, so today's
+ * sessions appeared only after the day completed — the finding "today's sessions
+ * appear only after day completes" was correct.
  */
 export async function ingestRecentDays(store: MirrorStore, now: number, utcOffsetMinutes: number): Promise<IngestDayResult[]> {
+  const today = localDayKey(now, utcOffsetMinutes);
   const yesterday = localDayKey(now - DAY_MS, utcOffsetMinutes);
   const dayBefore = localDayKey(now - 2 * DAY_MS, utcOffsetMinutes);
-  return [await ingestDay(store, dayBefore, utcOffsetMinutes), await ingestDay(store, yesterday, utcOffsetMinutes)];
+  return [
+    await ingestDay(store, dayBefore, utcOffsetMinutes),
+    await ingestDay(store, yesterday, utcOffsetMinutes),
+    await ingestDay(store, today, utcOffsetMinutes),
+  ];
 }

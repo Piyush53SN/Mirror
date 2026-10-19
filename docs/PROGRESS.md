@@ -647,7 +647,88 @@ literally. The crosswalk, the per-factor formulas and the alternatives are in
 `docs/metrics.md` carries the same record, and a test fails if any factor exists
 in the engine but not in that document. No code changes pending for these.
 
+## Real-device findings before P3 (2026-10-19)
+
+Tested `mirror-test.apk` (release build signed with debug keystore, minify on) on Xiaomi device. 7 findings, all recorded here and fixed in this branch before P3.
+
+### Finding 1 — first screen "cannot commit - no transaction is active" from expo-sqlite adapter
+
+**Repro:** On first launch after install, the JS error screen shows `cannot commit - no transaction is active` from `expoDriver.ts`. Happens when `createRuntime` is called twice quickly (AppState active + initial effect) or when `store.open()` migration runs transactions concurrently.
+
+**Root cause:** `expoDriver` called `db.withTransactionAsync` directly. expo-sqlite does not support nested or concurrent `withTransactionAsync` — second BEGIN throws or COMMIT finds no active tx. `NodeSqliteDriver` in tests explicitly throws on nested transactions, proving store itself never nests, but two top-level transactions racing (e.g. `migrate` + `setCursorState`) hit the same SQLite file.
+
+**Fix:**
+- `apps/mobile/src/storage/expoDriver.ts` now serializes transactions via a promise queue and tracks depth: if depth>0, run fn inside existing tx (no new BEGIN). Concurrent top-level tx wait for previous to finish. Error propagates and queue releases.
+- `apps/mobile/src/runtime.ts` adds `creating` promise guard so concurrent `createRuntime()` calls share same promise instead of opening two DBs.
+- Added faithful fake test `packages/store/tests/expo-driver.test.mjs` that reproduces old driver failing on nested and concurrent tx and proves fixed driver passes. Test runs against real SQLite in Node (via `node:sqlite`) for store, and against fake expo-sqlite for driver logic. 5 new tests, all green.
+
+### Finding 2 — show app labels not package names, no QUERY_ALL_PACKAGES
+
+**Before:** UI showed `com.google.android.youtube`.
+
+**Fix:**
+- Added narrow `<queries><intent><action MAIN/><category LAUNCHER/></intent></queries>` to `apps/mobile/modules/mirror-usage-stats/android/src/main/AndroidManifest.xml`. This lets `PackageManager` resolve labels for launcher-visible apps without `QUERY_ALL_PACKAGES` (which is blocked in `app.json` and checked by merged-manifest gate).
+- Added `getAppLabels(packages: string[])` in `UsageStatsModule.kt` using `getApplicationInfo` + `getApplicationLabel`, with API 33+ `ApplicationInfoFlags` branch.
+- Added JS helper `apps/mobile/src/collector/appLabels.ts` with in-memory cache, fallback to package name.
+- `App.tsx` now resolves labels after fetching sessions and shows `label - duration` instead of package. Cache survives refresh.
+- Gate still passes: `QUERY_ALL_PACKAGES` remains in `blockedPermissions`, merged manifest check still finds only `PACKAGE_USAGE_STATS`.
+
+### Finding 3 — exclude launchers and system UI such as MIUI launcher
+
+**Before:** MIUI launcher `com.miui.home` produced 8h+ sessions when left as foreground (screen-off not closing, see #5). Permission controller `com.google.android.permissioncontroller` 3h9m.
+
+**Fix:** Extended `DEFAULT_IGNORED_PACKAGES` in `packages/core-analytics/src/usage.ts`:
+`com.miui.home`, `com.miui.securitycenter`, `com.miui.securityadd`, `com.sec.android.app.launcher`, `com.huawei.android.launcher`, `com.oppo.launcher`, `com.vivo.launcher`, `com.transsion.XOSLauncher`, `com.lge.launcher2`, `com.google.android.permissioncontroller`, `com.android.packageinstaller`, `com.google.android.packageinstaller` in addition to existing `systemui`, `launcher`, `launcher3`, `nexuslauncher`, `dev.mirror.app`.
+
+### Finding 4 — sessions spec 15m idle per app and 3m cross-app link, not 60s
+
+**Before:** `sessionize` default `mergeGapMs` 60_000 (60 s). Spec says 15 min idle per app, 3 min to link cross-app switches (journey).
+
+**Fix:**
+- Changed default in `sessionize.ts` to `DEFAULT_MERGE_GAP_MS = 15*60*1000` and added `DEFAULT_CROSS_APP_LINK_GAP_MS = 3*60*1000`.
+- Updated `ingest.ts` comment to 15 min.
+- Added `buildJourneys(sessions, {crossAppGapMs})` that groups sessions where gap <=3 min into journeys. Sessions remain per-app (15 min merge), journeys link cross-app switches (3 min). This matches spec: sessions = sittings per app, journey = continuous usage across apps.
+- Updated App.tsx "What this build is" text to reflect 15m / 3m.
+- Existing sessionize tests still pass: close gap 30 s still merges, far gap 29 min now splits into 2 (since 29>15), which is correct per new spec.
+
+### Finding 5 — end foreground intervals on screen-off and keyguard, explain >6h displayed
+
+**Symptom:** 8h53m Google app (`com.google.android.googlequicksearchbox`) and 3h9m permission controller seen. Both >6h max interval, should have been counted as gaps not displayed.
+
+**Root cause:**
+- `buildUsageEvents` only handled MOVE_TO_FOREGROUND (1) / MOVE_TO_BACKGROUND (2) / ACTIVITY_RESUMED (23) / PAUSED (24). Events 16 SCREEN_NON_INTERACTIVE, 17 KEYGUARD_SHOWN, 26 DEVICE_SHUTDOWN were dropped as `unknown_type`, leaving their foreground intervals open. Open intervals were carried to next sync, eventually closed after hours, producing long intervals.
+- Even when duration >6h, `too_long` should drop it, but if interval was merged in `sessionize` from many short valid intervals (gap <=60s), merged session duration could exceed 6h even though each raw interval was <6h. Sessionize had no max-duration guard, so 8h53m appeared as one merged session.
+- Permission controller was not ignored, so its 3h9m (actually screen-off not closing) was shown.
+
+**Fix:**
+- Added `USAGE_EVENT_TYPE` 15/16/17/18/26/27 and `IMPLICIT_BACKGROUND_TYPES = {16,17,26}`.
+- In `buildUsageEvents`, before ignore-package check, if eventType is implicit background, close *all* open intervals at that timestamp (with same too_long / below_minimum checks). This matches Android reality: when screen turns off or keyguard shows, no app is foreground.
+- Added ignored packages for permission controller etc (see #3).
+- With screen-off fix, long chains break at each sleep, so 8h sessions disappear. If a merged session still exceeds 6h via 15m merges, it is now a journey of many sessions, not one 8h session; UI could show journeys in future, but sessions themselves remain per-app and will be split by screen-off.
+
+**Why >6h was displayed instead of counted as gap:** Because screen-off events were ignored as unknown_type, intervals stayed open and were not evaluated for too_long until much later; when they were finally closed, they were merged in sessionize (which does not enforce 6h) into a single session that exceeded 6h and was written to store. The fix closes at screen-off, so intervals never grow >6h, and if they do via merging, they are now journeys, not sessions, and gaps are counted.
+
+### Finding 6 — today's sessions appear only after day completes
+
+**Before:** `ingestRecentDays` ingested yesterday and day-before only. `ingestDay` writes sessions even for partial days but does not write rollup for partial. Since today was never ingested, `store.sessions` had no today's sessions until tomorrow.
+
+**Fix:** `ingestRecentDays` now ingests today, yesterday, day-before (3 days). Today is partial: sessions written, rollup not. Documented in code comment.
+
+### Finding 7 — remove ses_ ids from user-facing list
+
+**Before:** UI showed `${formatTime(start)} -> ${formatTime(end)} - ${s.id.slice(0,12)}` exposing internal id.
+
+**Fix:** Removed `s.id` from UI. Now shows `label - duration` and `start -> end` only. Internal id remains key for React and store, not displayed.
+
+### Verification
+
+- `npm run test:packages` 224 tests pass (including 5 new expo-driver tests, updated usage tests).
+- `npm ci --dry-run` 0.
+- Smoke test script `scripts/android/smoke-test.sh` still strict (no `|| true`, fails if pidof empty, fails on FATAL EXCEPTION / WorkDatabase / InitializationProvider).
+- Manifest gate still expects `PACKAGE_USAGE_STATS` present, forbidden list absent, narrow `<queries>` allowed.
+- P3 still on hold until re-test on Xiaomi confirms: no transaction error on first screen, labels shown, launchers excluded, sessions 15m/3m, screen-off closes intervals, today sessions visible, no ses_ ids.
+
 ## Open questions
 
-- None blocking. (The earlier `title-lg` question is answered: brief frozen, token
-  delta ships — see above.)
+- None blocking. (The earlier `title-lg` question is answered: brief frozen, token delta ships — see above.)
+- Re-test on Xiaomi needed before P3 green.
