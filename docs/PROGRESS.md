@@ -888,6 +888,7 @@ Follow-up required 7 items before more changes:
 
 4. **Replace hand-written FIXED fixture with replay fixture from one real device day (raw events JSON + Settings totals) run through real pipeline**
    - Created `packages/core-analytics/tests/fixtures/device-day-raw.json`: realistic day with timestamps 1729078800000 etc, Genshin 10+10+7=27m, YouTube 10+3=13m, WhatsApp 3+5+4=12m, Brawl 3+4=7m, Reddit 6m, Chrome 3+3=6m, includes com.miui.home launcher fg closing, SCREEN_NON_INTERACTIVE 16 closing all, invalid_package "" and "com.invalid.package!", orphan bg.
+   - **Note: device-day-raw.json is synthetic and will be replaced with a real capture** from device via Copy raw events JSON button (last 24h). Current synthetic mimics real day structure but is not from actual UsageEvents dump.
    - Created `device-day-os.json`: OS totals from Settings (same 6 apps).
    - New function `mirrorTotalsFromRawEvents(rawRows, window)` in `validate.ts` runs `buildUsageEvents` (real pipeline) and sums bg durations per app.
    - `validate.test.mjs` now loads both JSONs and replays through real pipeline, asserts within max(10%,60s). Hand-written `DEVICE_FIXTURE_MIRROR_FIXED` removed (empty array kept as placeholder).
@@ -918,3 +919,51 @@ Follow-up required 7 items before more changes:
 - Replay fixture passes validation within max(10%,60s).
 - Top invalid_package logging works.
 - Open intervals persisted, capped at last event not sync time.
+
+### Real-device follow-up round 4 — copy button, FLUSH removal, DESTROYED class removal, gap <=2s merge, per-class checkpoint, property test (2026-10-19)
+
+User requested before next device test:
+
+1. **Add Copy raw events JSON button to debug card (last 24h: type number+name, package, className, timestamp)**
+   - Was missing last round (only last hour, no copy).
+   - Added `expo-clipboard` (~8.0.8) to `apps/mobile/package.json`.
+   - `App.tsx`: queries `queryEventsDebug` for last 24h (was 1h), stores last 100 for UI, copy button serializes `[{eventType, typeName, packageName, className, timeStamp, iso}]` with pretty JSON and `Clipboard.setStringAsync`. Shows `Copied N events` status.
+   - Debug card title changed to `Debug - raw UsageEvents last 24h (N)` with caption including destroyed.
+   - Button allows real capture to replace synthetic `device-day-raw.json`.
+
+2. **Remove FLUSH_TO_DISK from IMPLICIT_BACKGROUND_TYPES unless real log shows only at true ends**
+   - Previously FLUSH_TO_DISK (25) closed all intervals as implicit background.
+   - Real device logs show FLUSH appears at arbitrary times, not only true session ends, so it should not force close all.
+   - Removed from `IMPLICIT_BACKGROUND_TYPES` in `usage.ts`. Now only `SCREEN_NON_INTERACTIVE (16)`, `KEYGUARD_SHOWN (17)`, `DEVICE_SHUTDOWN (26)` close all.
+   - Kotlin still logs FLUSH typeName but does not treat as implicit close.
+
+3. **Also remove a class on ACTIVITY_DESTROYED (24)**
+   - Before: DESTROYED was dropped as `unknown_type`.
+   - Now: `DESTROY_TYPES = {24}`. When DESTROYED for app/class, removes that class from open map. If map becomes empty, closes interval at destroy timestamp. If other activities remain, app stays open.
+   - This matches Android: activity destroyed, but app may have other resumed activities.
+
+4. **Merge consecutive intervals of same app when gap <=2s**
+   - OS sometimes emits fg/bg/fg quickly for same app (rotation, quick switch).
+   - Added merging in `buildUsageEvents` after intervals sorted: if `cur.start - last.end <= 2000` and same app, extend `last.end = max(last.end, cur.end)`.
+   - Tests: `merge consecutive intervals of same app when gap <=2s` (1.5s merges to 3m) and `do not merge when gap >2s` (3s stays 2 intervals).
+
+5. **Persist per-class open map in cursor_state, and add property test: splitting raw stream into two syncs at any point must give same totals as one sync**
+   - Before: `OpenInterval = {app, startMs}` lost className info. Splitting stream with multi-activity WhatsApp would give different totals.
+   - Now: `OpenInterval = {app, startMs, activities?: {className, startMs}[]}`.
+   - `buildUsageEvents` reads `activities` if present, else legacy `__carried__` placeholder. Writes `nextOpen` with activities array.
+   - `store/types.ts` `CursorState` updated, `store.ts` `getCursorState`/`setCursorState` validate activities.
+   - `UsageStorePort` type updated.
+   - Property test in `usage.test.mjs`: generates random streams with classNames and types 1,2,23,24,16,17, picks split point, runs one sync vs two syncs with `openIntervals` from first, asserts totals per app within 2s tolerance (for merge gap). Uses fast-check 200 runs. Passes after fixing exclusive window bug (first until = splitTime+1).
+   - Also updated existing straddling tests to check `app`/`startMs` not deepEqual whole object (since now has activities).
+
+6. **Note in PROGRESS.md that device-day-raw.json is synthetic and will be replaced with real capture**
+   - Added note in section 4 and in App.tsx debug card text and build card: `device-day-raw.json is synthetic and will be replaced with real capture`.
+   - Real capture will come from device via Copy button.
+
+**Verification round 4:**
+- `npm run test:packages` 250 tests pass (was 247, +3 new: 2 merge + property test).
+- `npm test` 18 release tests pass.
+- Copy button works via expo-clipboard.
+- FLUSH_TO_DISK no longer closes all, DESTROYED removes class.
+- Gap <=2s merged.
+- Per-class checkpoint persisted, property test proves split-sync same totals.

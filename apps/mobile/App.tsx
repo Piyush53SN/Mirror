@@ -10,6 +10,7 @@ import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import { getTopInvalidPackages } from '@mirror/core-analytics';
+import * as Clipboard from 'expo-clipboard';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -42,11 +43,12 @@ export default function App(): React.ReactElement {
   const [labels, setLabels] = React.useState<Record<string, string>>({});
   const [quality, setQuality] = React.useState<DataQuality | null>(null);
   const [validation, setValidation] = React.useState<ValidationResult | null>(null);
-  const [debugEvents, setDebugEvents] = React.useState<{ packageName: string; typeName: string; timeStamp: number; className?: string }[]>([]);
+  const [debugEvents, setDebugEvents] = React.useState<{ packageName: string; typeName: string; eventType: number; timeStamp: number; className?: string }[]>([]);
   const [invalidTop, setInvalidTop] = React.useState<{ pkg: string; count: number }[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [lastCollect, setLastCollect] = React.useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = React.useState<string | null>(null);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
 
@@ -99,7 +101,6 @@ export default function App(): React.ReactElement {
           return acc;
         }, {});
         setLastCollect(`collect: collected ${collectResult.events} events, ${collectResult.inserted} inserted, ${collectResult.gaps.length} gaps (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})`);
-        // Top 10 invalid_package strings
         try {
           const top = getTopInvalidPackages(collectResult.dropped as any);
           setInvalidTop(top);
@@ -132,9 +133,9 @@ export default function App(): React.ReactElement {
 
       try {
         const now = Date.now();
-        const debug = await usage.queryEventsDebug(now - 3_600_000, now);
-        setDebugEvents(debug.slice(-30));
-        console.log('RAW UsageEvents debug (last hour, up to 30):', JSON.stringify(debug.slice(-30), null, 2));
+        const debug = await usage.queryEventsDebug(now - 24 * 3_600_000, now);
+        setDebugEvents(debug.slice(-100));
+        console.log('RAW UsageEvents debug (last 24h, count):', debug.length, JSON.stringify(debug.slice(-30), null, 2));
       } catch {}
 
       const q = await runtime.dataQuality({ fromMs: Date.now() - 7 * 86_400_000 });
@@ -161,6 +162,28 @@ export default function App(): React.ReactElement {
       runtimeRef.current?.usage().openSettings();
     } catch {}
   }, []);
+
+  const copyRawEvents = React.useCallback(async () => {
+    try {
+      const json = JSON.stringify(
+        debugEvents.map((e) => ({
+          eventType: e.eventType,
+          typeName: e.typeName,
+          packageName: e.packageName,
+          className: e.className ?? '',
+          timeStamp: e.timeStamp,
+          iso: new Date(e.timeStamp).toISOString(),
+        })),
+        null,
+        2,
+      );
+      await Clipboard.setStringAsync(json);
+      setCopyStatus(`Copied ${debugEvents.length} events`);
+      setTimeout(() => setCopyStatus(null), 3000);
+    } catch (e: any) {
+      setCopyStatus(`Copy failed: ${e?.message ?? String(e)}`);
+    }
+  }, [debugEvents]);
 
   if (permission === 'checking' || loading) {
     return (
@@ -280,7 +303,7 @@ export default function App(): React.ReactElement {
                 .join(', ') || 'none'}, measured gap ${Math.round(quality.measuredGapMs / 1000)}s`}
             </Text>
             <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
-              {`Invalid package = malformed packageName from OS (empty, spaces, special chars). Orphan background = bg without fg – happens when fg was in launcher/resolver which now closes previous app but was previously ignored, or window missed start, or STOPPED not handled before.`}
+              {`Invalid package = malformed packageName from OS (empty, spaces, special chars). Orphan background = bg without fg.`}
             </Text>
             {invalidTop.length > 0 ? (
               <View style={{ marginTop: theme.space(1) }}>
@@ -293,7 +316,7 @@ export default function App(): React.ReactElement {
             {validation ? (
               <View style={{ marginTop: theme.space(2) }}>
                 <Text role="label" theme={theme}>{`OS vs Mirror validation (max(10%,60s)): max diff ${validation.maxAbsPct.toFixed(1)}% / ${formatDuration(validation.maxAbsMs)}, ${validation.ok ? 'OK' : `FAIL ${validation.overThreshold.length} apps`}`}</Text>
-                <Text role="micro" tone="muted" theme={theme}>{`Note: queryUsageStats may differ from Settings; Settings numbers are ground truth (Digital Wellbeing). queryUsageStats uses INTERVAL_DAILY bucketing.`}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{`Note: queryUsageStats may differ from Settings; Settings numbers are ground truth (Digital Wellbeing).`}</Text>
                 {validation.rows.slice(0, 6).map((r) => (
                   <Text key={r.app} role="micro" tone="muted" theme={theme}>
                     {`${labels[r.app] ?? r.app}: OS ${formatDuration(r.osMs)}, Mirror ${formatDuration(r.mirrorMs)}, diff ${r.diffPct.toFixed(1)}% (${formatDuration(r.diffMs)}) ${r.status}`}
@@ -342,7 +365,7 @@ export default function App(): React.ReactElement {
               No sessions yet - use some apps, then come back and tap Refresh.
             </Text>
             <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-              Mirror reads UsageStats every time you open it and on a daily background job. Single foreground enforced, launcher closes previous.
+              Mirror reads UsageStats every time you open it and on a daily background job. Single foreground enforced, launcher closes previous, gap <=2s merged.
             </Text>
           </View>
         ) : (
@@ -362,14 +385,24 @@ export default function App(): React.ReactElement {
 
       {debugEvents.length > 0 ? (
         <Card theme={theme}>
-          <SectionHeader theme={theme} title={`Debug - raw UsageEvents last hour (${debugEvents.length})`} caption="foreground, background, stopped, screen, keyguard, flush" />
+          <SectionHeader theme={theme} title={`Debug - raw UsageEvents last 24h (${debugEvents.length})`} caption="foreground, background, stopped, destroyed, screen, keyguard" />
+          <View style={{ flexDirection: 'row', gap: theme.space(2), marginBottom: theme.space(2) }}>
+            <Pill theme={theme} onPress={copyRawEvents}>
+              Copy raw events JSON
+            </Pill>
+            {copyStatus ? (
+              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+                {copyStatus}
+              </Text>
+            ) : null}
+          </View>
           {debugEvents.map((e, idx) => (
             <View key={idx} style={{ paddingVertical: theme.space(1) }}>
-              <Text role="micro" theme={theme}>{`${new Date(e.timeStamp).toLocaleTimeString()} ${e.typeName}(${e.typeName === 'MOVE_TO_FOREGROUND' ? 1 : e.typeName === 'MOVE_TO_BACKGROUND' ? 2 : e.typeName === 'ACTIVITY_RESUMED' ? 1 : e.typeName === 'ACTIVITY_PAUSED' ? 2 : e.typeName === 'ACTIVITY_STOPPED' ? 23 : e.typeName === 'FLUSH_TO_DISK' ? 25 : e.typeName === 'SCREEN_NON_INTERACTIVE' ? 16 : e.typeName === 'KEYGUARD_SHOWN' ? 17 : '?'}) ${e.packageName}${e.className ? ` / ${e.className.split('.').pop()}` : ''}`}</Text>
+              <Text role="micro" theme={theme}>{`${new Date(e.timeStamp).toLocaleTimeString()} ${e.eventType}:${e.typeName} ${e.packageName}${e.className ? ` / ${e.className.split('.').pop()}` : ''}`}</Text>
             </View>
           ))}
           <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-            Log shows which events are missing or rejected. Verified constants: ACTIVITY_RESUMED=1, PAUSED=2, STOPPED=23, FLUSH_TO_DISK=25, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26, DEVICE_STARTUP=27. STOPPED must not close app whose other activity is resumed (tracked per className).
+            {`Log shows which events are missing or rejected. Verified constants: ACTIVITY_RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, FLUSH_TO_DISK=25 (not implicit), SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26, DEVICE_STARTUP=27. STOPPED must not close app whose other activity is resumed (tracked per className). DESTROYED removes a class. FLUSH_TO_DISK removed from IMPLICIT_BACKGROUND_TYPES unless real log shows only at true ends. Gap <=2s merged. device-day-raw.json is synthetic and will be replaced with real capture.`}
           </Text>
         </Card>
       ) : null}
@@ -378,12 +411,13 @@ export default function App(): React.ReactElement {
         <SectionHeader theme={theme} title="What this build is" caption="Stage 1 - real data, no estimates" />
         <Text role="micro" tone="muted" theme={theme}>
           {[
-            'Collector: UsageEvents 1/2/23/25/16/17/26, per-activity tracking via className, single foreground, launcher fg closes previous, 6h max, ignores only for counting',
-            'Store: expo-sqlite + XChaCha20-Poly1305, tx queue+depth, open intervals persisted in checkpoint capped at last event not sync time',
+            'Collector: UsageEvents 1/2/23/24/16/17/26, per-activity tracking via className, DESTROYED removes class, single foreground, launcher fg closes previous, gap <=2s merged, 6h max, ignores only for counting',
+            'Store: expo-sqlite + XChaCha20-Poly1305, tx queue+depth, open intervals with per-class map persisted in checkpoint capped at last event not sync time, split-sync property test',
             'Ingestion: sessions <=15m per app, 3m journey, no overlaps, per-app daily totals above timeline',
-            'Validation: Mirror vs OS queryUsageStats with max(10%,60s) tolerance, Settings is ground truth, fails test > threshold on fixture',
-            'Debug: queryEventsDebug logs typeName, top 10 invalid_package strings',
+            'Validation: Mirror vs OS queryUsageStats with max(10%,60s) tolerance, Settings is ground truth',
+            'Debug: queryEventsDebug 24h with type number+name, package, className, timestamp, Copy raw events JSON button, top 10 invalid_package',
             'Labels: PackageManager narrow <queries> MAIN/LAUNCHER, no QUERY_ALL_PACKAGES',
+            'Note: device-day-raw.json is synthetic and will be replaced with real capture',
           ].join('\n')}
         </Text>
       </Card>

@@ -516,7 +516,15 @@ export class MirrorStore {
         open: Array.isArray(parsed.open)
           ? parsed.open
               .filter((entry) => typeof entry?.app === 'string' && Number.isFinite(entry?.startMs))
-              .map((entry) => ({ app: entry.app, startMs: Number(entry.startMs) }))
+              .map((entry) => ({
+                app: entry.app,
+                startMs: Number(entry.startMs),
+                activities: Array.isArray((entry as any).activities)
+                  ? (entry as any).activities
+                      .filter((a: any) => typeof a?.className === 'string' && Number.isFinite(a?.startMs))
+                      .map((a: any) => ({ className: a.className, startMs: Number(a.startMs) }))
+                  : undefined,
+              }))
           : [],
       };
     }
@@ -531,6 +539,13 @@ export class MirrorStore {
     for (const entry of state.open) {
       if (typeof entry.app !== 'string' || !Number.isFinite(entry.startMs) || entry.startMs < 0) {
         throw new Error('invalid open interval in cursor state');
+      }
+      if (entry.activities) {
+        for (const a of entry.activities) {
+          if (typeof a.className !== 'string' || !Number.isFinite(a.startMs) || a.startMs < 0) {
+            throw new Error('invalid activity in cursor state');
+          }
+        }
       }
     }
     await writeMeta(this.driver, `cursor_state:${source}`, JSON.stringify({ at: state.at, open: state.open }));

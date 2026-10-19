@@ -101,8 +101,10 @@ export type CursorState = {
   /** Where the next collection should start. */
   at: number | null;
   /** Intervals seen but not yet closed. Carried across syncs so a session that
-   *  straddles two runs is completed, not lost. */
-  open: { app: string; startMs: number }[];
+   *  straddles two runs is completed, not lost.
+   *  Now includes per-class map so splitting a stream gives same totals.
+   */
+  open: { app: string; startMs: number; activities?: { className: string; startMs: number }[] }[];
 };
 
 export type SessionRow = {

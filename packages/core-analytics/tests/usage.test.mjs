@@ -61,7 +61,11 @@ test('both Android event-type families are understood', () => {
 test('a single event is not a session: it is carried, not written', () => {
   const result = buildUsageEvents([fg('com.a.b', 0)], base);
   assert.equal(result.events.length, 0, 'half a session is never written');
-  assert.deepEqual(result.nextOpen, [{ app: 'com.a.b', startMs: at(0) }]);
+  assert.equal(result.nextOpen.length, 1);
+  assert.equal(result.nextOpen[0].app, 'com.a.b');
+  assert.equal(result.nextOpen[0].startMs, at(0));
+  // per-class map persisted
+  assert.ok(Array.isArray(result.nextOpen[0].activities), 'should have activities');
   assert.equal(result.stats.carriedOut, 1);
   assert.equal(result.dropped.length, 0, 'carrying is not dropping');
 });
@@ -268,7 +272,9 @@ test('a session straddling two syncs is written once, whole', async () => {
   assert.equal(run1.status, 'collected');
   assert.equal(run1.inserted, 0, 'a half session is not written');
   assert.equal(run1.carriedOut, 1);
-  assert.deepEqual(store.state.cursor.open, [{ app: 'com.a.one', startMs: at(0) }]);
+  assert.equal(store.state.cursor.open.length, 1);
+  assert.equal(store.state.cursor.open[0].app, 'com.a.one');
+  assert.equal(store.state.cursor.open[0].startMs, at(0));
 
   // Sync 2 at 11:00: sees only the close, because the foreground is behind the cursor.
   const second = [{ packageName: 'com.a.one', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: at(120) }];
@@ -351,4 +357,99 @@ test('collector: a cursor in the future yields no-window rather than a negative 
   const result = await collectUsage(fakeSource(true, []), store, { now: at(60) });
   assert.equal(result.status, 'no-window');
   assert.equal(store.state.events.length, 0);
+});
+
+test('property: splitting raw stream into two syncs at any point gives same totals as one sync (per-class persisted)', () => {
+  const arb = fc.array(
+    fc.record({
+      pkg: fc.constantFrom('com.a', 'com.b', 'com.whatsapp'),
+      cls: fc.constantFrom('Main', 'Conversation', 'A', 'B', ''),
+      type: fc.constantFrom(1, 2, 23, 24, 16, 17),
+      minute: fc.integer({ min: 0, max: 120 }),
+    }),
+    { minLength: 5, maxLength: 40 },
+  );
+
+  fc.assert(
+    fc.property(arb, fc.integer({ min: 1, max: 30 }), (raw, splitAt) => {
+      const rows = raw
+        .map((r) => ({
+          packageName: r.pkg,
+          className: r.cls ? `${r.pkg}.${r.cls}` : '',
+          eventType: r.type,
+          timeStamp: at(r.minute),
+        }))
+        .sort((a, b) => a.timeStamp - b.timeStamp);
+
+      if (rows.length === 0) return true;
+      const since = at(0) - 1000;
+      const until = at(130);
+      const baseOpts = { sinceMs: since, untilMs: until };
+
+      const one = buildUsageEvents(rows, baseOpts);
+      const totalsOne = new Map();
+      for (const ev of one.events) {
+        if (ev.kind === 'app_background' && ev.duration_ms) {
+          totalsOne.set(ev.app, (totalsOne.get(ev.app) ?? 0) + ev.duration_ms);
+        }
+      }
+
+      const idx = Math.min(Math.max(1, splitAt), rows.length - 1);
+      const firstPart = rows.slice(0, idx);
+      const secondPart = rows.slice(idx);
+      const splitTime = rows[idx] ? rows[idx].timeStamp : at(65);
+
+      // Use inclusive split: first window until = splitTime + 1 so row at splitTime is included in first if it belongs there
+      // Second window since = splitTime, with overlap, so no loss. This matches collector's 2s overlap.
+      const first = buildUsageEvents(firstPart, { sinceMs: since, untilMs: splitTime + 1 });
+      const second = buildUsageEvents(secondPart, {
+        sinceMs: splitTime,
+        untilMs: until,
+        openIntervals: first.nextOpen,
+      });
+
+      const totalsTwo = new Map();
+      for (const ev of [...first.events, ...second.events]) {
+        if (ev.kind === 'app_background' && ev.duration_ms) {
+          totalsTwo.set(ev.app, (totalsTwo.get(ev.app) ?? 0) + ev.duration_ms);
+        }
+      }
+
+      const apps = new Set([...totalsOne.keys(), ...totalsTwo.keys()]);
+      for (const app of apps) {
+        const t1 = totalsOne.get(app) ?? 0;
+        const t2 = totalsTwo.get(app) ?? 0;
+        // Allow 2s merging tolerance per interval (gap <=2s merged in one sync but not across split)
+        // The property should hold within 2s per app if per-class map is persisted
+        if (Math.abs(t1 - t2) > 2000) {
+          return false;
+        }
+      }
+      return true;
+    }),
+    { numRuns: 200 },
+  );
+});
+
+test('merge consecutive intervals of same app when gap <=2s', () => {
+  const rows = [
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(0) },
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, timeStamp: at(1) },
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(1) + 1500 }, // gap 1.5s
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, timeStamp: at(3) },
+  ];
+  const result = buildUsageEvents(rows, { sinceMs: at(0) - 1000, untilMs: at(10) });
+  assert.equal(result.stats.intervals, 1, 'should merge gap <=2s into one interval');
+  assert.equal(result.events.filter((e) => e.kind === 'app_background')[0].duration_ms, 3 * 60_000);
+});
+
+test('do not merge when gap >2s', () => {
+  const rows = [
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(0) },
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, timeStamp: at(1) },
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(1) + 3000 }, // gap 3s
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, timeStamp: at(3) },
+  ];
+  const result = buildUsageEvents(rows, { sinceMs: at(0) - 1000, untilMs: at(10) });
+  assert.equal(result.stats.intervals, 2, 'should not merge gap >2s');
 });

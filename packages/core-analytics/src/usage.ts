@@ -76,11 +76,14 @@ const BACKGROUND_TYPES = new Set<number>([
   USAGE_EVENT_TYPE.ACTIVITY_PAUSED,
   USAGE_EVENT_TYPE.ACTIVITY_STOPPED,
 ]);
-// Screen-off, keyguard, flush and shutdown implicitly end any foreground interval.
+// Destroyed removes a class but does not by itself close the app unless it was last activity
+const DESTROY_TYPES = new Set<number>([USAGE_EVENT_TYPE.ACTIVITY_DESTROYED]);
+// Screen-off, keyguard and shutdown implicitly end any foreground interval.
+// FLUSH_TO_DISK (25) removed from implicit: it appears in logs at arbitrary times, not only true session ends.
+// Keep only true user-away signals.
 const IMPLICIT_BACKGROUND_TYPES = new Set<number>([
   USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE,
   USAGE_EVENT_TYPE.KEYGUARD_SHOWN,
-  USAGE_EVENT_TYPE.FLUSH_TO_DISK,
   USAGE_EVENT_TYPE.DEVICE_SHUTDOWN,
 ]);
 
@@ -108,8 +111,15 @@ export type UsageEvent = {
   session_id?: string;
 };
 
-/** An interval seen but not yet closed. Carried in the cursor between runs. */
-export type OpenInterval = { app: string; startMs: number };
+/** An interval seen but not yet closed. Carried in the cursor between runs.
+ * Now persists per-class open map so splitting a raw stream into two syncs
+ * gives same totals as one sync (property test).
+ */
+export type OpenInterval = {
+  app: string;
+  startMs: number; // earliest start among activities
+  activities?: { className: string; startMs: number }[]; // per-class resumed activities
+};
 
 export type UsageDropReason =
   | 'invalid_package'
@@ -288,11 +298,25 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const carriedIn = options.openIntervals ?? [];
   for (const interval of carriedIn) {
     if (!open.has(interval.app)) {
-      // Carried intervals have no className; use __carried__ placeholder
-      open.set(interval.app, {
-        earliestStart: interval.startMs,
-        activities: new Map([['__carried__', interval.startMs]]),
-      });
+      if (interval.activities && interval.activities.length > 0) {
+        // Persisted per-class map
+        const actMap = new Map<string, number>();
+        let earliest = interval.startMs;
+        for (const a of interval.activities) {
+          actMap.set(a.className, a.startMs);
+          if (a.startMs < earliest) earliest = a.startMs;
+        }
+        open.set(interval.app, {
+          earliestStart: earliest,
+          activities: actMap,
+        });
+      } else {
+        // Legacy carried intervals have no className; use __carried__ placeholder
+        open.set(interval.app, {
+          earliestStart: interval.startMs,
+          activities: new Map([['__carried__', interval.startMs]]),
+        });
+      }
     }
   }
 
@@ -340,8 +364,25 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
-    if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType)) {
+    if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType) && !DESTROY_TYPES.has(row.eventType)) {
       drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp });
+      continue;
+    }
+
+    // ACTIVITY_DESTROYED (24) removes a class but does not close app unless last activity
+    if (DESTROY_TYPES.has(row.eventType)) {
+      const className = row.className && row.className.length > 0 ? row.className : '__default__';
+      const entry = open.get(row.packageName);
+      if (!entry) {
+        drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
+        addGap(gaps, { reason: 'orphan_background', count: 1 });
+        continue;
+      }
+      entry.activities.delete(className);
+      if (entry.activities.size === 0) {
+        closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        open.delete(row.packageName);
+      }
       continue;
     }
 
@@ -422,6 +463,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   // old that it cannot be a sitting any more: then it is an abandoned gap.
   // Persist open intervals in checkpoint; cap still-open at last event, not sync time.
   // The last event timestamp is the max timeStamp in ordered rows, or sinceMs if no rows.
+  // Persist per-class open map so split syncs give same totals.
   const lastEventMs = ordered.length > 0 ? ordered[ordered.length - 1]!.timeStamp : options.sinceMs;
   const nextOpen: OpenInterval[] = [];
   for (const [app, entry] of open) {
@@ -439,11 +481,32 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       drops.push({ reason: 'too_long', app, at: start });
       continue;
     }
-    nextOpen.push({ app, startMs: start });
+    nextOpen.push({
+      app,
+      startMs: start,
+      activities: [...entry.activities.entries()].map(([className, s]) => ({ className, startMs: s })),
+    });
   }
   nextOpen.sort((a, b) => a.startMs - b.startMs || a.app.localeCompare(b.app));
 
+  // Merge consecutive intervals of the same app when gap <= 2s
+  // This handles OS emitting fg/bg/fg quickly for same app (e.g. activity rotation)
   intervals.sort((a, b) => a.start - b.start || a.app.localeCompare(b.app));
+  const MERGE_GAP_MS = 2000;
+  const merged: typeof intervals = [];
+  for (const cur of intervals) {
+    const last = merged[merged.length - 1];
+    if (last && last.app === cur.app && cur.start - last.end <= MERGE_GAP_MS) {
+      // Merge: extend last.end to cur.end, keep earliest start and carried flag if either carried
+      last.end = Math.max(last.end, cur.end);
+      last.carried = last.carried || cur.carried;
+    } else {
+      merged.push({ ...cur });
+    }
+  }
+  // Replace intervals with merged
+  intervals.length = 0;
+  intervals.push(...merged);
   const events: UsageEvent[] = [];
   let totalMs = 0;
   for (const interval of intervals) {
@@ -491,8 +554,14 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
 /** What the collector needs from storage. `MirrorStore` satisfies this structurally. */
 export type UsageStorePort = {
-  getCursorState(source: string): Promise<{ at: number | null; open: { app: string; startMs: number }[] }>;
-  setCursorState(source: string, state: { at: number | null; open: { app: string; startMs: number }[] }): Promise<void>;
+  getCursorState(source: string): Promise<{
+    at: number | null;
+    open: { app: string; startMs: number; activities?: { className: string; startMs: number }[] }[];
+  }>;
+  setCursorState(
+    source: string,
+    state: { at: number | null; open: { app: string; startMs: number; activities?: { className: string; startMs: number }[] }[] },
+  ): Promise<void>;
   appendEvents(events: readonly unknown[]): Promise<{ inserted: number; duplicate: number; rejected: { id: string; reason: string }[] }>;
   recordGaps?(source: string, gaps: { reason: string; count: number; fromMs?: number; toMs?: number }[], atMs?: number): Promise<void>;
 };
