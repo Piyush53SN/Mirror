@@ -159,11 +159,11 @@ jobs:
           echo "Gradle assembleRelease exit code: $EXIT_CODE"
           if [ $EXIT_CODE -ne 0 ]; then
             echo "=== What went wrong block (assembleRelease) ==="
-            grep -n -A 150 "What went wrong" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 300 || true
-            echo "=== createBundleReleaseJsAndAssets failure ==="
-            grep -n -i -A 10 -B 10 "createBundleReleaseJsAndAssets\|Bundling failed\|SyntaxError\|Unexpected token" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 500 || true
+            grep -n -A 200 "What went wrong" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 400 || true
+            echo "=== Task failures (bundle / R8 / compile) ==="
+            grep -n -i -A 20 -B 10 "createBundleReleaseJsAndAssets\|Bundling failed\|SyntaxError\|Unexpected token\|minifyReleaseWithR8\|Missing class\|R8:.*Missing\|Execution failed for task" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 800 || true
             echo "=== Full gradle-assembleRelease.log tail ==="
-            tail -n 800 "${{ github.workspace }}/.reports/gradle-assembleRelease.log" || true
+            tail -n 1200 "${{ github.workspace }}/.reports/gradle-assembleRelease.log" || true
             exit $EXIT_CODE
           fi
           find app/build/outputs -type f -name "*.apk" | xargs ls -lh || true
