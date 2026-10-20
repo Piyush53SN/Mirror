@@ -161,7 +161,7 @@ jobs:
             echo "=== What went wrong block (assembleRelease) ==="
             grep -n -A 200 "What went wrong" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 400 || true
             echo "=== Task failures (bundle / R8 / compile) ==="
-            grep -n -i -A 20 -B 10 "createBundleReleaseJsAndAssets\|Bundling failed\|SyntaxError\|Unexpected token\|minifyReleaseWithR8\|Missing class\|R8:.*Missing\|Execution failed for task" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 800 || true
+            grep -n -i -E -A 20 -B 10 "createBundleReleaseJsAndAssets|Bundling failed|SyntaxError|Unexpected token|minifyReleaseWithR8|Missing class|R8:.*Missing|Execution failed for task" "${{ github.workspace }}/.reports/gradle-assembleRelease.log" | head -n 800 || true
             echo "=== Full gradle-assembleRelease.log tail ==="
             tail -n 1200 "${{ github.workspace }}/.reports/gradle-assembleRelease.log" || true
             exit $EXIT_CODE

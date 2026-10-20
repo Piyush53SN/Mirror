@@ -23,8 +23,7 @@
     "expo-background-task": "~58.0.11",
     "expo-task-manager": "~58.0.12",
     "expo-system-ui": "~58.0.2",
-    "expo-build-properties": "~58.0.11",
-    "expo-clipboard": "~8.0.8"
+    "expo-build-properties": "~58.0.11"
   },
   "devDependencies": {
     "@types/react": "~19.3.0",

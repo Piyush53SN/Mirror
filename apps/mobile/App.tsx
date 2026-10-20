@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { AppState, ScrollView, View } from 'react-native';
+import { AppState, ScrollView, Share, View } from 'react-native';
 import { createTheme } from '@mirror/ui';
 import { Card, SectionHeader, Text, Divider } from '@mirror/ui';
 import { Pill, LinkButton } from '@mirror/ui';
@@ -10,7 +10,6 @@ import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import { getTopInvalidPackages } from '@mirror/core-analytics';
-import * as Clipboard from 'expo-clipboard';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -177,11 +176,11 @@ export default function App(): React.ReactElement {
         null,
         2,
       );
-      await Clipboard.setStringAsync(json);
-      setCopyStatus(`Copied ${debugEvents.length} events`);
+      await Share.share({ message: json });
+      setCopyStatus(`Shared ${debugEvents.length} events`);
       setTimeout(() => setCopyStatus(null), 3000);
     } catch (e: any) {
-      setCopyStatus(`Copy failed: ${e?.message ?? String(e)}`);
+      setCopyStatus(`Share failed: ${e?.message ?? String(e)}`);
     }
   }, [debugEvents]);
 
@@ -388,7 +387,7 @@ export default function App(): React.ReactElement {
           <SectionHeader theme={theme} title={`Debug - raw UsageEvents last 24h (${debugEvents.length})`} caption="foreground, background, stopped, destroyed, screen, keyguard" />
           <View style={{ flexDirection: 'row', gap: theme.space(2), marginBottom: theme.space(2) }}>
             <Pill theme={theme} onPress={copyRawEvents}>
-              Copy raw events JSON
+              Share raw events JSON
             </Pill>
             {copyStatus ? (
               <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
