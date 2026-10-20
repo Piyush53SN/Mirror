@@ -79,6 +79,36 @@ jobs:
           cd "${{ github.workspace }}"
           echo "Prebuild done, PWD=$(pwd)"
 
+      - name: Restore stable debug keystore from secret (for install-over without uninstall)
+        run: |
+          set -eo pipefail
+          KEYSTORE_PATH="${{ github.workspace }}/apps/mobile/android/app/debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "Restoring debug keystore from DEBUG_KEYSTORE_BASE64 secret"
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_PATH"
+            ls -lh "$KEYSTORE_PATH"
+            echo "Debug keystore restored – APK signature will be stable across builds, allowing install-over without uninstall"
+          else
+            echo "::warning::DEBUG_KEYSTORE_BASE64 secret not set – generating ephemeral debug keystore (signature will change each build, requiring uninstall and wiping SecureStore, causing key mismatch)"
+            if [ ! -f "$KEYSTORE_PATH" ]; then
+              if command -v keytool >/dev/null 2>&1; then
+                keytool -genkeypair -v -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+              else
+                echo "keytool not found, generating with openssl"
+                TMPDIR=$(mktemp -d)
+                openssl genrsa -out "$TMPDIR/key.pem" 2048
+                openssl req -new -x509 -key "$TMPDIR/key.pem" -out "$TMPDIR/cert.pem" -days 10000 -subj "/CN=Android Debug,O=Android,C=US"
+                openssl pkcs12 -export -in "$TMPDIR/cert.pem" -inkey "$TMPDIR/key.pem" -out "$KEYSTORE_PATH" -name androiddebugkey -passout pass:android
+                rm -rf "$TMPDIR"
+              fi
+              ls -lh "$KEYSTORE_PATH"
+            else
+              echo "Existing debug keystore found at $KEYSTORE_PATH, keeping it"
+              ls -lh "$KEYSTORE_PATH"
+            fi
+          fi
+
       - name: Build debug + gate (make android-build)
         run: |
           set -eo pipefail
