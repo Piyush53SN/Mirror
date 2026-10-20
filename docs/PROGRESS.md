@@ -1035,3 +1035,60 @@ These 12 are not inflated durations – they are counted in `data_gaps` with rea
 - Key creation atomic via v2 JSON, id derived from key, migration from v1
 - UI shows explicit reset prompt on key mismatch, never silent delete
 - P3 still on hold pending re-test of key stability across update (install over, not uninstall) and 12 orphan explanation.
+
+### Real-device follow-up round 6 — stable debug keystore via secret, clarify reinstall vs backup restore (2026-10-20)
+
+**Follow-up 1 – stable debug keystore stored as GitHub Actions secret (base64), restored in CI:**
+
+Previous CI: `expo prebuild --clean` recreates `android/` each run, `app/debug.keystore` not present (gitignored), so workflow generated new random keystore via `keytool -genkeypair` each build. Different keystore = different APK signature. Android `PackageManager` refuses `INSTALL_FAILED_UPDATE_INCOMPATIBLE` when new APK signature differs from installed one – you must uninstall first. Uninstall wipes `expo-secure-store` (keystore) and, with `allowBackup=true`, may trigger backup restore of old DB without key → mismatch error.
+
+Fix: one stable debug keystore for all CI builds, stored as secret `DEBUG_KEYSTORE_BASE64`, restored before build.
+
+- Generated stable keystore locally:
+  ```bash
+  keytool -genkeypair -v -storetype PKCS12 -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+  # or with openssl if no JDK:
+  openssl genrsa -out key.pem 2048
+  openssl req -new -x509 -key key.pem -out cert.pem -days 10000 -subj "/CN=Android Debug,O=Android,C=US"
+  openssl pkcs12 -export -in cert.pem -inkey key.pem -out debug.keystore -name androiddebugkey -passout pass:android
+  ```
+- Base64 encode no newlines: `base64 -w 0 debug.keystore > debug.keystore.base64` (Linux) or `base64 debug.keystore | tr -d '\n'` (macOS)
+- GitHub → Settings → Secrets and variables → Actions → New repository secret → Name `DEBUG_KEYSTORE_BASE64`, Value = content of `debug.keystore.base64`, Save.
+- Workflow `infra/workflows/android-build.yml` new step `Restore stable debug keystore from secret`:
+  ```bash
+  KEYSTORE_PATH="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
+  if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+    echo "$SECRET" | base64 -d > "$KEYSTORE_PATH"
+  else
+    ::warning:: secret not set – ephemeral keystore, signature unstable
+    keytool -genkeypair ... || openssl ...
+  fi
+  ```
+  Then `assembleRelease` uses `-Pandroid.injected.signing.store.file=app/debug.keystore` with that stable file, so `mirror-test.apk` signature stays same across builds, allowing `adb install -r` or tap update over old app without uninstall, preserving SecureStore key and DB.
+
+Security note: debug keystore password is `android` (public), not a production secret – it only signs `mirror-test.apk` for phone testing, not Play Store AAB. Storing base64 in secret is for stability, not confidentiality. Production upload keystore remains MANUAL.
+
+Documented in `docs/INSTALL.md` section "Stable debug keystore for install-over (CI secret)".
+
+**Follow-up 2 – clarify whether key mismatch came from reinstall or backup restore, given Android should refuse differently signed APK:**
+
+Android **does** refuse differently signed APK without uninstall – `INSTALL_FAILED_UPDATE_INCOMPATIBLE`. So "installing new build over old one" with different debug keystore would **fail** unless user uninstalled first. The reported flow "after installing a new build over the old one, Mirror shows 0 sessions" therefore implies one of two actual sequences, both leading to same error, and we now distinguish:
+
+- **Case A – reinstall required by signature mismatch (most likely before stable keystore):** CI build N signed with ephemeral keystore A, build N+1 signed with keystore B (different). User taps new APK → Android refuses → user uninstalls old app (or `adb install -r` fails, then `adb uninstall dev.mirror.app` + install). Uninstall wipes app data: `mirror.db`, SharedPreferences, SecureStore keystore entry. If `allowBackup=true` (was true before round 5), Android auto-backup may have previously backed up `mirror.db` (ciphertext with old keyId `kmvezvsza`) to Google Drive. On reinstall, Drive restores `mirror.db` but **not** the Android Keystore key (keystore keys are never backed up). SecureStore then has no key, so new random root key + new id `kmvgashwo` created. Result: old DB present with old id, new key present → `sealed with key "kmvezvsza", current "kmvgashwo"`.
+
+- **Case B – backup restore without uninstall (less likely but possible):** Even without uninstall, if user had `allowBackup=true` and cleared app data via Settings → Storage → Clear data, or if device restore after factory reset, Android restores `mirror.db` from backup but not keystore key → same mismatch.
+
+- **Case C – install-over with same signature but SecureStore cleared by other means:** If signatures matched (install-over succeeded), SecureStore should persist. Mismatch would then only happen if user cleared data, or if old code's non-atomic v1 creation left key without id or id without key (crash between writes). New atomic v2 prevents this.
+
+**Conclusion for this incident:** Given CI was generating new keystore each build before round 6, the most plausible is **Case A**: new build had different signature, Android refused install-over, user uninstalled (or system did), backup restore brought old DB back without key, new key generated, mismatch. With new fixes:
+- `allowBackup=false` prevents backup restore of DB at all – uninstall = fresh empty DB, no mismatch, just fresh start (explicit, not silent).
+- Stable debug keystore via `DEBUG_KEYSTORE_BASE64` secret prevents signature mismatch, so `adb install -r mirror-test.apk` or tap update works without uninstall, preserving SecureStore key and DB, so no mismatch on update.
+
+**Verification round 6:**
+- `infra/workflows/android-build.yml` adds restore step for `DEBUG_KEYSTORE_BASE64`, uses `base64 -d`, warns if secret missing, fallback to keytool/openssl.
+- `.github/workflows/android-build.yml` synced (copy of infra).
+- `docs/INSTALL.md` documents secret creation.
+- Key mismatch clarification added here.
+- `npm run test:packages` 251 tests still pass, `allowBackup=false` still set.
+- P3 still on hold pending test of install-over with stable keystore (should no longer require uninstall).
+
