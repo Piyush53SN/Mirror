@@ -493,3 +493,43 @@ test('item hashes answer "have I seen this?" without storing the identity', asyn
     close();
   }
 });
+
+test('key change: app update keeps same key readable, reinstall with new key fails with sealed-with-key error and can be reset', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-keychange-'));
+  const file = join(dir, 'mirror.db');
+  const key1Bytes = new Uint8Array(32).fill(1);
+  const key2Bytes = new Uint8Array(32).fill(2);
+  const keys1 = { keyId: async () => 'kmvezvsza', rootKey: async () => key1Bytes };
+  const keys2 = { keyId: async () => 'kmvgashwo', rootKey: async () => key2Bytes };
+
+  try {
+    const driver1 = NodeSqliteDriver.file(file);
+    const s1 = new MirrorStore({ driver: driver1, keys: keys1, random: counterRandom(), clock: () => T0 });
+    await s1.open();
+    await s1.appendEvents([foreground({ id: 'evt_key_0001', at: iso(0) })]);
+    assert.equal((await s1.counts()).total, 1);
+    const sess1 = await s1.events();
+    assert.equal(sess1.length, 1);
+    driver1.close();
+
+    const driverUpdate = NodeSqliteDriver.file(file);
+    const sUpdate = new MirrorStore({ driver: driverUpdate, keys: keys1, random: counterRandom(), clock: () => T0 });
+    await sUpdate.open();
+    const afterUpdate = await sUpdate.events();
+    assert.equal(afterUpdate.length, 1, 'app update with same key must keep data readable');
+    driverUpdate.close();
+
+    const driver2 = NodeSqliteDriver.file(file);
+    const s2 = new MirrorStore({ driver: driver2, keys: keys2, random: counterRandom(), clock: () => T0 });
+    await s2.open();
+    await assert.rejects(() => s2.events(), (err) => err instanceof DecryptionError && /sealed with key "kmvezvsza", current key is "kmvgashwo"/.test(err.message), 'key mismatch must throw sealed-with-key error, not silent empty list');
+
+    await s2.deleteAll();
+    assert.equal((await s2.counts()).total, 0, 'after explicit reset, store is empty and new key is kept');
+    await s2.appendEvents([foreground({ id: 'evt_key_0002', at: iso(1000) })]);
+    assert.equal((await s2.counts()).total, 1);
+    driver2.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

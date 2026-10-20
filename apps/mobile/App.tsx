@@ -48,6 +48,7 @@ export default function App(): React.ReactElement {
   const [error, setError] = React.useState<string | null>(null);
   const [lastCollect, setLastCollect] = React.useState<string | null>(null);
   const [copyStatus, setCopyStatus] = React.useState<string | null>(null);
+  const [keyMismatch, setKeyMismatch] = React.useState<{ oldKey: string; newKey: string } | null>(null);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
 
@@ -141,7 +142,14 @@ export default function App(): React.ReactElement {
       setQuality(q);
       setLoading(false);
     } catch (e: any) {
-      setError(e?.message ?? String(e));
+      const msg = e?.message ?? String(e);
+      const m = /record was sealed with key "([^"]+)", current key is "([^"]+)"/.exec(msg);
+      if (m) {
+        setKeyMismatch({ oldKey: m[1], newKey: m[2] });
+        setError(`Stored data can't be read – it was sealed with key "${m[1]}", current key is "${m[2]}". This can happen after reinstall or backup restore.`);
+      } else {
+        setError(msg);
+      }
       setLoading(false);
     }
   }, []);
@@ -288,6 +296,44 @@ export default function App(): React.ReactElement {
           </Text>
         ) : null}
       </View>
+
+      {keyMismatch ? (
+        <Card theme={theme} elevated>
+          <SectionHeader theme={theme} title="Stored data can't be read" caption={`sealed with ${keyMismatch.oldKey}, current ${keyMismatch.newKey}`} />
+          <Text role="body" theme={theme} style={{ marginTop: theme.space(2) }}>
+            {`Mirror's encrypted database was sealed with key "${keyMismatch.oldKey}" but the current key is "${keyMismatch.newKey}". This happens after reinstall, clear data, or when Android restores a backup of the database without its key (SecureStore is not backed up). Your old sessions are still on disk but unreadable with the current key.`}
+          </Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
+            {`We will never delete your data silently. If you want to start fresh, tap Reset. This deletes all local sessions and events and keeps the new key. If you keep the data, the app will show 0 sessions until you reset.`}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
+            <Pill
+              theme={theme}
+              onPress={async () => {
+                try {
+                  const rt = runtimeRef.current;
+                  if (rt) {
+                    await rt.store.deleteAll();
+                    setKeyMismatch(null);
+                    setError(null);
+                    setSessions([]);
+                    setDailyTotals([]);
+                    setLastCollect('store reset – old data deleted, new key kept');
+                    await checkPermissionAndCollect();
+                  }
+                } catch (e: any) {
+                  setError(e?.message ?? String(e));
+                }
+              }}
+            >
+              Reset stored data
+            </Pill>
+            <LinkButton theme={theme} onPress={() => setKeyMismatch(null)}>
+              Dismiss
+            </LinkButton>
+          </View>
+        </Card>
+      ) : null}
 
       <Card theme={theme} elevated>
         <SectionHeader theme={theme} title="Data quality" caption="what Mirror could not measure, in one line" />

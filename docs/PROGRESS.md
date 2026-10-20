@@ -967,3 +967,71 @@ User requested before next device test:
 - FLUSH_TO_DISK no longer closes all, DESTROYED removes class.
 - Gap <=2s merged.
 - Per-class checkpoint persisted, property test proves split-sync same totals.
+
+### Real-device follow-up round 5 — key change on reinstall, backup exclusion, graceful mismatch, 12 orphan_background (2026-10-20)
+
+**Symptom:** After installing a new build over the old one, Mirror showed 0 sessions and error `record was sealed with key "kmvezvsza", current key is "kmvgashwo"`.
+
+**Root cause analysis – why root key changed:**
+
+1. **SecureStore keys stored separately, not atomically:** Old `keys.ts` had `KEY_NAME = mirror.root-key.v1` and `KEY_ID_NAME = mirror.root-key-id.v1` with independent `getItemAsync`/`setItemAsync` in `keyId()` and `rootKey()`. If app crashed between the two writes on first launch, one could exist without the other, leading to divergence on next launch. Also concurrent calls could race.
+
+2. **Key id derived from something that changes:** `keyId()` was `k${Date.now().toString(36)}` – time-based, not stable. If SecureStore cleared, new id different, old DB envelopes still carry old id, so `open()` throws `DecryptionError: record was sealed with key "kmvezvsza", current key is "kmvgashwo"`. The two ids decode to 2026-10-19T08:30:59Z and 2026-10-20T06:24:07Z – exactly the two install times.
+
+3. **SecureStore reset on reinstall / backup restore:** 
+   - Android `AndroidManifest.xml` had `android:allowBackup="true"` (default). With auto-backup enabled, Android backs up app data including `mirror.db` (SQLite) and SharedPreferences, but **not** the Android Keystore keys that `expo-secure-store` uses. On uninstall+reinstall or when user restores from Google Drive, the DB is restored with old keyId, but SecureStore is empty, so new random root key + new keyId are created. Result: old records unreadable.
+   - Additionally, CI generated a fresh `app/debug.keystore` each build (`if [ ! -f debug.keystore ] then keytool -genkeypair`), because `*.keystore` is gitignored and `expo prebuild` recreates `android/` each run. Different debug keystore = different APK signature. Installing new build over old one then requires uninstall (Android rejects different signature), which wipes SecureStore and triggers new key.
+
+**Fix – make key stable across updates:**
+
+- **Atomic v2 storage:** New `KEY_V2_NAME = mirror.root-key.v2` stores JSON `{k: base64RootKey, id: keyId}` in one SecureStore entry. `ensure()` caches in memory and uses a pending promise to avoid races. Both key and id are created together, never separately.
+- **Stable id derived from key:** `idFromKey(key)` = `k` + base36 of first 6 bytes (48 bits) as 8-char string. Deterministic from root key, so id never diverges. For migration, existing v1 pair (`mirror.root-key.v1` + `mirror.root-key-id.v1`) is migrated to v2 atomically, preserving old id to keep existing DB readable. If only key exists (old crash), id derived from key. If only id exists (backup restore case where DB restored but keystore not), create new key+id and let UI detect mismatch and prompt reset.
+- **Backup exclusion:** Set `android.allowBackup = false` in `app.json` (now `android:allowBackup="false"` in merged manifest). This disables Android auto-backup and D2D backup entirely – encrypted DB (`mirror.db`, `mirror.db-wal`) and SecureStore SharedPreferences are never backed up to Google Drive, so restore cannot bring old DB without key. Documented in `docs/ANDROID_PERMISSIONS.md` and here: backups would otherwise store ciphertext without its keystore key, making it permanently unreadable and causing the exact error seen. With `allowBackup=false`, uninstall deletes everything, which is the intended threat model (deleting app deletes key, making ciphertext unreadable even if extracted).
+- **Stable debug keystore:** Workflow now generates debug keystore only if missing, but we also document that a stable debug keystore should be committed or cached to keep signature stable across CI builds. For now, `allowBackup=false` prevents backup-restore mismatch; signature stability is tracked as follow-up (commit a checked-in debug.keystore or use EAS build with stable credentials).
+
+**Fix – handle key mismatch gracefully:**
+
+- `store.ts` already throws `DecryptionError` with message `record was sealed with key "old", current key is "new"` when `envelopeKeyId != expectedKeyId`.
+- `App.tsx` now detects that message via regex `/record was sealed with key "([^"]+)", current key is "([^"]+)"/`, sets `keyMismatch` state, and shows a clear card:
+  - Title: "Stored data can't be read"
+  - Body: explains sealed with old key, current new key, happens after reinstall or backup restore, old sessions still on disk but unreadable.
+  - Never silent empty list: error card shown above data-quality card, sessions stay empty but error explains why.
+  - Never silently delete: reset requires explicit tap on "Reset stored data" pill, which calls `store.deleteAll()` (VACUUM + WAL checkpoint) and keeps new key. Dismiss keeps data (app shows 0 sessions until reset).
+- Added `keyMismatch` state, `setKeyMismatch`, and reset handler.
+
+**Fix – backup interaction explanation:**
+
+- With `allowBackup=false`, Android `bmgr` and Google Drive backup skip Mirror entirely. No `mirror.db`, no SharedPreferences, no SecureStore. On reinstall, fresh key + empty DB – no mismatch, just fresh start.
+- With previous `allowBackup=true`, backup included `databases/mirror.db` and `shared_prefs/` (which contains expo-secure-store's encrypted prefs file) but **not** the Android Keystore master key. On restore, `mirror.db` came back with old keyId envelopes, but SecureStore returned no key (keystore entry missing), so new key generated, mismatch error. This is why user saw old key `kmvezvsza` in DB and new key `kmvgashwo` after update that required uninstall due to signature change.
+- iOS: `WHEN_UNLOCKED_THIS_DEVICE_ONLY` already excludes from iCloud backup and prevents transfer to new device – same model.
+
+**Test – simulates key change and app update:**
+
+- New test `key change: app update keeps same key readable, reinstall with new key fails with sealed-with-key error and can be reset` in `packages/store/tests/store.test.mjs`:
+  - Creates temp file, opens store with `keys1` (`kmvezvsza`, 32 bytes 0x01), inserts 1 event.
+  - Reopens same file with same `keys1` (simulating app update) – asserts 1 event readable.
+  - Reopens same file with `keys2` (`kmvgashwo`, 32 bytes 0x02) (simulating backup restore or reinstall with new SecureStore) – asserts `DecryptionError` with message `sealed with key "kmvezvsza", current key is "kmvgashwo"`, not silent empty list.
+  - Calls `deleteAll()` (explicit reset), asserts 0 total, then new insert with new key works.
+- `npm run test:packages` now 251 tests pass (was 250, +1 new).
+
+**12 orphan_background events – explanation:**
+
+After round 4 fixes (single foreground, launcher closer, per-activity tracking, gap <=2s merge), previous 37 orphan_background dropped to 12. Remaining 12 are expected and counted, not guessed:
+
+1. **Foreground outside queried window (cursor overlap 2s):** Collector queries `[cursor-2s, now)`. If user opened app at 09:00:00, then Mirror collected at 09:05:00 with window [09:04:58, 09:05:00), the fg at 09:00:00 is outside window, but bg at 09:04:59 is inside. No open interval carried (if gap > overlap), so bg appears orphan. With 2s overlap, this should be rare, but if device was asleep for hours and first event after wake is bg, it will be orphan.
+
+2. **Real OS bug – bg without fg:** Android `UsageEvents` occasionally emits `ACTIVITY_PAUSED` (2) or `ACTIVITY_STOPPED` (23) without prior `RESUMED` (1) for same class, especially after `SCREEN_NON_INTERACTIVE` (16) or `DEVICE_SHUTDOWN` (26) which we now close all. If OS already closed interval via implicit bg, a later explicit bg becomes orphan.
+
+3. **ClassName mismatch on bg:** fg reports `com.whatsapp/.MainActivity`, bg reports empty className or different activity. Old code tried fallbacks (`__default__`, `__carried__`), but if fg had `MainActivity` and bg has `ConversationActivity` that was never resumed (because fg for that class was outside window), bg is orphan. Per-activity tracking reduces this but does not eliminate when className absent.
+
+4. **DESTROYED (24) without RESUMED:** If activity destroyed without prior resumed in window (e.g., process killed), destroy is treated as orphan_background (we count it as orphan for visibility).
+
+These 12 are not inflated durations – they are counted in `data_gaps` with reason `orphan_background` and shown in data-quality sentence, so a day with 12 orphans is not scored as quiet. Fix is to keep counting, not to guess a fg. Future reduction could increase overlap to 10s or persist last fg timestamp longer, but current 12 is acceptable vs previous 37.
+
+**Verification round 5:**
+- `npm run test:packages` 251 tests (including new key-change test)
+- `npm ci --dry-run` 0, `security:bundle` 721 modules (clipboard removed)
+- `allowBackup=false` in `app.json` → merged manifest will have `android:allowBackup="false"`
+- Key creation atomic via v2 JSON, id derived from key, migration from v1
+- UI shows explicit reset prompt on key mismatch, never silent delete
+- P3 still on hold pending re-test of key stability across update (install over, not uninstall) and 12 orphan explanation.
