@@ -59,6 +59,8 @@ export type ScoreInput = {
   utcOffsetMinutes?: number;
   /** Default 23 → 05. */
   lateNight?: { startHour?: number; endHour?: number };
+  /** If true, sessions are approximate (from raw events, scaled to OS totals) and should not feed scores as exact – confidence reduced */
+  approximate?: boolean;
 };
 
 export type Factor = {
@@ -436,7 +438,7 @@ function confidenceFor(
   }
   const sampleScore = clamp01(sessions.length / 30);
   const labelScore = clamp01(labels / 20);
-  const score = round1((0.4 * coverage + 0.25 * sampleScore + 0.2 * labelScore + 0.15 * clamp01(tierCompleteness)) * 100) / 100;
+  let score = round1((0.4 * coverage + 0.25 * sampleScore + 0.2 * labelScore + 0.15 * clamp01(tierCompleteness)) * 100) / 100;
 
   const reasons: string[] = [];
   if (gapMs > 0) reasons.push(`${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`);
@@ -447,6 +449,13 @@ function confidenceFor(
   const topic = input.vectors && input.vectors.size > 0;
   reasons.push(topic ? 'Topic depth is not scored from the placeholder embedder.' : 'Topic depth is not scored: no topic vectors yet.');
 
-  const level: ConfidenceLevel = sessions.length === 0 ? 'none' : score >= 0.75 ? 'high' : score >= 0.5 ? 'medium' : 'low';
+  // Approximate session data (from raw events, scaled to OS totals) should not feed scores as exact
+  if (input.approximate) {
+    reasons.push('Session times are approximate and scaled to daily totals (OS aggregate) – timeline loses 99% for games like Honkai due to systemui fg closing, className mismatch, 2s overlap. Scores use OS totals as authoritative, not approximate timeline as exact.');
+    // Reduce confidence when approximate
+    score = Math.min(score, 0.49);
+  }
+
+  const level: ConfidenceLevel = sessions.length === 0 ? 'none' : input.approximate ? 'low' : score >= 0.75 ? 'high' : score >= 0.5 ? 'medium' : 'low';
   return { score, level, coverage, sample: sessions.length, labels, reasons };
 }

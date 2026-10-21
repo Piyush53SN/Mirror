@@ -10,7 +10,7 @@ import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collec
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
-import { getTopInvalidPackages } from '@mirror/core-analytics';
+import { getTopInvalidPackages, DEFAULT_IGNORED_PACKAGES } from '@mirror/core-analytics';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -61,7 +61,7 @@ function lastNDays(n: number): string[] {
 export default function App(): React.ReactElement {
   const theme = React.useMemo(() => createTheme('dark'), []);
   const [permission, setPermission] = React.useState<PermissionState>('checking');
-  const [sessions, setSessions] = React.useState<SessionRow[]>([]);
+  const [_sessions, setSessions] = React.useState<SessionRow[]>([]);
   const [dailyTotals, setDailyTotals] = React.useState<DailyTotal[]>([]);
   const [labels, setLabels] = React.useState<Record<string, string>>({});
   const [quality, setQuality] = React.useState<DataQuality | null>(null);
@@ -112,7 +112,8 @@ export default function App(): React.ReactElement {
           let launcherPkgs: string[] = [];
           try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
           const launcherSet = new Set(launcherPkgs);
-          const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName));
+          const systemIgnoreSet = new Set(DEFAULT_IGNORED_PACKAGES);
+          const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName) && !systemIgnoreSet.has(r.packageName));
           const resolved = await resolveAppLabels(filteredOs.map((r) => r.packageName));
           const totals: DailyTotal[] = filteredOs.map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs })).sort((a, b) => b.totalMs - a.totalMs);
           setDailyTotals(totals);
@@ -151,14 +152,17 @@ export default function App(): React.ReactElement {
         let launcherPkgs: string[] = [];
         try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
         const launcherSet = new Set(launcherPkgs);
-        const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName) && r.totalMs > 0);
+        const systemIgnoreSet = new Set(DEFAULT_IGNORED_PACKAGES);
+        // Settings rule: exclude Settings and other system UI everywhere (same rule for totals and timeline)
+        // This matches DEFAULT_IGNORED – Settings does not close previous and is not counted, unlike launchers which close previous but are also excluded from totals
+        const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName) && !systemIgnoreSet.has(r.packageName) && r.totalMs > 0);
         const resolved = await resolveAppLabels(filteredOs.map((r) => r.packageName));
         setLabels((prev) => ({ ...prev, ...resolved }));
         const totals: DailyTotal[] = filteredOs.map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs })).sort((a, b) => b.totalMs - a.totalMs);
         setDailyTotals(totals);
 
         const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
-        const sessFiltered = sessDay.filter((s) => s.app !== 'dev.mirror.app' && !launcherSet.has(s.app));
+        const sessFiltered = sessDay.filter((s) => s.app !== 'dev.mirror.app' && !launcherSet.has(s.app) && !systemIgnoreSet.has(s.app));
         setSessions(sessFiltered.slice(-50).reverse());
 
         const osMap = new Map<string, number>();
@@ -204,7 +208,7 @@ export default function App(): React.ReactElement {
           const mirrorMap = new Map<string, number>();
           for (const s of sessFiltered) mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
           const allApps = new Set<string>([...mirrorMap.keys(), ...osMap.keys()]);
-          const filteredApps = [...allApps].filter((app) => app !== 'dev.mirror.app' && !launcherSet.has(app));
+          const filteredApps = [...allApps].filter((app) => app !== 'dev.mirror.app' && !launcherSet.has(app) && !systemIgnoreSet.has(app));
           const resolvedDay = await resolveAppLabels(filteredApps);
           const rows: SingleDayRow[] = filteredApps.map((app) => {
             const mirrorMs = mirrorMap.get(app) ?? 0;
@@ -516,6 +520,10 @@ export default function App(): React.ReactElement {
 
       <Card theme={theme}>
         <SectionHeader theme={theme} title={`Sessions – ${selectedDay}, ${scaledSessions.length} (approx)`} caption="from raw events, approximate, scaled to daily totals where they disagree" />
+        <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
+          <Text role="label" theme={theme}>Session times are approximate and scaled to daily totals. Daily totals (above) are authoritative and come from OS aggregate (same as Digital Wellbeing). Timeline shows when you opened apps, but durations are scaled to match OS totals where they disagree (e.g., Honkai 31s raw scaled to 52m48s OS).</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Why approximate? Raw UsageEvents lose time due to systemui fg closing (notification shade), className mismatch, 2s cursor overlap, unknown types. See hidden debug for details (tap build 7x). Scores do NOT use approximate sessions as exact – they use OS totals or low confidence.</Text>
+        </View>
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
             <Text role="label" theme={theme}>No sessions for {selectedDay} – timeline is approximate, totals above are authoritative (OS).</Text>
@@ -525,12 +533,11 @@ export default function App(): React.ReactElement {
           scaledSessions.map((s) => (
             <View key={s.id} style={{ paddingVertical: theme.space(2) }}>
               <Text role="label" theme={theme}>{`${s.label} - ${formatDuration(s.scaled_duration_ms)}${s.isScaled ? ' (scaled, orig ' + formatDuration(s.duration_ms) + ')' : ''}`}</Text>
-              <Text role="micro" tone="muted" theme={theme}>{`${formatTime(s.start_ms)} -> ${formatTime(s.end_ms)}${s.isScaled ? ' approx' : ''}`}</Text>
+              <Text role="micro" tone="muted" theme={theme}>{`${formatTime(s.start_ms)} -> ${formatTime(s.end_ms)}${s.isScaled ? ' approx, scaled to daily total' : ' approx'}`}</Text>
               <Divider theme={theme} />
             </View>
           ))
         )}
-        <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>{`Sessions are approximate – built from raw events (RESUMED/PAUSED/STOPPED). If sum differs from OS total for same app, scaled to match OS total (same source as Digital Wellbeing).`}</Text>
       </Card>
 
       <Card theme={theme}>

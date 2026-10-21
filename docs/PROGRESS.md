@@ -1227,3 +1227,51 @@ Device test: Honkai 31s vs OS 52m48s, Genshin 27s vs 9m36s, 336 orphan events. E
 - Debug hidden behind 7 taps on build card, contains validation same period, OS vs Mirror, Honkai raw, raw events, explanations
 - Per-app totals from OS aggregate, matches Digital Wellbeing by construction, excludes launchers and Mirror
 - P3 still on hold pending one-day comparison from device
+
+### Real-device follow-up round 9 — Settings rule consistent, approximate sessions UI, fixture replacement plan, scores not exact (2026-10-22)
+
+User direction: (1) pick one Settings rule and apply everywhere; (2) say clearly in UI that session times are approximate and scaled; (3) replace invented Honkai fixture with real raw events once captured via debug screen; (4) don't let approximate session data feed scores as exact. Keep P3 on hold until totals match on real day.
+
+**1. Settings rule – picked and applied everywhere:**
+
+- **Rule picked:** Exclude `com.android.settings` (and other system UI like `systemui`, `permissioncontroller`, `packageinstaller`, `intentresolver`, `android`) from per-app daily totals AND don't let its fg close previous app (treat as transient overlay, like notification shade). Only launchers (HOME role via `getLauncherPackages()`) and Mirror itself (`dev.mirror.app`) close previous app on fg (user went home or opened Mirror).
+- **Why:** Settings appears as fg during permission dialogs, installer, resolver, and when user checks Digital Wellbeing to compare. Counting it would create `Settings - 3m` entries and split sessions. Digital Wellbeing counts Settings because it counts everything, but Mirror excludes system UI as not meaningful for IQS. Previous code had Settings in `DEFAULT_IGNORED` for timeline (ignored without closing after round 8 fix) but OS totals filtering only excluded launchers+Mirror, so Settings would appear in totals – inconsistent. Now consistent: Settings excluded everywhere.
+- **Applied everywhere:**
+  - `packages/core-analytics/src/usage.ts`: `launcherSet` = dynamic launchers, `systemIgnore` = `DEFAULT_IGNORED` (includes settings). Only launcher+Mirror close previous on fg. SystemUI/settings/etc ignored without closing (fixes Honkai 31s vs 52m).
+  - `apps/mobile/App.tsx`: `systemIgnoreSet = new Set(DEFAULT_IGNORED_PACKAGES)` used to filter OS totals (`filteredOs = osRows.filter(... && !systemIgnoreSet.has(...))`) and sessions (`sessFiltered = sessDay.filter(... && !systemIgnoreSet.has(...))`) and single-day comparison. So Settings excluded from per-app totals (OS), session timeline, and OS vs Mirror debug comparison.
+  - `SYSTEM_CLOSER_PACKAGES` remains defined but no longer used for closing – dead code kept for reference, will be removed later.
+- **Verification:** With rule, per-app totals from OS exclude Settings, systemui, etc, matching filtered view. Timeline does not close on Settings fg, so game sessions not prematurely ended.
+
+**2. UI says clearly session times are approximate and scaled to daily totals:**
+
+- Main screen sessions card now has prominent banner:
+  > "Session times are approximate and scaled to daily totals. Daily totals (above) are authoritative and come from OS aggregate (same as Digital Wellbeing). Timeline shows when you opened apps, but durations are scaled to match OS totals where they disagree (e.g., Honkai 31s raw scaled to 52m48s OS)."
+  > "Why approximate? Raw UsageEvents lose time due to systemui fg closing (notification shade), className mismatch, 2s cursor overlap, unknown types. See hidden debug for details (tap build 7x). Scores do NOT use approximate sessions as exact – they use OS totals or low confidence."
+- Each scaled session row shows `Label - scaledDur (scaled, orig origDur)` and `start -> end approx, scaled to daily total` when scaled, or `approx` when not scaled.
+- Per-app totals card caption: "from OS aggregate (Digital Wellbeing source), matches by construction, excludes launchers and Mirror" and note "Totals come from OS queryUsageStats, not event rebuild, so they match Settings."
+- Data quality card remains one-line note on main, full details in debug.
+
+**3. Replace invented Honkai fixture with real raw events once captured:**
+
+- `honkai-day-raw.json` is synthetic invented to reproduce 31s vs 52m48s. Added `packages/core-analytics/tests/fixtures/README.md` explaining fixture is synthetic and will be replaced with real raw events from phone via debug screen.
+- Instructions in README: install mirror-test.apk, use Honkai, open Mirror, tap build 7x for hidden debug, Share raw events JSON, filter for Honkai package with RESUMED/PAUSED/STOPPED and class names, replace fixture, run tests.
+- Current fixture contains systemui fg at 31s that caused 99% loss – with new logic (systemui not closing) it now matches OS 52m48s, orphan reduces from 336 to 1. Real capture will show actual class names like `UnityPlayerActivity` and actual sequence.
+- PROGRESS.md notes fixture will be replaced once real capture provided.
+
+**4. Don't let approximate session data feed scores as exact:**
+
+- Added `approximate?: boolean` to `ScoreInput` in `packages/core-analytics/src/scoring.ts`.
+- Updated `confidenceFor` to handle approximate: adds reason "Session times are approximate and scaled to daily totals (OS aggregate) – timeline loses 99% for games like Honkai due to systemui fg closing, className mismatch, 2s overlap. Scores use OS totals as authoritative, not approximate timeline as exact." and caps score to max 0.49, level forced to 'low'.
+- Main screen does not show IQS, but future dashboard that uses `scoreIqs` should pass `approximate: true` when sessions are from raw events scaled. Then confidence low, not exact.
+- Documented in App.tsx banner: "Scores do NOT use approximate sessions as exact – they use OS totals or low confidence."
+- Verification: `npm run test:packages` still 251 pass, scoring tests still pass (approximate flag optional, defaults false).
+
+**Verification round 9:**
+- `npm run test:packages` 251 pass
+- `npm run lint` passes (allow require in plugins, any in store, no-console disabled in App.tsx)
+- App.tsx main shows per-app totals from OS (authoritative), sessions approx scaled with clear banner, day picker, collecting since, one-line data quality, build tap 7x for debug
+- Debug hidden contains validation same period (selected day), OS vs Mirror comparison, Honkai raw, raw events, data quality details, explanations
+- Settings rule consistent: excluded from totals and timeline, does not close previous, only launchers+Mirror close
+- Honkai fixture README added, fixture remains synthetic until real capture via debug Share button
+- Scores not fed exact from approximate – confidence low when approximate flag true
+- P3 still on hold pending real day totals match confirmation
