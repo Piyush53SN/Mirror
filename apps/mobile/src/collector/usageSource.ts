@@ -14,6 +14,7 @@ export type UsageSource = UsageSourcePort & {
   openSettings(): void;
   queryUsageStats(sinceMs: number, untilMs: number): Promise<UsageStatsRow[]>;
   queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]>;
+  getLauncherPackages(): Promise<string[]>;
 };
 
 export function nativeUsageSource(): UsageSource {
@@ -31,6 +32,13 @@ export function nativeUsageSource(): UsageSource {
     },
     async queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]> {
       return native && (native as any).queryEventsDebug ? (native as any).queryEventsDebug(sinceMs, untilMs) : [];
+    },
+    async getLauncherPackages(): Promise<string[]> {
+      try {
+        return native && (native as any).getLauncherPackages ? (native as any).getLauncherPackages() : [];
+      } catch {
+        return [];
+      }
     },
     openSettings() {
       native?.openSettings();

@@ -13,7 +13,27 @@ import { getUsageStatsModule } from '../../modules/mirror-usage-stats';
 const cache = new Map<string, string>();
 
 export function getCachedLabel(pkg: string): string {
-  return cache.get(pkg) ?? pkg;
+  const cached = cache.get(pkg);
+  if (cached && cached !== pkg) return cached;
+  if (pkg.includes('.')) {
+    const last = pkg.split('.').pop() ?? pkg;
+    return last.charAt(0).toUpperCase() + last.slice(1);
+  }
+  return cached ?? pkg;
+}
+
+function readableFallback(pkg: string): string {
+  if (!pkg) return pkg;
+  if (pkg.includes('.')) {
+    const parts = pkg.split('.');
+    const last = parts.pop() ?? pkg;
+    if (last.length <= 2 && parts.length > 0) {
+      const secondLast = parts.pop() ?? '';
+      return `${secondLast}.${last}`.replace(/^[a-z]/, (c) => c.toUpperCase());
+    }
+    return last.charAt(0).toUpperCase() + last.slice(1);
+  }
+  return pkg;
 }
 
 export async function resolveAppLabels(packages: string[]): Promise<Record<string, string>> {
@@ -24,17 +44,22 @@ export async function resolveAppLabels(packages: string[]): Promise<Record<strin
       if (mod?.getAppLabels) {
         const rows = mod.getAppLabels(unique) as { packageName: string; label: string }[];
         for (const row of rows) {
-          if (row?.packageName) cache.set(row.packageName, row.label || row.packageName);
+          if (row?.packageName) {
+            const label = row.label && row.label !== row.packageName ? row.label : readableFallback(row.packageName);
+            cache.set(row.packageName, label);
+          }
         }
       }
     } catch {
-      // best-effort: leave cache as is, caller will fall back to package name
+      // best-effort
     }
-    // ensure every requested pkg has at least itself cached, so we don't retry endlessly
-    for (const pkg of unique) if (!cache.has(pkg)) cache.set(pkg, pkg);
+    for (const pkg of unique) if (!cache.has(pkg)) cache.set(pkg, readableFallback(pkg));
   }
   const out: Record<string, string> = {};
-  for (const pkg of packages) out[pkg] = cache.get(pkg) ?? pkg;
+  for (const pkg of packages) {
+    const cached = cache.get(pkg);
+    out[pkg] = cached && cached !== pkg ? cached : readableFallback(pkg);
+  }
   return out;
 }
 

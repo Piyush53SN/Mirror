@@ -176,25 +176,15 @@ export const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 // Packages that are never counted as usage, but their foreground events *do*
 // close the previous app (see buildUsageEvents). This resolves the HOME role:
-// when user goes to launcher, previous app ends. Includes resolver, installer,
-// permission controller, systemui, and all OEM launchers.
+// when user goes to launcher, previous app ends.
+// Previously we hard-coded OEM launchers (MIUI, POCO, Samsung, Huawei, etc) which missed
+// com.mi.android.globallauncher (POCO Launcher 10h4m bug). Now launchers are resolved
+// dynamically via PackageManager CATEGORY_HOME intent (needs <queries> for HOME) and passed
+// as ignorePackages from native module. This list is minimal fallback for system components
+// that should always close previous app but never be counted, plus Mirror itself (excluded from totals).
 export const DEFAULT_IGNORED_PACKAGES = [
-  'dev.mirror.app',
+  'dev.mirror.app', // Mirror itself – excluded from totals (task 4)
   'com.android.systemui',
-  'com.android.launcher',
-  'com.android.launcher3',
-  'com.google.android.apps.nexuslauncher',
-  // OEM launchers — MIUI (Xiaomi) was producing 8h+ sessions when left as foreground
-  'com.miui.home',
-  'com.miui.securitycenter',
-  'com.miui.securityadd',
-  'com.sec.android.app.launcher',
-  'com.huawei.android.launcher',
-  'com.oppo.launcher',
-  'com.vivo.launcher',
-  'com.transsion.XOSLauncher',
-  'com.lge.launcher2',
-  'com.google.android.apps.nexuslauncher',
   // System components that appear as foreground during dialogs, install, resolver
   'com.google.android.permissioncontroller',
   'com.android.packageinstaller',
@@ -202,7 +192,7 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.android.intentresolver',
   'com.google.android.intentresolver',
   'com.android.settings',
-  'com.miui.securitycenter',
+  'android', // generic system package that sometimes appears
 ] as const;
 
 // Resolver / installer / permission controller / systemui that should close
@@ -287,7 +277,13 @@ type OpenEntry = {
 };
 
 export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageOptions): BuildUsageResult {
-  const ignore = new Set([...(options.ignorePackages ?? DEFAULT_IGNORED_PACKAGES)]);
+  // Merge hard-coded ignored (Mirror itself, systemui etc) with dynamic launchers resolved via HOME role.
+  // Previously we used only hard-coded list which missed POCO Launcher com.mi.android.globallauncher (10h4m bug).
+  // Now launcher detection is dynamic via PackageManager CATEGORY_HOME (needs <queries> for HOME).
+  const ignore = new Set<string>([
+    ...DEFAULT_IGNORED_PACKAGES,
+    ...(options.ignorePackages ?? []),
+  ]);
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
   const minIntervalMs = options.minIntervalMs ?? 0;
   const drops: UsageDrop[] = [];

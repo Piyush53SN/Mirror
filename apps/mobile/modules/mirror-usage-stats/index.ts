@@ -44,6 +44,8 @@ export type MirrorUsageStatsModule = {
   queryUsageStats(sinceMs: number, untilMs: number): UsageStatsRow[];
   /** Raw events with typeName for debugging one real session. */
   queryEventsDebug(sinceMs: number, untilMs: number): DebugUsageRow[];
+  /** Packages that resolve HOME role (launchers) via CATEGORY_HOME intent. */
+  getLauncherPackages(): string[];
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;

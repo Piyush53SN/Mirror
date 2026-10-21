@@ -5,6 +5,7 @@ import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Process
 import android.provider.Settings
 import android.util.Log
@@ -185,6 +186,28 @@ class UsageStatsModule : Module() {
         Log.d("MirrorUsageStats", "Debug Top invalid_package: ${top10.joinToString { "'${it.key}'=${it.value}" }}")
       }
       out
+    }
+
+    Function("getLauncherPackages") {
+      val context = appContext.reactContext ?: throw CodedException("NO_CONTEXT", "no Android context", null)
+      try {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+          addCategory(Intent.CATEGORY_HOME)
+        }
+        val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= 33) {
+          pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+          @Suppress("DEPRECATION")
+          pm.queryIntentActivities(intent, 0)
+        }
+        val pkgs = resolveInfos.mapNotNull { it.activityInfo?.packageName }.distinct()
+        Log.d("MirrorUsageStats", "Launchers via HOME: $pkgs")
+        pkgs
+      } catch (e: Exception) {
+        Log.d("MirrorUsageStats", "getLauncherPackages failed: ${e.message}")
+        emptyList<String>()
+      }
     }
   }
 

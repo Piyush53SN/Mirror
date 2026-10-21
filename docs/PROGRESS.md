@@ -1092,3 +1092,59 @@ Android **does** refuse differently signed APK without uninstall – `INSTALL_FA
 - `npm run test:packages` 251 tests still pass, `allowBackup=false` still set.
 - P3 still on hold pending test of install-over with stable keystore (should no longer require uninstall).
 
+
+### Real-device follow-up round 7 — POCO launcher, Honkai under-count, single-day view, Mirror exclusion, readable names (2026-10-21)
+
+Device test on Xiaomi/POCO: POCO Launcher `com.mi.android.globallauncher` 10h04m in totals, Honkai: Star Rail 16m vs OS 26m on 19 Oct and 1h31m another day, Flexibility, Brawl Stars, Chrome low, unlabeled `com.flow.mobile` shows raw package, Mirror itself counted.
+
+**Finding 1 — POCO Launcher 10h04m, hard-coded list missed `com.mi.android.globallauncher`:**
+
+- Previous `DEFAULT_IGNORED_PACKAGES` hard-coded OEM launchers: `com.miui.home`, `com.sec.android.app.launcher`, etc, but missed `com.mi.android.globallauncher` (POCO Launcher). Result: launcher foreground 10h counted as app usage.
+- Fix: resolve launchers by HOME role, not hard-coded list. Added native `getLauncherPackages()` in `UsageStatsModule.kt` that queries `PackageManager.queryIntentActivities(Intent(ACTION_MAIN).addCategory(CATEGORY_HOME))` with SDK33 `ResolveInfoFlags` branch, returns distinct package names, logs via `Log.d`.
+- Requires `<queries><intent><action MAIN/><category HOME/></intent></queries>` in manifest, otherwise `queryIntentActivities` returns empty on Android 11+. Added new Expo config plugin `apps/mobile/plugins/add-queries.js` via `withAndroidManifest` that adds HOME and LAUNCHER queries if not present. Added to `app.json` plugins after `remove-forbidden-permissions`.
+- JS `usageSource.ts` exposes `getLauncherPackages(): Promise<string[]>`, `runtime.collectNow` fetches launchers and passes as `ignorePackages` to `collectUsage`.
+- `buildUsageEvents` now merges `DEFAULT_IGNORED_PACKAGES` + dynamic launchers (was `??` replace, now spread both). `DEFAULT_IGNORED_PACKAGES` reduced to minimal: `dev.mirror.app`, `systemui`, `permissioncontroller`, `packageinstaller`, `intentresolver`, `settings`, `android`. OEM launchers removed, relying on dynamic detection with fallback.
+- Ignored packages still close previous app: when launcher fg, `buildUsageEvents` closes all open intervals at that timestamp (as HOME), then drops launcher interval. So previous app ends correctly, launcher not counted.
+- Verification: after fix, `com.mi.android.globallauncher` appears in `getLauncherPackages()` log, excluded from totals, still closes previous app. `SYSTEM_CLOSER_PACKAGES` still includes fallback launchers.
+
+**Finding 2 — Honkai: Star Rail 16m vs OS 26m, Flexibility/Brawl/Chrome low:**
+
+- Added single-day view with day picker (last 7 days), "collecting since <date>" line from `cursorState.at`, and OS total (`queryUsageStats`) next to Mirror total per app for same local day.
+- `runtime.cursorState()` exposes `{at, openCount}`, UI shows `collecting since <date>`; first sync reads 1 day back (`initialWindowMs=DAY_MS=86400000`, `maxWindowMs=2d`, `overlapMs=2s`). So collecting since is cursor.at or first-sync 1d ago.
+- Single-day rows: for selected day local 00:00-24:00, fetch OS totals via `queryUsageStats`, Mirror totals via `store.sessions`, merge, filter Mirror itself and launchers, resolve labels, compute diffPct and status via `max(10%,60s)` tolerance. Show top 20 sorted by OS total. UI card `Single-day view – YYYY-MM-DD` with Pills for day picker.
+- Honkai raw events logging: `queryEventsDebug` last 24h filtered for packages containing `hkrpg`/`honkai` or known ids `com.HoYoverse.hkrpgoversea`, `com.miHoYo.hkrpg`, `com.HoYoverse.StarRail`. New state `honkaiDebug` and dedicated card `Honkai: Star Rail raw events last 24h` showing `time typeName package / classTail`. Console logs full JSON.
+- Where time lost analysis (added to UI text and here):
+  - Rejected events: `too_long` >6h, `below_minimum` (none), `invalid_package` (malformed). Honkai sessions should not be >6h, but if open interval carried and capped at last event not sync time, could be abandoned_open if missing close.
+  - Orphan_background: bg without fg. If Honkai fg outside window (cursor overlap 2s) and bg inside, bg becomes orphan, not counted. With 2s overlap, rare but possible after long sleep.
+  - Merging: gap ≤2s merges same app intervals, should increase not decrease time, so not cause low.
+  - Per-class tracking: Honkai may have multiple activities; if one activity DESTROYED not seen, interval stays open, then next fg for other app closes Honkai at that time, but OS may count Honkai longer. Check raw log for RESUMED count vs STOPPED/PAUSED/DESTROYED: if RESUMED > STOPPED, some intervals abandoned_open and lost.
+  - Most likely: orphan_background or abandoned_open due to missing STOPPED/PAUSED for Honkai's last activity, or className mismatch (fg reports `MainActivity`, bg reports empty className). Also check if Honkai uses foreground service (type 19/20) not handled as fg – we only handle 1/2/23/24, not service. OS `queryUsageStats` counts foreground service time? No, only activity foreground, but worth checking.
+  - For Flexibility, Brawl Stars, Chrome low: similar, plus launcher not closing previously inflated some apps but not these – low means Mirror under-counts. Check if Chrome uses Custom Tabs that report different package? Or if Flexibility uses picture-in-picture? Or if gaps due to screen-off closing all correctly but OS counts differently? Need real raw logs for those packages on same day as OS totals to diagnose.
+
+**Finding 3 — Explain how far back first sync reads:**
+
+- `collectUsage` in `usage.ts`: `initialWindowMs = DAY_MS = 86400000` (1 day). If `cursorState.at == null` (first launch), `from = now - initialWindowMs`, `to = min(now, from+maxWindowMs=2d)`. So first sync reads 1 day back from now. Subsequent syncs read from `cursor.at - overlapMs (2s)` to `cursor.at + maxWindowMs`. Cursor advances only after successful append, so crash re-reads same window with deterministic ids (no dupe).
+- Added to UI caption and PROGRESS.md here.
+
+**Finding 4 — Exclude Mirror itself from totals:**
+
+- `DEFAULT_IGNORED_PACKAGES` already contained `dev.mirror.app`, so `buildUsageEvents` drops it and closes previous app (Mirror fg closes previous). But `dailyTotals` aggregation previously included Mirror if sessions existed. Now filtered explicitly in `runtime.validate`, `App.tsx` dailyTotals and single-day rows, and `runtime.cursorState` path: `if s.app === 'dev.mirror.app' continue`. So Mirror never appears in per-app totals or single-day view.
+
+**Finding 5 — Show readable name for unlabeled packages like `com.flow.mobile`:**
+
+- Previously `getCachedLabel` returned package name if label same as package, so `com.flow.mobile` showed raw package.
+- Added `readableFallback(pkg)`: split by dot, take last segment, capitalize first letter (`com.flow.mobile` -> `Mobile`, `com.example:123` -> last segment). If last segment ≤2 chars, use second last + last.
+- `resolveAppLabels` now uses `readableFallback` when native returns label==package or when cache miss, so unlabeled packages show readable name instead of raw package, while still showing package in micro text for disambiguation.
+- Requires `MAIN+LAUNCHER` query in manifest for `getAppLabels` to resolve labels for launcher-visible apps without `QUERY_ALL_PACKAGES`. Plugin `add-queries.js` adds both HOME and LAUNCHER queries.
+- Verification: `com.flow.mobile` now shows `Mobile` label with package below.
+
+**Verification round 7:**
+- New plugin `apps/mobile/plugins/add-queries.js` adds `<queries>` for HOME and LAUNCHER via `withAndroidManifest`.
+- `app.json` plugins include `./plugins/add-queries` after `remove-forbidden-permissions`.
+- Native `getLauncherPackages()` implemented, type added to `index.ts`, exposed via `usageSource`.
+- `buildUsageEvents` merges default ignored + dynamic launchers, minimal hard-coded list.
+- `runtime.collectNow` fetches launchers dynamically.
+- `App.tsx` adds single-day view with day picker (last 7 days), collecting since line, OS vs Mirror per-app same day, Honkai raw events card, readable fallback, Mirror exclusion.
+- `appLabels.ts` readable fallback for unlabeled packages.
+- `PROGRESS.md` updated here.
+- P3 still on hold pending re-test of POCO launcher exclusion, single-day OS vs Mirror, Honkai raw logs.

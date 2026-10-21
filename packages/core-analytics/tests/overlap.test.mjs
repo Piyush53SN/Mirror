@@ -114,20 +114,21 @@ test('sessionize no overlapping sessions per single-foreground input', () => {
   }
 });
 
-test('launcher foreground closes previous app but not counted', () => {
+test('launcher foreground closes previous app but not counted – dynamic HOME role', () => {
   const rows = [
     fg('com.whatsapp', 0),
     { packageName: 'com.miui.home', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(5) },
+    { packageName: 'com.mi.android.globallauncher', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(6) },
     fg('com.google.android.youtube', 10),
     bg('com.google.android.youtube', 15),
   ];
-  const result = buildUsageEvents(rows, base);
-  // WhatsApp should close at 5 (launcher fg), not stay open to 10
+  const launcherPkgs = ['com.miui.home', 'com.mi.android.globallauncher'];
+  const result = buildUsageEvents(rows, { ...base, ignorePackages: launcherPkgs });
   const whatsapp = result.events.find((e) => e.app === 'com.whatsapp' && e.kind === 'app_background');
   assert.ok(whatsapp, 'whatsapp should be closed by launcher');
   assert.equal(whatsapp.duration_ms, 5 * 60_000, 'should be 5 min, not 10');
-  // Launcher itself not counted
   assert.equal(result.events.filter((e) => e.app === 'com.miui.home').length, 0);
+  assert.equal(result.events.filter((e) => e.app === 'com.mi.android.globallauncher').length, 0);
 });
 
 test('STOPPED must not close app whose other activity is still resumed (per className tracking)', () => {

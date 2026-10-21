@@ -39,13 +39,15 @@ test('screen-off after ignored package still closes', () => {
   assert.equal(result.events.length, 2);
 });
 
-test('MIUI launcher and permission controller are ignored (finding 3)', () => {
-  assert.ok(DEFAULT_IGNORED_PACKAGES.includes('com.miui.home'), 'MIUI home should be ignored');
+test('MIUI launcher and permission controller are ignored (finding 3) – now dynamic HOME role', () => {
   assert.ok(DEFAULT_IGNORED_PACKAGES.includes('com.google.android.permissioncontroller'), 'permission controller should be ignored');
-  const rows = [fg('com.miui.home', 0), bg('com.miui.home', 1), fg('com.google.android.permissioncontroller', 2), bg('com.google.android.permissioncontroller', 3)];
-  const result = buildUsageEvents(rows, base);
+  const launcherPkgs = ['com.miui.home', 'com.mi.android.globallauncher', 'com.sec.android.app.launcher'];
+  const rows = [fg('com.miui.home', 0), bg('com.miui.home', 1), fg('com.google.android.permissioncontroller', 2), bg('com.google.android.permissioncontroller', 3), fg('com.mi.android.globallauncher', 4), bg('com.mi.android.globallauncher', 5)];
+  const result = buildUsageEvents(rows, { ...base, ignorePackages: launcherPkgs });
   assert.equal(result.events.length, 0);
   assert.ok(result.dropped.every((d) => d.reason === 'ignored_package'));
+  const result2 = buildUsageEvents([fg('com.google.android.permissioncontroller', 0), bg('com.google.android.permissioncontroller', 1)], base);
+  assert.equal(result2.events.length, 0);
 });
 
 test('interval over 6h is dropped as too_long, not displayed', () => {

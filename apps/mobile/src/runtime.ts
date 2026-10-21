@@ -40,6 +40,8 @@ export type MirrorRuntime = {
   osTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Validate Mirror vs OS totals */
   validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
+  /** Cursor state – where collection started, for "collecting since" line */
+  cursorState(): Promise<{ at: number | null; openCount: number }>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -66,7 +68,13 @@ export async function createRuntime(options: { allowContent?: boolean; retention
     singleton = {
       store,
       usage: () => usage,
-      collectNow: (now = Date.now()) => collectUsage(usage, store, { now }),
+      collectNow: async (now = Date.now()) => {
+        let launcherPkgs: string[] = [];
+        try {
+          launcherPkgs = await usage.getLauncherPackages();
+        } catch {}
+        return collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+      },
       ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
       ingestRecent: (now = Date.now()) => ingestRecentDays(store, now, offsetNow()),
       dataQuality: async (range = {}) => {
@@ -88,12 +96,21 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           const sessions = await store.sessions({ fromMs: range.fromMs, toMs: range.toMs });
           const mirrorMap = new Map<string, number>();
           for (const s of sessions) {
+            if (s.app === 'dev.mirror.app') continue;
             mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
           }
           const mirrorTotals = [...mirrorMap.entries()].map(([app, totalMs]) => ({ app, totalMs }));
           return validateDailyTotals(mirrorTotals, osTotals);
         } catch {
           return { rows: [], maxAbsPct: 0, maxAbsMs: 0, overThreshold: [], ok: true };
+        }
+      },
+      cursorState: async () => {
+        try {
+          const state = await store.getCursorState('usage_stats');
+          return { at: state.at, openCount: state.open.length };
+        } catch {
+          return { at: null, openCount: 0 };
         }
       },
     };
