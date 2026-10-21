@@ -280,10 +280,14 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   // Merge hard-coded ignored (Mirror itself, systemui etc) with dynamic launchers resolved via HOME role.
   // Previously we used only hard-coded list which missed POCO Launcher com.mi.android.globallauncher (10h4m bug).
   // Now launcher detection is dynamic via PackageManager CATEGORY_HOME (needs <queries> for HOME).
-  const ignore = new Set<string>([
-    ...DEFAULT_IGNORED_PACKAGES,
-    ...(options.ignorePackages ?? []),
-  ]);
+  // For totals, we now use OS aggregate (queryUsageStats) which matches Digital Wellbeing by construction.
+  // For session timeline (raw events), we keep per-activity tracking but:
+  // - Only launchers (HOME role) and Mirror itself close previous app on fg (user went home or opened Mirror)
+  // - SystemUI, settings, permissioncontroller etc are ignored WITHOUT closing previous (notification shade should not end game session)
+  // This fixes Honkai 31s vs OS 52m48s where systemui fg at 31s prematurely closed Honkai.
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const systemIgnore = new Set<string>(DEFAULT_IGNORED_PACKAGES);
+  const ignore = new Set<string>([...systemIgnore, ...launcherSet]);
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
   const minIntervalMs = options.minIntervalMs ?? 0;
   const drops: UsageDrop[] = [];
@@ -346,11 +350,13 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
-    // Ignored packages (launchers, systemui, resolver, installer, permission
-    // controller) are never counted, but their foreground events DO close the
-    // previous app. This fixes the 39m vs 12m WhatsApp bug.
+    // Ignored packages handling:
+    // - Launchers (HOME role, dynamic) and Mirror itself close previous app on fg (user went home)
+    // - SystemUI, settings, permissioncontroller, etc are ignored WITHOUT closing previous (fixes Honkai 31s vs 52m)
     if (ignore.has(row.packageName)) {
-      if (FOREGROUND_TYPES.has(row.eventType)) {
+      const isLauncher = launcherSet.has(row.packageName);
+      const isMirror = row.packageName === 'dev.mirror.app';
+      if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
         for (const [app, entry] of open) {
           closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
         }

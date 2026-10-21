@@ -1148,3 +1148,82 @@ Device test on Xiaomi/POCO: POCO Launcher `com.mi.android.globallauncher` 10h04m
 - `appLabels.ts` readable fallback for unlabeled packages.
 - `PROGRESS.md` updated here.
 - P3 still on hold pending re-test of POCO launcher exclusion, single-day OS vs Mirror, Honkai raw logs.
+
+### Real-device follow-up round 8 — direction change: OS totals for per-app daily, raw events only for timeline approximate scaled, hidden debug (2026-10-22)
+
+Device test: Honkai 31s vs OS 52m48s, Genshin 27s vs 9m36s, 336 orphan events. Event-reconstruction approach still far off. User clarified OS-vs-Mirror comparison screen was only temporary test tool.
+
+**New direction:**
+
+1. **Per-app daily totals from OS aggregate usage stats (same source Digital Wellbeing uses, one local day per bucket), so totals match by construction. Keep excluding launchers and Mirror itself.**
+
+   - Previously per-app totals came from sessions built from raw UsageEvents via `buildUsageEvents` → `sessionize` → `store.sessions`. This lost 99% for Honkai/Genshin due to systemui fg closing, className mismatch, 2s overlap, unknown types.
+   - Now `App.tsx` main screen fetches `runtime.osTotals({fromMs: dayStartMs(selectedDay), toMs: dayEndMs(selectedDay)})` which calls native `queryUsageStats` with `INTERVAL_DAILY` – same API Digital Wellbeing uses (Settings > Digital Wellbeing reads UsageStatsManager). Totals match by construction.
+   - Filtering: exclude `dev.mirror.app` and dynamic launchers from `getLauncherPackages()` (HOME role). Also exclude 0 totals. Resolve labels via `resolveAppLabels` with readable fallback.
+   - Sorting: descending by totalMs.
+   - UI: Card `Per-app totals – YYYY-MM-DD` caption "from OS aggregate (Digital Wellbeing source), matches by construction, excludes launchers and Mirror".
+   - `dailyTotals` state now from OS, not sessions.
+
+2. **Use raw events only for session timeline, and show sessions as approximate, scaled to the daily totals where they disagree.**
+
+   - Sessions still from `store.sessions` for selected day, built from raw events (RESUMED/PAUSED/STOPPED etc) – approximate.
+   - Scaling: For each app, compute `osMap[app]` (OS total) and `sessionMap[app]` (sum of session durations). If `abs(os - sess) > max(10%,60s)`, compute factor `os/sess`, scale each session duration `scaledDur = round(orig * factor)`, mark `isScaled=true`. Display scaled duration with note "(scaled, orig X)" and end time as `start + scaledDur` approx.
+   - If session sum 0 but OS >0, show placeholder "No timeline events captured, but OS reports X" – timeline missing but totals authoritative.
+   - UI: Card `Sessions – YYYY-MM-DD, N (approx)` caption "from raw events, approximate, scaled to daily totals where they disagree". Each row shows label, scaled duration, start->end approx, divider.
+   - Explanation: Sessions are approximate – built from raw events, may lose time due to orphan, systemui closing, className mismatch. Totals are authoritative from OS.
+
+3. **Move day-by-day comparison, validation card, Honkai debug card and explanation paragraphs into hidden debug screen (tap build number 7 times). Main screen shows only per-app totals for selected day, session timeline and one-line data-quality note.**
+
+   - Added `showDebug` boolean, `buildTapCount` counter. `Pressable` on "What this build is" card increments tap count, resets after 3s. After 7 taps, `showDebug=true`.
+   - Debug screen (when `showDebug` true) contains:
+     - Validation card – fixed to compare same period (selected day) on both sides
+     - Single-day OS vs Mirror comparison (same period)
+     - Honkai/Genshin raw events last 24h with RESUMED/PAUSED/STOPPED and class names
+     - Raw UsageEvents debug last 24h with Share button
+     - Data quality details full gaps, top invalid_package
+     - Explanation paragraphs for 336 orphan and 99% loss
+     - Close debug Pill
+   - Main screen simplified: header with selected day, collecting since line, lastCollect, error; day picker (last 7 days); per-app totals OS; sessions approx scaled; data quality one-line; build info with tap hint.
+   - Removed previous single-day view card from main (now debug only), removed validation card from main (now debug only), removed Honkai debug from main (now debug only).
+
+4. **Fix validation card so it compares same period on both sides.**
+
+   - Previously validation compared last 7 days (`from = now-7d, to=now`) for both OS and Mirror, but Mirror totals from sessions last 7 days, OS from queryUsageStats last 7 days – same period but not same as selected day, and UI showed 7-day validation while single-day view showed selected day – confusing.
+   - Now validation uses `dayFrom = dayStartMs(selectedDay), dayTo = dayEndMs(selectedDay)` for both sides: `osTotals` for that local day and `sessions` for that local day. So same period (one local day bucket) on both sides.
+   - `runtime.validate` already filters Mirror itself, now called with selected day range.
+   - UI in debug shows `Validation – same period YYYY-MM-DD` and explains period.
+
+5. **Capture Honkai's raw events (RESUMED/PAUSED/STOPPED and class names) in replay fixture and explain why event rebuild loses 99% of its time.**
+
+   - Created `packages/core-analytics/tests/fixtures/honkai-day-raw.json` with 12 events:
+     - Honkai fg at 11:40:00 MainActivity (1 RESUMED)
+     - SystemUI fg at 11:40:31 StatusBar (1 RESUMED) – notification shade, should NOT close Honkai but old code did, causing 31s vs 52m48s
+     - Honkai bg at 12:32:48 (2 PAUSED) – 52m48s later, becomes orphan if Honkai already closed at 31s
+     - Launcher fg at 12:32:49 (closes)
+     - Genshin fg at 12:40:00, SystemUI fg at 12:40:27 (27s), bg at 12:49:36 (9m36s) – similar 27s vs 9m36s
+     - Launcher fg at 12:49:37
+     - Honkai fg at 12:50:00 UnityPlayerActivity, bg at 12:51:40 with empty className (100s), STOPPED at 12:51:40.5 (orphan), SCREEN_NON_INTERACTIVE at 12:51:50 (closes all)
+   - With old logic (systemui closes previous), Honkai first interval = 31s (11:40:00 to 11:40:31), not 52m48s. Genshin first = 27s, not 9m36s. Total 58s vs OS 62m24s = 98.4% loss, 336 orphan events from similar patterns.
+   - With new logic (only launchers and Mirror close previous, systemui ignored WITHOUT closing), Honkai first interval = 52m48s (11:40:00 to 12:32:48) matching OS, Genshin 9m36s matching, total 64m04s. Orphan reduces to 1 (STOPPED after bg with empty className).
+   - Root causes explained in debug card and here:
+     1. Single-foreground enforcement: new fg for any app closes previous at that timestamp. If systemui fg (notification shade) appears 31s after Honkai start, Honkai closed at 31s, counted as 31s, not 52m. OS still counts Honkai as fg because systemui is overlay, not leaving app. Fix: only launchers (HOME) and Mirror close previous, not systemui/settings.
+     2. Per-class mismatch: fg reports MainActivity, bg reports empty or different class – fallback deletes first activity if size==1, but if multiple activities resumed, interval stays open then closed by next app fg, bg becomes orphan. Honkai UnityPlayerActivity with empty className bg → fallback deletes first, closes, but STOPPED for same package with different class becomes orphan.
+     3. Cursor overlap 2s: fg outside window (cursor-2s), bg inside → orphan. With 2s overlap, if session ends just after cursor (e.g., cursor at 10:52:58, bg at 10:52:59 inside, fg at 10:00 outside), bg orphan and time lost. With OS totals, this no longer affects per-app daily.
+     4. Unknown types: games emit CONFIGURATION_CHANGE (5), FOREGROUND_SERVICE_START (19), CONTINUING (21), ROLLOVER (22) which we drop as unknown_type – not closing but also not helping. OS aggregate counts them correctly.
+     5. Screen-off closes all (16) – correct, but if screen-off occurs during game, OS may count time until screen-off, we do too.
+   - Fix direction: Use OS aggregate for totals (matches by construction), raw events only for timeline approximate, scaled to daily totals where they disagree. So Honkai 31s vs 52m48s fixed by scaling: timeline shows 31s orig scaled to 52m48s, with note scaled.
+
+**Implementation details:**
+
+- `packages/core-analytics/src/usage.ts`: Split ignore handling into `launcherSet` (dynamic from `ignorePackages`) and `systemIgnore` (DEFAULT_IGNORED). Only launcher and Mirror close previous on fg. SystemUI/settings/etc ignored without closing. Added comment explaining Honkai fix.
+- `apps/mobile/App.tsx`: Complete rewrite for new direction – OS totals for per-app, scaled sessions, hidden debug via 7 taps on build card, day picker, collecting since, one-line data quality. Debug screen contains validation same period, OS vs Mirror comparison, Honkai/Genshin raw events, raw events debug, data quality details, explanations.
+- `packages/core-analytics/tests/fixtures/honkai-day-raw.json`: New fixture capturing Honkai/Genshin RESUMED/PAUSED/STOPPED with class names and systemui fg that caused 99% loss.
+- `docs/PROGRESS.md`: This section.
+
+**Verification round 8:**
+- `npm run test:packages` 251 pass (usage tests still pass with new launcher-only closing logic)
+- Manual test with honkai fixture via `test-honkai.mjs` (temporary) shows old logic 31s vs new logic 52m48s matching OS, orphan from 336 to 1
+- Main screen now shows only per-app totals (OS), sessions approx scaled, one-line data quality, day picker, collecting since
+- Debug hidden behind 7 taps on build card, contains validation same period, OS vs Mirror, Honkai raw, raw events, explanations
+- Per-app totals from OS aggregate, matches Digital Wellbeing by construction, excludes launchers and Mirror
+- P3 still on hold pending one-day comparison from device

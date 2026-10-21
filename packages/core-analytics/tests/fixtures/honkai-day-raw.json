@@ -1,0 +1,14 @@
+[
+  { "packageName": "com.HoYoverse.hkrpgoversea", "className": "com.HoYoverse.hkrpgoversea.MainActivity", "eventType": 1, "timeStamp": 1729078800000 },
+  { "packageName": "com.android.systemui", "className": "com.android.systemui.statusbar.phone.StatusBar", "eventType": 1, "timeStamp": 1729078831000 },
+  { "packageName": "com.HoYoverse.hkrpgoversea", "className": "com.HoYoverse.hkrpgoversea.MainActivity", "eventType": 2, "timeStamp": 1729081968000 },
+  { "packageName": "com.mi.android.globallauncher", "className": "com.mi.android.globallauncher.Launcher", "eventType": 1, "timeStamp": 1729081969000 },
+  { "packageName": "com.miHoYo.GenshinImpact", "className": "com.miHoYo.GenshinImpact.MainActivity", "eventType": 1, "timeStamp": 1729082400000 },
+  { "packageName": "com.android.systemui", "className": "", "eventType": 1, "timeStamp": 1729082427000 },
+  { "packageName": "com.miHoYo.GenshinImpact", "className": "com.miHoYo.GenshinImpact.MainActivity", "eventType": 2, "timeStamp": 1729082976000 },
+  { "packageName": "com.mi.android.globallauncher", "className": "com.mi.android.globallauncher.Launcher", "eventType": 1, "timeStamp": 1729082977000 },
+  { "packageName": "com.HoYoverse.hkrpgoversea", "className": "com.HoYoverse.hkrpgoversea.UnityPlayerActivity", "eventType": 1, "timeStamp": 1729083000000 },
+  { "packageName": "com.HoYoverse.hkrpgoversea", "className": "", "eventType": 2, "timeStamp": 1729083100000 },
+  { "packageName": "com.HoYoverse.hkrpgoversea", "className": "com.HoYoverse.hkrpgoversea.UnityPlayerActivity", "eventType": 23, "timeStamp": 1729083105000 },
+  { "packageName": "com.android.systemui", "className": "", "eventType": 16, "timeStamp": 1729083110000 }
+]
