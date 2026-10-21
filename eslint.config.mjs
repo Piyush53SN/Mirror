@@ -35,8 +35,13 @@ export default tseslint.config(
   },
   {
     // Metro and Babel are loaded by CommonJS tooling; `require` is the API there.
-    files: ['apps/mobile/*.config.js'],
+    files: ['apps/mobile/*.config.js', 'apps/mobile/plugins/*.js'],
     rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    // Store uses any in a few places for dynamic SQLite rows – allowed
+    files: ['packages/store/src/**/*.ts'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
   },
   {
     files: ['scripts/**/*.mjs', 'tests/**/*.mjs'],

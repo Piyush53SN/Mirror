@@ -14,7 +14,6 @@
  * directly, adding tools:node="remove" for each blocked permission.
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports -- Expo plugins are CommonJS */
 const { withDangerousMod } = require('@expo/config-plugins');
 const fs = require('fs');
 const path = require('path');

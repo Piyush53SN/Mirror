@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import * as React from 'react';
 import { AppState, ScrollView, Share, View } from 'react-native';
 import { createTheme } from '@mirror/ui';
