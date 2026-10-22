@@ -64,26 +64,40 @@ fi
 echo "--- checking for FATAL EXCEPTION mentioning dev.mirror.app ---"
 if adb logcat -d | grep -i "FATAL EXCEPTION" | grep -i "dev.mirror.app"; then
   echo "::error::Found FATAL EXCEPTION mentioning dev.mirror.app"
-  adb logcat -d | grep -i -A 30 "FATAL EXCEPTION"
+  adb logcat -d | grep -i -A 50 "FATAL EXCEPTION"
   exit 1
 fi
 
 echo "--- checking for AndroidRuntime FATAL for dev.mirror.app ---"
 if adb logcat -d | grep -E "AndroidRuntime" | grep -i "dev.mirror.app" | grep -i "FATAL"; then
   echo "::error::Found AndroidRuntime FATAL for dev.mirror.app"
-  adb logcat -d | grep -E "AndroidRuntime" | tail -n 50
+  adb logcat -d | grep -E "AndroidRuntime" | tail -n 100
+  exit 1
+fi
+
+echo "--- checking for JSApplicationIllegalArgumentException / accessibilityLabel / ReadableNativeArray crash (round14) ---"
+if adb logcat -d | grep -i -E "JSApplicationIllegalArgumentException|accessibilityLabel.*RCTView|ReadableNativeArray.*String|ClassCastException.*ReadableNativeArray"; then
+  echo "::error::Found accessibilityLabel crash (ReadableNativeArray cannot be cast to String) – Pill children array bug"
+  adb logcat -d | grep -i -B 10 -A 30 -E "JSApplicationIllegalArgumentException|accessibilityLabel|ReadableNativeArray|RCTView|ClassCastException" | tail -n 200
   exit 1
 fi
 
 # Also check for any FATAL EXCEPTION at all that might be related
 if adb logcat -d | grep -i "FATAL EXCEPTION" | head -n 5; then
   echo "Found some FATAL EXCEPTION (checking if related to mirror):"
-  adb logcat -d | grep -i -B 5 -A 20 "FATAL EXCEPTION" | head -n 100
-  # Only fail if it mentions mirror or WorkDatabase or InitializationProvider
-  if adb logcat -d | grep -i "FATAL EXCEPTION" | grep -i -E "mirror|WorkDatabase|InitializationProvider|dev.mirror"; then
+  adb logcat -d | grep -i -B 5 -A 30 "FATAL EXCEPTION" | head -n 150
+  # Fail if it mentions mirror or WorkDatabase or InitializationProvider or accessibilityLabel crash
+  if adb logcat -d | grep -i "FATAL EXCEPTION" | grep -i -E "mirror|WorkDatabase|InitializationProvider|dev.mirror|accessibilityLabel|ReadableNativeArray|RCTView|JSApplicationIllegalArgumentException"; then
     echo "::error::FATAL EXCEPTION related to Mirror found"
+    adb logcat -d | grep -i -B 5 -A 50 "FATAL EXCEPTION" | tail -n 300
+    exit 1
+  fi
+  # Also fail on any AndroidRuntime FATAL with ClassCastException (could be a11y bug)
+  if adb logcat -d | grep -i "AndroidRuntime" | grep -i -E "FATAL|ClassCastException|ReadableNativeArray"; then
+    echo "::error::AndroidRuntime FATAL with ClassCastException found – likely accessibilityLabel array bug"
+    adb logcat -d | grep -i -B 5 -A 30 "AndroidRuntime" | tail -n 200
     exit 1
   fi
 fi
 
-echo "Smoke test passed - no WorkManager crash, pid alive ($PID), no FATAL EXCEPTION for dev.mirror.app"
+echo "Smoke test passed - no WorkManager crash, pid alive ($PID), no FATAL EXCEPTION for dev.mirror.app, no accessibilityLabel crash"

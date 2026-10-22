@@ -77,13 +77,31 @@ export function announceValue(label: string, value: number | string, unit: strin
   return context ? `${label}, ${core}, ${context}` : `${label}, ${core}`;
 }
 
-/** Android honours `accessible` + a single label; iOS uses the same props. */
-export function a11yTarget(label: string, hint?: string, disabled?: boolean) {
+/** Coerce any value to string for accessibilityLabel – prevents ReadableNativeArray crash. Exported for direct usages. */
+export function coerceLabel(value: unknown): string {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return String(value);
+  if (Array.isArray(value)) return value.map(coerceLabel).filter(Boolean).join(' ');
+  // React node or object – try plain text extraction
+  if (typeof value === 'object') {
+    const maybe = (value as any).props?.children ?? (value as any).children;
+    if (maybe != null) return coerceLabel(maybe);
+    try {
+      return String(value);
+    } catch {
+      return '';
+    }
+  }
+  return String(value);
+}
+
+export function a11yTarget(label: unknown, hint?: unknown, disabled?: boolean) {
   return {
     accessible: true,
     accessibilityRole: ROLES.button,
-    accessibilityLabel: label,
-    accessibilityHint: hint,
+    accessibilityLabel: coerceLabel(label),
+    accessibilityHint: hint != null ? coerceLabel(hint) : undefined,
     accessibilityState: disabled ? { disabled: true } : undefined,
   };
 }

@@ -623,7 +623,7 @@ export default function App(): React.ReactElement {
             return (
               <View key={s.id} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
                 <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
-                <Text role="micro" tone="muted" theme={theme}>{s.app}{currentLabel ? ` • ${currentLabel}` : ''}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • ${currentLabel}` : ''}`}</Text>
                 <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(1) }}>
                   {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
                     <Pill
@@ -662,7 +662,7 @@ export default function App(): React.ReactElement {
                         }
                       }}
                     >
-                      {lbl === currentLabel ? `✓ ${lbl}` : lbl}{labelSaving === s.id ? '…' : ''}
+                      {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}`}
                     </Pill>
                   ))}
                 </View>
