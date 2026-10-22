@@ -375,6 +375,20 @@ export default function App(): React.ReactElement {
         </View>
 
         <Card theme={theme} elevated>
+          <SectionHeader theme={theme} title="Sessions – why approximate and scaled" caption="technical explanation moved from main screen" />
+          <Text role="micro" tone="muted" theme={theme}>
+            {[
+              'Per-app daily totals come from OS aggregate queryUsageStats (INTERVAL_DAILY, same as Digital Wellbeing), so they match by construction. Excludes launchers (HOME role via getLauncherPackages) and Mirror itself and system UI (Settings rule: exclude Settings, systemui, permissioncontroller etc everywhere – only launchers+Mirror close previous).',
+              'Session timeline comes from raw UsageEvents (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Raw events lose time: systemui fg (notification shade) at 31s closed Honkai prematurely (old code), className mismatch fg MainActivity vs bg empty, cursor overlap 2s fg outside window bg inside → orphan, unknown types CONFIGURATION_CHANGE=5 and FOREGROUND_SERVICE 19-22 dropped.',
+              'Scaling rule: For selected day, OS totals per app (osMap) and session sum per app (sessionMap). If abs(os - sess) > max(10%*os, 60s), factor = os / sess, scaledDur = round(orig * factor). Display shows scaled duration, start remains original, marked approx and scaled to daily total. If sess sum 0 but OS >0, no timeline, totals authoritative.',
+              'Scores: approximate session data does NOT feed scores as exact. ScoreInput has approximate flag, confidenceFor caps score to 0.49 and level low when approximate true, with reason explaining 99% loss. Sessions count, focus windows, rabbit hole, curiosity vs habit must not use scaled durations or start/end as exact – they use OS totals or original sessions with low confidence.',
+              '0.49 cap: When approximate true, confidence score = min(score, 0.49), level = low, so IQS never shows high/medium confidence from approximate timeline. Documented in docs/metrics.md.',
+              'Fixture: honkai-day-raw.json is synthetic invented to reproduce 31s vs 52m48s, will be replaced with real raw events from phone via debug Share button.',
+            ].join('\n\n')}
+          </Text>
+        </Card>
+
+        <Card theme={theme} elevated>
           <SectionHeader theme={theme} title={`Validation – same period ${selectedDay}`} caption="fixed to compare same period on both sides" />
           {validation ? (
             <View style={{ gap: theme.space(1) }}>
@@ -519,10 +533,9 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title={`Sessions – ${selectedDay}, ${scaledSessions.length} (approx)`} caption="from raw events, approximate, scaled to daily totals where they disagree" />
+        <SectionHeader theme={theme} title={`Sessions – ${selectedDay}, ${scaledSessions.length} (approx)`} caption="timeline is approximate" />
         <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
-          <Text role="label" theme={theme}>Session times are approximate and scaled to daily totals. Daily totals (above) are authoritative and come from OS aggregate (same as Digital Wellbeing). Timeline shows when you opened apps, but durations are scaled to match OS totals where they disagree (e.g., Honkai 31s raw scaled to 52m48s OS).</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Why approximate? Raw UsageEvents lose time due to systemui fg closing (notification shade), className mismatch, 2s cursor overlap, unknown types. See hidden debug for details (tap build 7x). Scores do NOT use approximate sessions as exact – they use OS totals or low confidence.</Text>
+          <Text role="label" theme={theme}>Session times are approximate and scaled to daily totals – daily totals above are authoritative.</Text>
         </View>
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>

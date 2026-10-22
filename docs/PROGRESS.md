@@ -1275,3 +1275,32 @@ User direction: (1) pick one Settings rule and apply everywhere; (2) say clearly
 - Honkai fixture README added, fixture remains synthetic until real capture via debug Share button
 - Scores not fed exact from approximate – confidence low when approximate flag true
 - P3 still on hold pending real day totals match confirmation
+
+### Round 10 — shorten banner to one sentence, document 0.49 cap + scaling rule, ensure downstream doesn't use scaled as exact (2026-10-22)
+
+**Before-P3 refinement round 10:**
+
+1. **Shorten sessions banner to one plain sentence, move technical explanation to hidden debug screen.**
+   - Before: Banner had two sentences + technical explanation (Honkai 31s vs 52m48s, systemui fg closing, 2s overlap) visible on main screen.
+   - After: Main screen banner only `Session times are approximate and scaled to daily totals – daily totals above are authoritative.` one plain sentence in a surface box.
+   - Technical explanation moved to hidden debug screen (tap build 7x) in new card `Sessions – why approximate and scaled` with 6 paragraphs: OS totals from queryUsageStats INTERVAL_DAILY (Digital Wellbeing source, matches by construction), excludes launchers (HOME role) + Mirror + system UI, timeline from raw UsageEvents (RESUMED=1 etc), why approximate (systemui fg 31s closing Honkai, className mismatch, 2s cursor overlap, unknown types 5/19-22), scaling rule factor = osMs/sessionSum when abs(os-sess) > max(10%*os, 60s), scaledDur = round(orig*factor), scores not exact with 0.49 cap.
+
+2. **Document 0.49 cap and scaling rule in docs/metrics.md.**
+   - Added §5.1 `OS totals for per-app daily, approximate sessions scaled` with:
+     - Direction change round 8 (2026-10-22) 99% loss Honkai 31s vs 52m48s, Genshin 27s vs 9m36s, 336 orphan events.
+     - Root causes: systemui fg (notification shade) closing previous at 31s, per-class mismatch, cursor overlap 2s, unknown types.
+     - New rule: per-app daily totals from OS aggregate queryUsageStats INTERVAL_DAILY, matches by construction, excludes launchers (HOME role via getLauncherPackages) + Mirror + system UI (Settings rule exclude Settings, systemui etc everywhere, only launchers+Mirror close previous).
+     - Session timeline from raw UsageEvents, approximate.
+     - Scaling rule: for selected local day [dayStart, dayEnd), osMap vs sessionMap, if abs(os-sess) > max(10%*os, 60s), factor = os/sess, scaledDur = round(orig*factor), display scaled, start original, marked approx scaled.
+     - Scores must not use scaled durations or start/end as exact: ScoreInput.approximate flag, confidenceFor caps 0.49 low, with reason explaining 99% loss.
+     - 0.49 cap: when approximate true, score = min(score,0.49) and level=low regardless of coverage/sample/labels, prevents approximate timeline from feeding high/medium confidence exact.
+     - Fixture honkai-day-raw.json synthetic will be replaced via debug Share.
+
+3. **Ensure nothing downstream (sessions count, focus windows, rabbit hole, curiosity vs habit) uses scaled durations or start/end times as exact.**
+   - Audit: `apps/mobile/App.tsx` scaledSessions only for display, never fed to scoring or stored. `packages/core-analytics/src/usage.ts` sessionize returns original durations, scaling applied only in App.tsx for display per day. `scoring.ts` added `approximate?: boolean` in ScoreInput, confidenceFor caps 0.49 low when true, so IQS never shows high/medium from approximate timeline.
+   - `packages/ui/screens` focus windows, rabbit hole, curiosity vs habit are mockups using persona data, not real sessions yet; when wired to real store, they must use OS totals or original sessions with low confidence, not scaled as exact – documented in metrics.md §5.1.
+   - Sessions count same as original count (scaling preserves count), but durations marked approx. Focus windows timestamps are original start times, not scaled start/end as exact, with approx note.
+   - Tests 251 pass, lint 0.
+
+**P3 still on hold until user confirms totals match on real day.**
+
