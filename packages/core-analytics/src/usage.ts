@@ -321,6 +321,10 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   }
 
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
+  // Track recently closed apps to suppress duplicate bg that arrives shortly after close via single-foreground enforcement
+  // This reduces orphans 319 -> much lower: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
+  const recentlyClosed = new Map<string, number>();
+  const RECENT_CLOSE_SUPPRESS_MS = 10_000; // ignore orphan bg within 10s of close
 
   for (const row of ordered) {
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
@@ -334,6 +338,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       }
       for (const [app, entry] of open) {
         closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        recentlyClosed.set(app, row.timeStamp);
       }
       open.clear();
       continue;
@@ -359,6 +364,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
         for (const [app, entry] of open) {
           closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+          recentlyClosed.set(app, row.timeStamp);
         }
         open.clear();
       }
@@ -376,6 +382,11 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       const className = row.className && row.className.length > 0 ? row.className : '__default__';
       const entry = open.get(row.packageName);
       if (!entry) {
+        const recentClose = recentlyClosed.get(row.packageName);
+        if (recentClose !== undefined && row.timeStamp - recentClose <= RECENT_CLOSE_SUPPRESS_MS) {
+          drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
+          continue;
+        }
         drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
         addGap(gaps, { reason: 'orphan_background', count: 1 });
         continue;
@@ -383,6 +394,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       entry.activities.delete(className);
       if (entry.activities.size === 0) {
         closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        recentlyClosed.set(row.packageName, row.timeStamp);
         open.delete(row.packageName);
       }
       continue;
@@ -397,6 +409,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       for (const [otherApp, otherEntry] of [...open.entries()]) {
         if (otherApp !== row.packageName) {
           closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+          recentlyClosed.set(otherApp, row.timeStamp);
           open.delete(otherApp);
         }
       }
@@ -419,6 +432,12 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     // STOPPED must not close an app whose other activity is resumed.
     const entry = open.get(row.packageName);
     if (!entry) {
+      const recentClose = recentlyClosed.get(row.packageName);
+      if (recentClose !== undefined && row.timeStamp - recentClose <= RECENT_CLOSE_SUPPRESS_MS) {
+        // Duplicate bg shortly after close via single-foreground – ignore, not a real gap
+        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
+        continue;
+      }
       drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
       addGap(gaps, { reason: 'orphan_background', count: 1 });
       continue;
@@ -455,6 +474,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     if (entry.activities.size === 0) {
       // Last activity closed, close interval
       closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+      recentlyClosed.set(row.packageName, row.timeStamp);
       open.delete(row.packageName);
     } else {
       // Still has other resumed activities, keep earliestStart unchanged
@@ -625,7 +645,9 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
 
   const initialWindowMs = options.initialWindowMs ?? DAY_MS;
   const maxWindowMs = options.maxWindowMs ?? 2 * DAY_MS;
-  const overlapMs = options.overlapMs ?? 2_000;
+  // P2 fix: increase overlap from 2s to 60s to reduce orphans 319 where fg outside window bg inside
+  // Idempotent ids make overlap safe, cost is reading 60s more rows per sync (negligible vs 1-day window)
+  const overlapMs = options.overlapMs ?? 60_000;
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
 
   const state = await store.getCursorState('usage_stats');

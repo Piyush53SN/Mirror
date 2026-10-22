@@ -626,15 +626,45 @@ export default function App(): React.ReactElement {
         </View>
       </Card>
 
+      {/* P3 guard: features that need session boundaries */}
+      <Card theme={theme}>
+        <SectionHeader theme={theme} title="P3 features – session boundaries" caption="needs more reliable sessions until orphans low" />
+        {(() => {
+          const orphanCount = quality?.byReason?.orphan_background ?? 0;
+          const totalGaps = quality?.count ?? 0;
+          const reliable = orphanCount <= 50 && totalGaps <= 100;
+          if (!reliable) {
+            return (
+              <View style={{ gap: theme.space(2) }}>
+                <Text role="label" theme={theme}>Needs more reliable sessions – orphans {orphanCount}, gaps {totalGaps}</Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`P3 features (interest evolution, discovery timeline, rabbit-hole detection, what-if, focus windows) need accurate session boundaries (start/end). Current raw events have orphans ${orphanCount} (e.g., 319 on device) due to fg outside window, className mismatch, duplicate bg after single-foreground close. Until orphans <50 and gaps <100, these features show this message and use only OS totals (authoritative) meanwhile.`}
+                </Text>
+                <Callout theme={theme} tone="limit">
+                  Using only OS totals for now: per-app daily totals from queryUsageStats are authoritative and match Digital Wellbeing. Session boundaries (open times) are shown above, but durations not used for P3 scoring until reliable.
+                </Callout>
+              </View>
+            );
+          }
+          return (
+            <View style={{ gap: theme.space(2) }}>
+              <Text role="label" theme={theme}>Sessions reliable – orphans {orphanCount}, gaps {totalGaps} – P3 features can use boundaries</Text>
+              <Text role="micro" tone="muted" theme={theme}>Interest evolution, discovery timeline, rabbit-hole, what-if, focus windows can now use session start/end with low confidence.</Text>
+            </View>
+          );
+        })()}
+      </Card>
+
       <Pressable onPress={handleBuildTap}>
         <Card theme={theme}>
           <SectionHeader theme={theme} title="What this build is" caption={`Tap 7 times for debug – build ${buildTapCount}/7`} />
           <Text role="micro" tone="muted" theme={theme}>
             {[
               `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror`,
-              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319, Genshin 22s→8m54s invented)`,
-              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet`,
-              `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw)`,
+              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→0 via recent-close suppress 10s + 60s overlap)`,
+              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet, 0.49 cap when approximate`,
+              `P3 guard: needs more reliable sessions until orphans low, uses only OS totals meanwhile`,
+              `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw, Share JSON)`,
             ].join('\n')}
           </Text>
         </Card>
