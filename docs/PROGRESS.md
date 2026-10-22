@@ -1504,3 +1504,43 @@ User direction: (1) pick one Settings rule and apply everywhere; (2) say clearly
 
 **P3 plan:** See `docs/P3.md` 10-line plan (updated) awaiting continue.
 
+
+### Round 14 — Fix release APK crash on launch: accessibilityLabel array → ReadableNativeArray ClassCastException (2026-10-22)
+
+**Crash:** Release APK crashes on launch on phone (Xiaomi), stack `JSApplicationIllegalArgumentException: Error while updating property 'accessibilityLabel' of a view managed by RCTView`, caused by `ClassCastException: ReadableNativeArray cannot be cast to java.lang.String`. Some component passes array as accessibilityLabel.
+
+**Root cause:** In `App.tsx` new labeling UI:
+```tsx
+<Pill>{lbl === currentLabel ? `✓ ${lbl}` : lbl}{labelSaving === s.id ? '…' : ''}</Pill>
+```
+Two adjacent JSX expressions inside Pill → React creates array children `['intentional','…']`. Pill prop `children: string` but runtime array, then `a11yTarget(children)` passes array as accessibilityLabel → Android RCTView expects String but gets ReadableNativeArray → crash. Also `<Text>{s.app}{currentLabel ? ...}</Text>` similar.
+
+**Fixes:**
+- `packages/ui/src/a11y.ts`: `a11yTarget` now takes `unknown`, `coerceLabel()` joins arrays, extracts text from React nodes, always returns string. Exported for direct usages. Prevents crash even if array passed.
+- `packages/ui/src/primitives/controls.tsx`: Pill now coerces children to string `labelForA11y` before a11yTarget.
+- `apps/mobile/App.tsx`: Fixed array cases to single template string: `` `${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}` `` and `` `${s.app}${currentLabel ? ` • ${currentLabel}` : ''}` ``.
+- Checked all other accessibilityLabel in packages/ui: template literals or join(', ') already strings, Chip/SegmentedControl/TabBar via a11yTarget now coerced, WhySheet/ConfidenceChip strings.
+
+**Tests:**
+- Added `packages/ui/tests/a11y-label.test.mjs` 4 tests: a11yTarget coerces array, Pill with array children not produce array label, Pill single string, every interactive element in all 28 SCREENS has string accessibilityLabel not array (render test asserting prop type). 41 ui tests pass (37 + 4).
+
+**Smoke test:**
+- Did it run? Yes: run `39776381888` on commit `fb3a0d6` (crashing build), branch arena, workflow_dispatch, jobs: Gradle 10m31s ✓, Smoke test 1m53s ✓ (ID 119821112336), preflight 24s ✓. Smoke test passed but missed crash because grep only checked `FATAL EXCEPTION` + `dev.mirror.app` and `AndroidRuntime` + `dev.mirror.app`, not `accessibilityLabel|ReadableNativeArray|RCTView|JSApplicationIllegalArgumentException`.
+- Fixed `scripts/android/smoke-test.sh` to also check `JSApplicationIllegalArgumentException|accessibilityLabel.*RCTView|ReadableNativeArray.*String|ClassCastException.*ReadableNativeArray` and fail on any FATAL EXCEPTION mentioning those, plus AndroidRuntime FATAL with ClassCastException.
+
+**Verification:** `node --test packages/ui/tests/a11y-label.test.mjs` 4 pass, `ui.test.mjs` 37 pass, `core-analytics` 106 pass, new build no longer crashes on launch.
+
+### Round 15 — Real-device feedback: orphans 64, labeling too manual, no manual data entry (2026-10-22)
+
+**Feedback:** App no longer crashes, orphans dropped to 64 (was 319). But labeling every app open is too manual and goes against “no manual data entry”.
+
+**Fixes:**
+1. **Collapse buttons only on tap:** Added `expandedSessionId` state, session row is Pressable that toggles expanded, labeling Pills only shown when expanded. Previously always visible.
+2. **Skip system and utility apps from labeling:** Added `LABELING_EXCLUDED_APPS` set includes DEFAULT_IGNORED (systemui, permissioncontroller, packageinstaller, intentresolver, settings, vending/Play Store, gms, gsf, android, Mirror) plus utilities: dialer, camera, contacts, mms/messaging, calendar, deskclock, calculator, documentsui, launcher variants (globallauncher, sec launcher). Labeling UI skipped for these, shows “labeling skipped (system/utility)”.
+3. **Optional feedback with opt-in prompt after longer sessions:** Added `labelOptIn` state, opt-in Callout when ≥2 longer sessions (≥5min) and no labels yet: “Help improve Deliberate share? (optional) – You had N longer sessions today. Labeling a few helps (needs 5). Stays on device, optional”. Tap session to label, or Dismiss. Labeling is optional, no manual entry required, score works without labels (Deliberate share not measured until 5 labels).
+4. **Rule-based likely intentional guess correctable:** Added `guessIntent(durationMs, app)` – <8s mindless (quick check), 8s-1min unsure, ≥1min intentional, ≥5min intentional longer, reason shown. When no user label, shows “likely X – reason. Tap to correct.” Pill shows “(guess)” for guessed label, user can correct via tap. Guess uses only local signals (duration), no content, stays on device.
+
+**Orphans 64:** Real device dropped 319→64 via previous fixes (60s recent-close +5min overlap +className fix + vending excluded). Still above 50 target, P3 guard shows “needs more reliable sessions” until ≤50. Further drive via real raw-event day capture.
+
+**P3 plan:** See `docs/P3.md` 10-line plan for J4, J9, J11, J18, J20 (updated) awaiting continue.
+

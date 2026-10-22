@@ -58,6 +58,70 @@ function lastNDays(n: number): string[] {
   return out;
 }
 
+// System and utility apps to skip from labeling – no manual data entry for dialer, camera, etc.
+// Includes DEFAULT_IGNORED plus common utilities that are not meaningful to label intentional/mindless
+const LABELING_EXCLUDED_APPS = new Set<string>([
+  'dev.mirror.app',
+  'com.android.systemui',
+  'com.google.android.permissioncontroller',
+  'com.android.packageinstaller',
+  'com.google.android.packageinstaller',
+  'com.android.intentresolver',
+  'com.google.android.intentresolver',
+  'com.android.settings',
+  'com.android.vending',
+  'com.google.android.gms',
+  'com.google.android.gsf',
+  'android',
+  // Utility apps – skip labeling per “no manual data entry” feedback
+  'com.android.dialer',
+  'com.google.android.dialer',
+  'com.android.camera',
+  'com.google.android.camera',
+  'com.android.camera2',
+  'com.android.contacts',
+  'com.google.android.contacts',
+  'com.android.mms',
+  'com.google.android.apps.messaging',
+  'com.android.calendar',
+  'com.google.android.calendar',
+  'com.android.deskclock',
+  'com.google.android.deskclock',
+  'com.android.calculator2',
+  'com.google.android.calculator',
+  'com.android.documentsui',
+  'com.google.android.documentsui',
+  'com.android.providers.downloads',
+  'com.android.providers.downloads.ui',
+  'com.android.keyguard',
+  'com.android.launcher',
+  'com.android.launcher3',
+  'com.mi.android.globallauncher',
+  'com.sec.android.app.launcher',
+]);
+
+// Rule-based guess for intentional vs mindless – user can correct
+// Uses only local signals, no content, stays on device
+function guessIntent(durationMs: number, app: string): { guess: 'intentional' | 'mindless' | 'unsure'; reason: string } {
+  // Short sessions <8s: likely mindless – did not hold attention (spec rule)
+  if (durationMs > 0 && durationMs < 8000) {
+    return { guess: 'mindless', reason: `opened for ${Math.round(durationMs / 1000)}s – under 8s, likely quick check` };
+  }
+  // Very short 8s-1min: unsure
+  if (durationMs > 0 && durationMs < 60_000) {
+    return { guess: 'unsure', reason: `opened for ${Math.round(durationMs / 1000)}s – short, could be either` };
+  }
+  // Longer sessions: likely intentional
+  if (durationMs >= 5 * 60_000) {
+    return { guess: 'intentional', reason: `opened for ${formatDuration(durationMs)} – longer session, likely deliberate` };
+  }
+  if (durationMs >= 60_000) {
+    return { guess: 'intentional', reason: `opened for ${formatDuration(durationMs)} – over 1min, likely deliberate` };
+  }
+  // No duration (open times only mode) – use app heuristics: utility already excluded, so guess unsure
+  return { guess: 'unsure', reason: 'open time only – duration not measured, guess unsure' };
+}
+
 export default function App(): React.ReactElement {
   const theme = React.useMemo(() => createTheme('dark'), []);
   const [permission, setPermission] = React.useState<PermissionState>('checking');
@@ -84,6 +148,8 @@ export default function App(): React.ReactElement {
   const [showWhy, setShowWhy] = React.useState(false);
   const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
+  const [expandedSessionId, setExpandedSessionId] = React.useState<string | null>(null);
+  const [labelOptIn, setLabelOptIn] = React.useState(false);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
 
@@ -608,11 +674,29 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap to label intentional/mindless" />
+        <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap a session to label (optional)" />
         <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
           <Text role="label" theme={theme}>Open times only – durations not shown. Daily totals above are authoritative from OS.</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Raw UsageEvents lose time (orphans 319 → reduced via recent-close 60s + 5min overlap + className fix, systemui/installer/Play Store excluded from switching). Tap Intentional/Mindless to measure Deliberate share (needs 5 labels).</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Orphans 319→64 via recent-close 60s +5min overlap +className fix. Labeling is optional feedback (no manual data entry required) – tap a session to see guess and correct it. System/utility apps skipped from labeling.</Text>
         </View>
+        {/* Optional opt-in prompt after longer sessions */}
+        {(() => {
+          const longSessions = scaledSessions.filter((s) => s.duration_ms >= 5 * 60_000);
+          const hasLabels = Object.keys(intentLabels).length > 0;
+          if (longSessions.length >= 2 && !hasLabels && !labelOptIn) {
+            return (
+              <View style={{ backgroundColor: theme.color.surface, padding: theme.space(3), borderRadius: theme.radius.sm, marginBottom: theme.space(3), gap: theme.space(2) }}>
+                <Text role="label" theme={theme}>Help improve Deliberate share? (optional)</Text>
+                <Text role="micro" tone="muted" theme={theme}>You had {longSessions.length} longer sessions today. Labeling a few as intentional/mindless helps measure Deliberate share (needs 5). Stays on device, optional – tap a session below to label, or dismiss.</Text>
+                <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
+                  <Pill theme={theme} onPress={() => setLabelOptIn(true)}>Show labeling</Pill>
+                  <LinkButton theme={theme} onPress={() => setLabelOptIn(true)}>Dismiss</LinkButton>
+                </View>
+              </View>
+            );
+          }
+          return null;
+        })()}
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
             <Text role="label" theme={theme}>No opens for {selectedDay} – totals above are authoritative (OS).</Text>
@@ -620,52 +704,78 @@ export default function App(): React.ReactElement {
         ) : (
           scaledSessions.map((s) => {
             const currentLabel = intentLabels[s.id];
+            const isExcluded = LABELING_EXCLUDED_APPS.has(s.app);
+            const isExpanded = expandedSessionId === s.id;
+            const guessInfo = guessIntent(s.duration_ms, s.app);
+            const showGuess = !currentLabel && !isExcluded;
             return (
               <View key={s.id} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
-                <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
-                <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • ${currentLabel}` : ''}`}</Text>
-                <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(1) }}>
-                  {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
-                    <Pill
-                      key={lbl}
-                      theme={theme}
-                      onPress={async () => {
-                        try {
-                          setLabelSaving(s.id);
-                          const runtime = runtimeRef.current;
-                          if (runtime) {
-                            await runtime.saveIntentLabel(s.id, lbl);
-                            setIntentLabels((prev) => ({ ...prev, [s.id]: lbl }));
+                <Pressable
+                  onPress={() => {
+                    if (isExcluded) return;
+                    setExpandedSessionId(isExpanded ? null : s.id);
+                    if (!isExpanded && !labelOptIn) setLabelOptIn(true);
+                  }}
+                >
+                  <View style={{ gap: theme.space(1) }}>
+                    <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}${s.duration_ms > 0 ? ` • ${formatDuration(s.duration_ms)}` : ''}`}</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • you: ${currentLabel}` : ''}${showGuess ? ` • likely ${guessInfo.guess}` : ''}${isExcluded ? ' • labeling skipped (system/utility)' : ''}`}</Text>
+                    {showGuess ? <Text role="micro" tone="muted" theme={theme}>{`Guess: ${guessInfo.guess} – ${guessInfo.reason}. Tap to correct.`}</Text> : null}
+                    {currentLabel ? <Text role="micro" tone="muted" theme={theme}>{`You labeled: ${currentLabel}. Tap to change.`}</Text> : null}
+                  </View>
+                </Pressable>
+                {isExpanded && !isExcluded ? (
+                  <View style={{ gap: theme.space(2), marginTop: theme.space(2), backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm }}>
+                    <Text role="micro" tone="muted" theme={theme}>Optional feedback – stays on device. Rule-based guess shown, you can correct. Needs 5 labels for Deliberate share.</Text>
+                    <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+                      {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
+                        <Pill
+                          key={lbl}
+                          theme={theme}
+                          variant={lbl === currentLabel ? 'primary' : 'secondary'}
+                          onPress={async () => {
                             try {
-                              const dayFrom = dayStartMs(selectedDay);
-                              const dayTo = dayEndMs(selectedDay);
-                              const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
-                              const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
-                              const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
-                              const updatedLabels = { ...intentLabels, [s.id]: lbl };
-                              const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
-                              const scored: ScoredSession[] = sessDay.filter((x: any) => x.app !== 'dev.mirror.app').map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
-                              const { scoreIqs: scoreFn } = await import('@mirror/core-analytics');
-                              const iqsResult = scoreFn({
-                                window: { fromMs: dayFrom, toMs: dayTo },
-                                sessions: scored,
-                                labels: labelArray,
-                                gaps: scoreGaps,
-                                utcOffsetMinutes: -new Date().getTimezoneOffset(),
-                                approximate: true,
-                              });
-                              setIqs(iqsResult);
-                            } catch {}
-                          }
-                        } finally {
-                          setLabelSaving(null);
-                        }
-                      }}
-                    >
-                      {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}`}
-                    </Pill>
-                  ))}
-                </View>
+                              setLabelSaving(s.id);
+                              const runtime = runtimeRef.current;
+                              if (runtime) {
+                                await runtime.saveIntentLabel(s.id, lbl);
+                                setIntentLabels((prev) => ({ ...prev, [s.id]: lbl }));
+                                try {
+                                  const dayFrom = dayStartMs(selectedDay);
+                                  const dayTo = dayEndMs(selectedDay);
+                                  const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
+                                  const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+                                  const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+                                  const updatedLabels = { ...intentLabels, [s.id]: lbl };
+                                  const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
+                                  const scored: ScoredSession[] = sessDay.filter((x: any) => x.app !== 'dev.mirror.app').map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+                                  const { scoreIqs: scoreFn } = await import('@mirror/core-analytics');
+                                  const iqsResult = scoreFn({
+                                    window: { fromMs: dayFrom, toMs: dayTo },
+                                    sessions: scored,
+                                    labels: labelArray,
+                                    gaps: scoreGaps,
+                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
+                                    approximate: true,
+                                  });
+                                  setIqs(iqsResult);
+                                } catch {}
+                              }
+                            } finally {
+                              setLabelSaving(null);
+                            }
+                          }}
+                        >
+                          {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}${!currentLabel && guessInfo.guess === lbl ? ' (guess)' : ''}`}
+                        </Pill>
+                      ))}
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
+                      <LinkButton theme={theme} onPress={() => setExpandedSessionId(null)}>Collapse</LinkButton>
+                      {currentLabel ? <LinkButton theme={theme} onPress={async () => { const rt = runtimeRef.current; if (rt) { await rt.saveIntentLabel(s.id, 'unsure'); setIntentLabels((p) => ({ ...p, [s.id]: 'unsure' })); } }}>Clear to unsure</LinkButton> : null}
+                    </View>
+                  </View>
+                ) : null}
                 <Divider theme={theme} />
               </View>
             );
