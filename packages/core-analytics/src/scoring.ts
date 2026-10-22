@@ -159,9 +159,27 @@ export function lateNightMs(startMs: number, endMs: number, utcOffsetMinutes: nu
   return total;
 }
 
-/** App changes per active hour. A change after a gap longer than 5 min is a new sitting. */
+/** System apps that should not count toward switching pressure (installer, Play Store, Settings-type) */
+const SWITCHING_EXCLUDED_APPS = new Set<string>([
+  'dev.mirror.app',
+  'com.android.systemui',
+  'com.google.android.permissioncontroller',
+  'com.android.packageinstaller',
+  'com.google.android.packageinstaller',
+  'com.android.intentresolver',
+  'com.google.android.intentresolver',
+  'com.android.settings',
+  'com.android.vending', // Play Store
+  'com.google.android.gms',
+  'com.google.android.gsf',
+  'android',
+]);
+
+/** App changes per active hour. A change after a gap longer than 5 min is a new sitting. Excludes installer/Play Store/Settings-type system apps from switching pressure. */
 export function switchingRate(sessions: readonly ScoredSession[]): { switches: number; activeHours: number; perHour: number } {
-  const ordered = [...sessions].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+  // Filter out system apps for switching pressure – user request: exclude installer/Play Store/Settings-type
+  const filtered = sessions.filter((s) => !SWITCHING_EXCLUDED_APPS.has(s.app));
+  const ordered = [...filtered].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
   let switches = 0;
   for (let i = 1; i < ordered.length; i += 1) {
     const previous = ordered[i - 1]!;

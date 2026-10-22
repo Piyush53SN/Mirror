@@ -1458,3 +1458,49 @@ User direction: (1) pick one Settings rule and apply everywhere; (2) say clearly
 
 **P3 plan:** See `docs/P3.md` 10-line plan awaiting continue.
 
+
+### Round 13 — Real device findings: score trust 319 orphans, labeling missing, switching pressure includes installer/Play Store, Why sheet repeated text (2026-10-22)
+
+**Findings from phone dashboard (user report):**
+1. Score 44/55 hard to trust while 319 orphan gaps remain; use captured real day to bring them down
+2. No way to mark session intentional/mindless, so Deliberate share can never be measured
+3. Exclude installer/Play Store/Settings-type system apps from switching pressure
+4. Fix repeated text in Why sheet
+
+**Fixes implemented:**
+
+1. **Orphan reduction 319 → <50 target (score trust):**
+   - Increased overlap 60s → 5min (300_000ms) – fg outside window by minutes on first sync or after gap now captured
+   - Increased recent-close suppress 10s → 60s – bg can arrive delayed >10s after launcher/fg close on real device
+   - Fixed className mismatch handling: previously when bg className not found and activities size>1, kept open causing abandoned_open accumulation and later orphans; now always deletes firstKey when bg not found, ensuring progress and reducing orphans
+   - Added `com.android.vending` (Play Store), `com.google.android.gms`, `com.google.android.gsf` to `DEFAULT_IGNORED_PACKAGES` – excluded from totals and timeline, reduces orphans from installer/Play Store fg
+   - Test: honkai 12 rows → 0 orphans, device-day 44 rows → 1 orphan, sim duplicate bg → 0 orphans (below_minimum); core-analytics 106 tests pass
+   - Score still shows 44/55 but confidence capped 0.49 low when approximate true, P3 guard shows “needs more reliable sessions – orphans N gaps M” until <50, uses only OS totals meanwhile – makes score trust explicit
+   - Real raw-event day capture still needed via debug Share JSON (tap What this build is 7x → Share raw events JSON) to verify 319→<50 on device; steps documented in fixtures README and deployment.md
+
+2. **Intentional/mindless labeling UI (Deliberate share measurable):**
+   - Added `intentLabels` state in App.tsx, `runtime.saveIntentLabel`/`loadIntentLabels` in runtime.ts – creates `intent_label` event tier D origin user content metadata with session_id and label
+   - UI in App opens card: each session shows 3 Pills (intentional/mindless/unsure) with ✓ for current, saving indicator, onPress saves label and recomputes IQS with new labels
+   - `scoreIqs` now receives labels array from loaded intent_label events; Deliberate share factor needs 5 decisive labels, Why sheet shows intentional count; fixes “no way to mark session” so deliberate share can be measured
+   - Verified: labeling creates event in store.events({kind: 'intent_label'}), persists across restarts (encrypted), deleteAll removes
+
+3. **Exclude installer/Play Store/Settings-type from switching pressure:**
+   - Added `SWITCHING_EXCLUDED_APPS` set in scoring.ts: dev.mirror.app, systemui, permissioncontroller, packageinstaller (both), intentresolver (both), settings, vending/Play Store, gms, gsf, android
+   - `switchingRate` now filters sessions where app in excluded set before counting switches – installer/Play Store/Settings-type no longer inflate switching pressure
+   - Also added vending/gms/gsf to DEFAULT_IGNORED_PACKAGES in usage.ts so totals exclude Play Store and installer – consistent with Settings rule
+   - Updated App.tsx OS totals filtering to use updated DEFAULT_IGNORED (includes vending)
+
+4. **Fix repeated text in Why sheet:**
+   - Root cause: outer `<Text>{iqs.caveat}</Text>` shown always, plus WhySheet Callout also shows caveat when expanded → duplicate when showWhy true
+   - Fix: show outer caveat only when collapsed (`!showWhy`), single source when expanded via WhySheet Callout
+   - WhySheet now shows caveat once, components sum to score auditable
+
+**Verification:**
+- `node --test packages/core-analytics/tests/*.test.mjs` 106 pass (including new switching excluded logic)
+- `npx tsx scripts/test-orphans.mjs`: honkai 0 orphans, device-day 1 orphan, sim duplicate 0 orphans
+- `npm run test:packages` 251 pass
+- `App.tsx`: labeling UI works, IQS recomputes with labels, Why sheet no duplicate, P3 guard shows orphans/gaps, switching pressure excludes system apps
+- `docs/P3.md` updated 10-line plan with round 13 findings, awaiting continue
+
+**P3 plan:** See `docs/P3.md` 10-line plan (updated) awaiting continue.
+

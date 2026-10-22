@@ -42,6 +42,10 @@ export type MirrorRuntime = {
   validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
   /** Cursor state – where collection started, for "collecting since" line */
   cursorState(): Promise<{ at: number | null; openCount: number }>;
+  /** Save an intent label for a session (intentional/mindless/unsure) */
+  saveIntentLabel(sessionId: string, label: 'intentional' | 'mindless' | 'unsure'): Promise<void>;
+  /** Load all intent labels */
+  loadIntentLabels(): Promise<Record<string, 'intentional' | 'mindless' | 'unsure'>>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -111,6 +115,39 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           return { at: state.at, openCount: state.open.length };
         } catch {
           return { at: null, openCount: 0 };
+        }
+      },
+      saveIntentLabel: async (sessionId: string, label: 'intentional' | 'mindless' | 'unsure') => {
+        const id = `label_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        const now = new Date().toISOString();
+        const event = {
+          schema_version: 1,
+          id,
+          kind: 'intent_label',
+          at: now,
+          tier: 'D',
+          origin: 'user',
+          content: 'metadata',
+          session_id: sessionId,
+          label,
+        };
+        await store.appendEvents([event]);
+      },
+      loadIntentLabels: async () => {
+        try {
+          const events = await store.events({ kind: 'intent_label' });
+          const map: Record<string, 'intentional' | 'mindless' | 'unsure'> = {};
+          for (const ev of events) {
+            const payload = ev.payload as any;
+            const sid = payload.session_id ?? ev.session_id;
+            const lbl = payload.label;
+            if (typeof sid === 'string' && (lbl === 'intentional' || lbl === 'mindless' || lbl === 'unsure')) {
+              map[sid] = lbl;
+            }
+          }
+          return map;
+        } catch {
+          return {};
         }
       },
     };

@@ -82,6 +82,8 @@ export default function App(): React.ReactElement {
   const [scaledSessions, setScaledSessions] = React.useState<{ id: string; app: string; label: string; start_ms: number; end_ms: number; duration_ms: number; scaled_duration_ms: number; isScaled: boolean }[]>([]);
   const [iqs, setIqs] = React.useState<Score | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
+  const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
+  const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
 
@@ -190,17 +192,26 @@ export default function App(): React.ReactElement {
         openOnly.sort((a, b) => b.start_ms - a.start_ms);
         setScaledSessions(openOnly);
 
-        // J3 dashboard: compute IQS from real sessions (tier-D only, usage patterns)
+        // Load intent labels for deliberate share
+        let loadedLabels: Record<string, 'intentional' | 'mindless' | 'unsure'> = {};
+        try {
+          loadedLabels = await runtime.loadIntentLabels();
+          setIntentLabels(loadedLabels);
+        } catch {}
+
+        // J3 dashboard: compute IQS from real sessions (tier-D only, usage patterns) with labels
         try {
           const scored: ScoredSession[] = sessFiltered.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
           const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
           const scoreGaps: ScoreGap[] = gapsRaw.map((g) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+          const labelArray = Object.entries(loadedLabels).map(([sessionId, label]) => ({ sessionId, label }));
           const iqsResult = scoreIqs({
             window: { fromMs: dayFrom, toMs: dayTo },
             sessions: scored,
+            labels: labelArray,
             gaps: scoreGaps,
             utcOffsetMinutes: -new Date().getTimezoneOffset(),
-            approximate: true, // raw events approximate, confidence capped 0.49 low
+            approximate: true, // raw events approximate, confidence capped 0.49 low – still show gaps count
           });
           setIqs(iqsResult);
         } catch (e) {
@@ -546,7 +557,7 @@ export default function App(): React.ReactElement {
             <View style={{ flexDirection: 'row', gap: theme.space(2), alignItems: 'center' }}>
               <Text role="micro" tone="muted" theme={theme}>{`Confidence: ${iqs.confidence.level} (${Math.round(iqs.confidence.score * 100)}%) – ${iqs.confidence.sample} sittings`}</Text>
             </View>
-            <Text role="micro" tone="muted" theme={theme}>{iqs.caveat}</Text>
+            {!showWhy ? <Text role="micro" tone="muted" theme={theme}>{iqs.caveat}</Text> : null}
             <View style={{ marginTop: theme.space(2) }}>
               <Pill theme={theme} onPress={() => setShowWhy((v) => !v)}>{showWhy ? 'Hide why' : 'Why this score'}</Pill>
             </View>
@@ -597,23 +608,68 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, no durations" />
+        <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap to label intentional/mindless" />
         <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
           <Text role="label" theme={theme}>Open times only – durations not shown. Daily totals above are authoritative from OS.</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Raw UsageEvents lose time (orphans 319, systemui fg, className mismatch, 2s overlap). Showing only when apps came to foreground avoids inventing durations (e.g. Genshin 22s shown as 8m54s, Security 7m20s shown as 16s). No scaling.</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Raw UsageEvents lose time (orphans 319 → reduced via recent-close 60s + 5min overlap + className fix, systemui/installer/Play Store excluded from switching). Tap Intentional/Mindless to measure Deliberate share (needs 5 labels).</Text>
         </View>
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
             <Text role="label" theme={theme}>No opens for {selectedDay} – totals above are authoritative (OS).</Text>
           </View>
         ) : (
-          scaledSessions.map((s) => (
-            <View key={s.id} style={{ paddingVertical: theme.space(2) }}>
-              <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
-              <Text role="micro" tone="muted" theme={theme}>{s.app}</Text>
-              <Divider theme={theme} />
-            </View>
-          ))
+          scaledSessions.map((s) => {
+            const currentLabel = intentLabels[s.id];
+            return (
+              <View key={s.id} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
+                <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
+                <Text role="micro" tone="muted" theme={theme}>{s.app}{currentLabel ? ` • ${currentLabel}` : ''}</Text>
+                <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(1) }}>
+                  {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
+                    <Pill
+                      key={lbl}
+                      theme={theme}
+                      onPress={async () => {
+                        try {
+                          setLabelSaving(s.id);
+                          const runtime = runtimeRef.current;
+                          if (runtime) {
+                            await runtime.saveIntentLabel(s.id, lbl);
+                            setIntentLabels((prev) => ({ ...prev, [s.id]: lbl }));
+                            try {
+                              const dayFrom = dayStartMs(selectedDay);
+                              const dayTo = dayEndMs(selectedDay);
+                              const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
+                              const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+                              const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+                              const updatedLabels = { ...intentLabels, [s.id]: lbl };
+                              const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
+                              const scored: ScoredSession[] = sessDay.filter((x: any) => x.app !== 'dev.mirror.app').map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+                              const { scoreIqs: scoreFn } = await import('@mirror/core-analytics');
+                              const iqsResult = scoreFn({
+                                window: { fromMs: dayFrom, toMs: dayTo },
+                                sessions: scored,
+                                labels: labelArray,
+                                gaps: scoreGaps,
+                                utcOffsetMinutes: -new Date().getTimezoneOffset(),
+                                approximate: true,
+                              });
+                              setIqs(iqsResult);
+                            } catch {}
+                          }
+                        } finally {
+                          setLabelSaving(null);
+                        }
+                      }}
+                    >
+                      {lbl === currentLabel ? `✓ ${lbl}` : lbl}{labelSaving === s.id ? '…' : ''}
+                    </Pill>
+                  ))}
+                </View>
+                <Divider theme={theme} />
+              </View>
+            );
+          })
         )}
       </Card>
 

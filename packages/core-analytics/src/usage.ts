@@ -185,13 +185,16 @@ export const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_IGNORED_PACKAGES = [
   'dev.mirror.app', // Mirror itself – excluded from totals (task 4)
   'com.android.systemui',
-  // System components that appear as foreground during dialogs, install, resolver
+  // System components that appear as foreground during dialogs, install, resolver, Play Store
   'com.google.android.permissioncontroller',
   'com.android.packageinstaller',
   'com.google.android.packageinstaller',
   'com.android.intentresolver',
   'com.google.android.intentresolver',
   'com.android.settings',
+  'com.android.vending', // Play Store – exclude from totals and switching pressure (user request)
+  'com.google.android.gms', // Play Services – often appears as fg during permission dialogs
+  'com.google.android.gsf', // Play Services Framework
   'android', // generic system package that sometimes appears
 ] as const;
 
@@ -323,8 +326,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
   // Track recently closed apps to suppress duplicate bg that arrives shortly after close via single-foreground enforcement
   // This reduces orphans 319 -> much lower: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
+  // Increased from 10s to 60s after real device showed 319 orphans – bg can arrive delayed >10s after launcher/fg close
   const recentlyClosed = new Map<string, number>();
-  const RECENT_CLOSE_SUPPRESS_MS = 10_000; // ignore orphan bg within 10s of close
+  const RECENT_CLOSE_SUPPRESS_MS = 60_000; // ignore orphan bg within 60s of close (was 10s)
 
   for (const row of ordered) {
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
@@ -454,20 +458,15 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       deleted = entry.activities.delete('__carried__');
     }
     if (!deleted && entry.activities.size > 0) {
-      // If still not found, remove one activity (handles case where fg had className A and bg has className B)
-      // But only if the bg className is not a different still-resumed activity – we treat unknown bg as closing one.
-      // For strict per-activity tracking, we only do this when activities size is 1 or className is generic.
-      if (className === '__default__' || entry.activities.size === 1) {
-        const firstKey = entry.activities.keys().next().value;
-        if (firstKey) entry.activities.delete(firstKey);
-      } else {
-        // Different activity closed, but we still have other activities – keep open
-        // However, if the closed className was not in map, we shouldn't treat it as closing unknown
-        // So we put back? Actually we already didn't delete, so we keep map as is and don't close.
-        // To avoid orphan, if className not tracked, we still close if it's the last?
-        // We have already tried exact delete, so if not found, it's not tracked – treat as no-op? But test expects close.
-        // For carried case we handled __carried__. For same-app different activity, if bg for untracked activity, we should not close other.
-        // So we do nothing here – keep open.
+      // Fix for 319 orphans: OS sometimes reports different className on bg than fg (e.g., fg MainActivity, bg empty or different)
+      // Previously we kept open when size>1 and className mismatch, causing abandoned_open accumulation and later orphans
+      // Now always close one activity when bg className not found – ensures progress and reduces orphans
+      // This is safe because single-foreground already ensures only one app is fg at a time, so multiple activities for same app
+      // are usually the same app with different classNames, not truly concurrent
+      const firstKey = entry.activities.keys().next().value;
+      if (firstKey) {
+        entry.activities.delete(firstKey);
+        deleted = true;
       }
     }
 
@@ -646,8 +645,9 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
   const initialWindowMs = options.initialWindowMs ?? DAY_MS;
   const maxWindowMs = options.maxWindowMs ?? 2 * DAY_MS;
   // P2 fix: increase overlap from 2s to 60s to reduce orphans 319 where fg outside window bg inside
-  // Idempotent ids make overlap safe, cost is reading 60s more rows per sync (negligible vs 1-day window)
-  const overlapMs = options.overlapMs ?? 60_000;
+  // Round 13: increase to 5min (300s) after real device still showed 319 orphans – fg can be outside window by minutes on first sync or after gap
+  // Idempotent ids make overlap safe, cost is reading 5min more rows per sync (negligible vs 1-day window)
+  const overlapMs = options.overlapMs ?? 300_000;
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
 
   const state = await store.getCursorState('usage_stats');
