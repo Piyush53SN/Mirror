@@ -308,17 +308,23 @@ the topic statement; partial coverage adds the "covers N of 100 points" sentence
   so a large week does not get a confidence above 1 (and 0.97 is the usage-only
   ceiling, set by 4/5 factors).
 
-### 5.1 OS totals for per-app daily, approximate sessions scaled
+### 5.1 OS totals for per-app daily, open times only (P2 fix: no invented durations)
 
 **Direction change round 8 (2026-10-22):** Event-reconstruction lost 99% for games (Honkai 31s vs OS 52m48s, Genshin 27s vs 9m36s, 336 orphan events). Root causes: systemui fg (notification shade) closing previous at 31s (OS still counts Honkai as fg), per-class mismatch fg MainActivity vs bg empty, cursor overlap 2s fg outside window bg inside → orphan, unknown types CONFIGURATION_CHANGE=5 and FOREGROUND_SERVICE 19-22 dropped.
 
-**New rule:**
+**Round 8 rule (superseded):** Per-app daily totals from OS aggregate, session timeline approximate scaled to daily totals where disagree (`factor = os/sess` when `abs(os-sess) > max(10%*os,60s)`).
+
+**P2 fix round 11 (2026-10-22):** Scaled timeline invents durations – Genshin orig 22s shown as 8m54s, Security orig 7m20s shown as 16s, orphans 319 still. Fix: **show only open times (when app came to foreground), no durations, no scaling.** Daily totals from OS aggregate are authoritative, open times informative.
+
+**Current rule (P2 close):**
 - **Per-app daily totals** come from OS aggregate `UsageStatsManager.queryUsageStats(INTERVAL_DAILY)` – same source Digital Wellbeing uses, one local day per bucket. Totals match by construction. Excludes launchers (HOME role via `getLauncherPackages()`) and Mirror itself and system UI (Settings rule: exclude `com.android.settings`, `systemui`, `permissioncontroller`, `packageinstaller`, `intentresolver`, `android` everywhere – only launchers+Mirror close previous).
-- **Session timeline** comes from raw `UsageEvents` (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Timeline is approximate.
-- **Scaling rule:** For selected local day `[dayStart, dayEnd)`, compute `osMap[app]` = OS total, `sessionMap[app]` = sum of session durations from raw events for that day. If `abs(os - sess) > max(10%*os, 60s)`, factor = `os / sess`, scaledDur = `round(orig * factor)`. Display shows scaled duration, start remains original, marked "approx, scaled to daily total". If sess sum 0 but OS >0, no timeline, totals authoritative. Scaling preserves start times for ordering but durations scaled to match OS total.
-- **Scores must not use scaled durations or start/end as exact:** `ScoreInput` has optional `approximate?: boolean`. When true (sessions from raw events scaled), `confidenceFor` caps confidence score to **0.49** and forces level `low`, with reason explaining 99% loss. IQS value may still be computed but confidence low, so UI must not present it as exact. Sessions count, focus windows, rabbit hole, curiosity vs habit must not use scaled durations or start/end times as exact – they must use OS totals or original sessions with low confidence, or be marked approximate.
-- **0.49 cap:** When `approximate` true, `score = min(score, 0.49)` and `level = low` regardless of computed coverage/sample/labels. This prevents approximate timeline (which loses 99% for games) from feeding scores as high/medium confidence exact. Documented in `scoring.ts` `confidenceFor`.
-- **Fixture:** `honkai-day-raw.json` is synthetic invented to reproduce 31s vs 52m48s, will be replaced with real raw events captured via hidden debug screen Share button. See `packages/core-analytics/tests/fixtures/README.md` for capture steps.
+- **App opens** come from raw `UsageEvents` (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Show only `start_ms` (open time), no `duration_ms`, no `scaled_duration_ms`, no scaling. This avoids inventing durations (Genshin 22s→8m54s, Security 7m20s→16s) when raw events lose 99% due to orphans.
+- **Orphans 319:** many bg without fg due to fg outside 2s overlap window bg inside, single-foreground closes previous at next fg later bg becomes orphan, className mismatch, systemui fg. With OS totals for per-app daily, orphan count no longer affects totals, only timeline. Timeline now shows open times only, so orphans do not invent durations.
+- **Scores must not use scaled durations or start/end as exact:** `ScoreInput` has optional `approximate?: boolean`. When true (sessions from raw events, approximate), `confidenceFor` caps confidence score to **0.49** and forces level `low`, with reason explaining 99% loss. IQS value may still be computed but confidence low, so UI must not present it as exact. Sessions count, focus windows, rabbit hole, curiosity vs habit must not use scaled durations or start/end times as exact – they must use OS totals or original sessions with low confidence, or be marked approximate. With open-times-only UI, durations not shown at all.
+- **0.49 cap:** When `approximate` true, `score = min(score, 0.49)` and `level = low` regardless of computed coverage/sample/labels. This prevents approximate timeline (which loses 99% for games) from feeding scores as high/medium confidence exact. Documented in `scoring.ts` `confidenceFor`. IQS in J3 dashboard shows `/75` when only tier D (usage patterns) available, with “Based on usage patterns only” chip and data-tier chip D, and Why sheet.
+- **Fixture:** `honkai-day-raw.json` is synthetic invented to reproduce 31s vs 52m48s, will be replaced with real raw events captured via hidden debug screen Share button. See `packages/core-analytics/tests/fixtures/README.md` for capture steps. Until real day captured, show only open times – no scaling.
+
+**J3 dashboard wiring:** Real J3 (Frosted Horizon) wired to real data – IQS from `scoreIqs` with real sessions (tier-D only), `WhySheet` with parts summing to score, `Chip` “Based on usage patterns only”, `TierBadge` D + `ConfidenceChip` D, caveat, confidence reasons. Per-app totals OS, app opens only.
 
 ## 6. Curiosity vs habit (displayed beside IQS, not part of it)
 

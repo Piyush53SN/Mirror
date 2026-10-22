@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { AppState, ScrollView, Share, View, Pressable } from 'react-native';
 import { createTheme } from '@mirror/ui';
-import { Card, SectionHeader, Text, Divider } from '@mirror/ui';
+import { Card, SectionHeader, Text, Divider, WhySheet, ConfidenceChip, TierBadge, Chip, Callout } from '@mirror/ui';
 import { Pill, LinkButton } from '@mirror/ui';
 import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
@@ -10,7 +10,7 @@ import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collec
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
-import { getTopInvalidPackages, DEFAULT_IGNORED_PACKAGES } from '@mirror/core-analytics';
+import { getTopInvalidPackages, DEFAULT_IGNORED_PACKAGES, scoreIqs, type Score, type ScoredSession, type ScoreGap } from '@mirror/core-analytics';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -80,6 +80,8 @@ export default function App(): React.ReactElement {
   const [showDebug, setShowDebug] = React.useState(false);
   const [buildTapCount, setBuildTapCount] = React.useState(0);
   const [scaledSessions, setScaledSessions] = React.useState<{ id: string; app: string; label: string; start_ms: number; end_ms: number; duration_ms: number; scaled_duration_ms: number; isScaled: boolean }[]>([]);
+  const [iqs, setIqs] = React.useState<Score | null>(null);
+  const [showWhy, setShowWhy] = React.useState(false);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
 
@@ -167,37 +169,44 @@ export default function App(): React.ReactElement {
 
         const osMap = new Map<string, number>();
         for (const r of filteredOs) osMap.set(r.packageName, r.totalMs);
-        const sessionMap = new Map<string, number>();
-        for (const s of sessFiltered) sessionMap.set(s.app, (sessionMap.get(s.app) ?? 0) + s.duration_ms);
 
-        const scaled: typeof scaledSessions = [];
+        // P2 fix: stop showing invented durations (Genshin 22s → 8m54s, Security 7m20s → 16s) and orphans 319.
+        // Raw UsageEvents lose time (systemui fg, className mismatch, 2s overlap, unknown types 5/19-22) so
+        // scaling invents durations. Show only open times (when app came to foreground), no durations, no scaling.
+        // Daily totals from OS aggregate are authoritative.
+        const openOnly: typeof scaledSessions = [];
         for (const s of sessFiltered) {
-          const osMs = osMap.get(s.app) ?? 0;
-          const sessSum = sessionMap.get(s.app) ?? 0;
-          let scaledDur = s.duration_ms;
-          let isScaled = false;
-          if (osMs > 0 && sessSum > 0) {
-            const diff = Math.abs(osMs - sessSum);
-            const tol = Math.max(osMs * 0.1, 60_000);
-            if (diff > tol) {
-              const factor = osMs / sessSum;
-              scaledDur = Math.round(s.duration_ms * factor);
-              isScaled = true;
-            }
-          }
-          scaled.push({
+          openOnly.push({
             id: s.id,
             app: s.app,
             label: resolved[s.app] ?? getCachedLabel(s.app),
             start_ms: s.start_ms,
-            end_ms: s.start_ms + scaledDur,
-            duration_ms: s.duration_ms,
-            scaled_duration_ms: scaledDur,
-            isScaled,
+            end_ms: s.start_ms, // no duration shown
+            duration_ms: s.duration_ms, // keep original for debug but not displayed
+            scaled_duration_ms: 0, // not used
+            isScaled: false,
           });
         }
-        scaled.sort((a, b) => b.start_ms - a.start_ms);
-        setScaledSessions(scaled);
+        openOnly.sort((a, b) => b.start_ms - a.start_ms);
+        setScaledSessions(openOnly);
+
+        // J3 dashboard: compute IQS from real sessions (tier-D only, usage patterns)
+        try {
+          const scored: ScoredSession[] = sessFiltered.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
+          const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+          const scoreGaps: ScoreGap[] = gapsRaw.map((g) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+          const iqsResult = scoreIqs({
+            window: { fromMs: dayFrom, toMs: dayTo },
+            sessions: scored,
+            gaps: scoreGaps,
+            utcOffsetMinutes: -new Date().getTimezoneOffset(),
+            approximate: true, // raw events approximate, confidence capped 0.49 low
+          });
+          setIqs(iqsResult);
+        } catch (e) {
+          console.log('IQS compute failed', e);
+          setIqs(null);
+        }
 
         try {
           const v = await runtime.validate({ fromMs: dayFrom, toMs: dayTo });
@@ -375,15 +384,15 @@ export default function App(): React.ReactElement {
         </View>
 
         <Card theme={theme} elevated>
-          <SectionHeader theme={theme} title="Sessions – why approximate and scaled" caption="technical explanation moved from main screen" />
+          <SectionHeader theme={theme} title="Sessions – why open times only, no durations" caption="P2 fix: no invented durations" />
           <Text role="micro" tone="muted" theme={theme}>
             {[
               'Per-app daily totals come from OS aggregate queryUsageStats (INTERVAL_DAILY, same as Digital Wellbeing), so they match by construction. Excludes launchers (HOME role via getLauncherPackages) and Mirror itself and system UI (Settings rule: exclude Settings, systemui, permissioncontroller etc everywhere – only launchers+Mirror close previous).',
-              'Session timeline comes from raw UsageEvents (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Raw events lose time: systemui fg (notification shade) at 31s closed Honkai prematurely (old code), className mismatch fg MainActivity vs bg empty, cursor overlap 2s fg outside window bg inside → orphan, unknown types CONFIGURATION_CHANGE=5 and FOREGROUND_SERVICE 19-22 dropped.',
-              'Scaling rule: For selected day, OS totals per app (osMap) and session sum per app (sessionMap). If abs(os - sess) > max(10%*os, 60s), factor = os / sess, scaledDur = round(orig * factor). Display shows scaled duration, start remains original, marked approx and scaled to daily total. If sess sum 0 but OS >0, no timeline, totals authoritative.',
+              'Session timeline comes from raw UsageEvents (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Raw events lose time: systemui fg (notification shade) at 31s closed Honkai prematurely (old code), className mismatch fg MainActivity vs bg empty, cursor overlap 2s fg outside window bg inside → orphan, unknown types CONFIGURATION_CHANGE=5 and FOREGROUND_SERVICE 19-22 dropped. On device orphans 319, so durations unreliable.',
+              'P2 fix: Genshin orig 22s shown as 8m54s, Security orig 7m20s shown as 16s because scaling factor = osMs/sessionSum invents durations. Fix: show only open times (when app came to foreground), no durations, no scaling. Daily totals authoritative, open times informative.',
               'Scores: approximate session data does NOT feed scores as exact. ScoreInput has approximate flag, confidenceFor caps score to 0.49 and level low when approximate true, with reason explaining 99% loss. Sessions count, focus windows, rabbit hole, curiosity vs habit must not use scaled durations or start/end as exact – they use OS totals or original sessions with low confidence.',
               '0.49 cap: When approximate true, confidence score = min(score, 0.49), level = low, so IQS never shows high/medium confidence from approximate timeline. Documented in docs/metrics.md.',
-              'Fixture: honkai-day-raw.json is synthetic invented to reproduce 31s vs 52m48s, will be replaced with real raw events from phone via debug Share button.',
+              'Fixture: honkai-day-raw.json is synthetic invented to reproduce 31s vs 52m48s, will be replaced with real raw events from phone via debug Share button. Until real day captured, show only open times.',
             ].join('\n\n')}
           </Text>
         </Card>
@@ -471,11 +480,12 @@ export default function App(): React.ReactElement {
         </Card>
 
         <Card theme={theme}>
-          <SectionHeader theme={theme} title="What this build is" caption="Stage 1 - OS totals for per-app, raw events for timeline approximate" />
+          <SectionHeader theme={theme} title="What this build is" caption="Stage 1 - OS totals for per-app, raw events for open times only" />
           <Text role="micro" tone="muted" theme={theme}>
             {[
               'Per-app daily totals: from OS aggregate queryUsageStats (same as Digital Wellbeing, one local day per bucket), matches by construction, excludes launchers (HOME role) and Mirror itself',
-              'Session timeline: from raw UsageEvents (RESUMED/PAUSED/STOPPED/DESTROYED/SCREEN_NON_INTERACTIVE etc), per-activity tracking, single foreground, gap ≤2s merged, 6h max, shown as approximate scaled to daily totals where they disagree',
+              'App opens: from raw UsageEvents (RESUMED/PAUSED/STOPPED/DESTROYED/SCREEN_NON_INTERACTIVE etc), per-activity tracking, single foreground, gap ≤2s merged, 6h max, shown as open times only, no durations, no scaling (P2 fix: orphans 319, Genshin 22s→8m54s)',
+              'IQS: tier-D only, usage-pattern scores, Based on usage patterns only chip, data-tier chip, Why sheet',
               'Data quality: one-line note on main, full details in debug',
               'Debug hidden: tap build number 7 times to show validation (same period), OS vs Mirror comparison, Honkai raw events, raw events log',
               'Fix: validation now compares same period (selected day) on both sides, not last 7 days vs different window',
@@ -515,6 +525,60 @@ export default function App(): React.ReactElement {
         ))}
       </View>
 
+      {/* J3 Dashboard – Frosted Horizon, wired to real data */}
+      <Card theme={theme} elevated>
+        <SectionHeader theme={theme} title="Interaction quality" caption="out of what Mirror can actually measure" />
+        <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', marginBottom: theme.space(2) }}>
+          <Chip label="Based on usage patterns only" theme={theme} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(1) }}>
+            <TierBadge tier="D" theme={theme} />
+            <Text role="micro" tone="muted" theme={theme}>Tier D only – OS usage, no content</Text>
+          </View>
+          <ConfidenceChip tiers={['D']} theme={theme} />
+        </View>
+        {iqs ? (
+          <View style={{ gap: theme.space(2) }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(2) }}>
+              <Text role="display" theme={theme}>{iqs.value === null ? '—' : String(Math.round(iqs.value))}</Text>
+              <Text role="label" tone="muted" theme={theme}>{`/ ${iqs.max}`}</Text>
+              <Text role="micro" tone="muted" theme={theme}>{iqs.band}</Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: theme.space(2), alignItems: 'center' }}>
+              <Text role="micro" tone="muted" theme={theme}>{`Confidence: ${iqs.confidence.level} (${Math.round(iqs.confidence.score * 100)}%) – ${iqs.confidence.sample} sittings`}</Text>
+            </View>
+            <Text role="micro" tone="muted" theme={theme}>{iqs.caveat}</Text>
+            <View style={{ marginTop: theme.space(2) }}>
+              <Pill theme={theme} onPress={() => setShowWhy((v) => !v)}>{showWhy ? 'Hide why' : 'Why this score'}</Pill>
+            </View>
+            {showWhy ? (
+              <View style={{ marginTop: theme.space(3) }}>
+                <WhySheet
+                  score={iqs.value ?? 0}
+                  maxScore={iqs.max}
+                  components={iqs.factors.map((f) => ({ label: f.label, points: f.points, note: f.detail, tier: f.tier }))}
+                  caveat={iqs.caveat}
+                  theme={theme}
+                />
+                <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>
+                  <Text role="label" theme={theme}>Confidence reasons:</Text>
+                  {iqs.confidence.reasons.map((r, idx) => (
+                    <Text key={idx} role="micro" tone="muted" theme={theme}>{`• ${r}`}</Text>
+                  ))}
+                </View>
+                <Callout theme={theme} tone="neutral" style={{ marginTop: theme.space(2) }}>
+                  Tier-D only: session_length (25), deliberate_share (20, needs 5 labels), switching (15), late_night (15). Topic_depth (25, tier A) not measured without vectors – so max is 75 when only usage patterns available. This matches “Based on usage patterns only” chip.
+                </Callout>
+              </View>
+            ) : null}
+          </View>
+        ) : (
+          <View style={{ gap: theme.space(2) }}>
+            <Text role="label" tone="muted" theme={theme}>No usage data for {selectedDay} – IQS not measured. Grant usage access and use apps, then Refresh.</Text>
+            <Text role="micro" tone="muted" theme={theme}>Mirror will not fill the gap with estimates.</Text>
+          </View>
+        )}
+      </Card>
+
       <Card theme={theme} elevated>
         <SectionHeader theme={theme} title={`Per-app totals – ${selectedDay}`} caption="from OS aggregate (Digital Wellbeing source), matches by construction, excludes launchers and Mirror" />
         {dailyTotals.length === 0 ? (
@@ -533,20 +597,20 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title={`Sessions – ${selectedDay}, ${scaledSessions.length} (approx)`} caption="timeline is approximate" />
+        <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, no durations" />
         <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
-          <Text role="label" theme={theme}>Session times are approximate and scaled to daily totals – daily totals above are authoritative.</Text>
+          <Text role="label" theme={theme}>Open times only – durations not shown. Daily totals above are authoritative from OS.</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Raw UsageEvents lose time (orphans 319, systemui fg, className mismatch, 2s overlap). Showing only when apps came to foreground avoids inventing durations (e.g. Genshin 22s shown as 8m54s, Security 7m20s shown as 16s). No scaling.</Text>
         </View>
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
-            <Text role="label" theme={theme}>No sessions for {selectedDay} – timeline is approximate, totals above are authoritative (OS).</Text>
-            <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>Mirror reads UsageEvents for timeline, but totals come from OS aggregate. If timeline sum differs from total, sessions are scaled to match total.</Text>
+            <Text role="label" theme={theme}>No opens for {selectedDay} – totals above are authoritative (OS).</Text>
           </View>
         ) : (
           scaledSessions.map((s) => (
             <View key={s.id} style={{ paddingVertical: theme.space(2) }}>
-              <Text role="label" theme={theme}>{`${s.label} - ${formatDuration(s.scaled_duration_ms)}${s.isScaled ? ' (scaled, orig ' + formatDuration(s.duration_ms) + ')' : ''}`}</Text>
-              <Text role="micro" tone="muted" theme={theme}>{`${formatTime(s.start_ms)} -> ${formatTime(s.end_ms)}${s.isScaled ? ' approx, scaled to daily total' : ' approx'}`}</Text>
+              <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
+              <Text role="micro" tone="muted" theme={theme}>{s.app}</Text>
               <Divider theme={theme} />
             </View>
           ))
@@ -568,7 +632,8 @@ export default function App(): React.ReactElement {
           <Text role="micro" tone="muted" theme={theme}>
             {[
               `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror`,
-              `Sessions from raw events, approximate, scaled to daily totals where they disagree (Honkai 31s vs OS 52m48s fixed by scaling)`,
+              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319, Genshin 22s→8m54s invented)`,
+              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet`,
               `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw)`,
             ].join('\n')}
           </Text>

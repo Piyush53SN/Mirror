@@ -1304,3 +1304,79 @@ User direction: (1) pick one Settings rule and apply everywhere; (2) say clearly
 
 **P3 still on hold until user confirms totals match on real day.**
 
+
+### Round 11 — P2 close: open times only, J3 dashboard wired, Release Stage 1 finished (2026-10-22)
+
+**P2 close per spec:**
+
+1. **Scaled session timeline invents durations (Genshin 22s→8m54s, Security 7m20s→16s) and orphans 319 – fix: show only open times, no durations, no scaling.**
+   - Root cause: scaling factor = osMs/sessionSum invents durations when raw events lose 99% (systemui fg 31s closing Honkai, className mismatch, 2s overlap, unknown types 5/19-22). Orphans 319 remain (fg outside 2s window bg inside, single-foreground closes previous, className mismatch).
+   - Fix: `apps/mobile/App.tsx` no longer computes scaled durations. `scaledSessions` now `openOnly` with `start_ms` only, `end_ms = start_ms`, `scaled_duration_ms=0`, `isScaled=false`. UI card renamed `App opens – {day}, {count}` caption `open times only, no durations`, shows `Label opened at time` + package, no duration. Banner: `Open times only – durations not shown. Daily totals above are authoritative from OS.` + micro explaining orphans 319 and Genshin/Security invented examples, no scaling.
+   - Debug card updated to `Sessions – why open times only, no durations` with P2 fix explanation.
+   - `docs/metrics.md` §5.1 updated: superseded scaling rule, current rule open times only, no invented durations, orphans 319 explained, IQS /75 tier-D only, J3 wiring.
+
+2. **Wire real J3 dashboard (Frosted Horizon) to real data, with Why sheet, Based on usage patterns only chip and data-tier chip, tier-D-only usage-pattern scores.**
+   - Added IQS state `iqs: Score|null`, `showWhy` boolean in `App.tsx`.
+   - After collecting `sessFiltered` and OS totals, compute IQS: `ScoredSession[]` from `sessFiltered`, `gaps` from `store.gaps`, `window` dayStart..dayEnd, `utcOffsetMinutes`, `approximate:true` (caps confidence 0.49 low). `setIqs`.
+   - J3 card (Frosted Horizon design – uses `createTheme('dark')` tokens, `Card elevated`, `SectionHeader`, `Chip`, `TierBadge`, `ConfidenceChip`):
+     - Title `Interaction quality` caption `out of what Mirror can actually measure`
+     - Chips: `Based on usage patterns only` (Chip), `Tier D only – OS usage, no content` (TierBadge D + Text), `ConfidenceChip` tiers D
+     - IQS display: value / max (e.g. 49 /75), band, confidence level + sample count, caveat
+     - Why button toggles `WhySheet` with `score`, `maxScore`, `components` from `iqs.factors` (points sum == value), caveat, confidence reasons list, Callout explaining tier-D only 75 max (session_length 25, deliberate_share 20 needs 5 labels, switching 15, late_night 15, topic_depth 25 tier A not measured)
+   - Per-app totals and app opens cards remain below J3, day picker, collecting since, data quality one-line, build tap 7x debug.
+   - Tests 251 pass, OTA guard + offline pass.
+
+3. **Finish Release Stage 1: tag-triggered pipeline, GitHub Release, changelog, OTA guard, offline test, deployment.md and 30-min quickstart.**
+   - `docs/deployment.md` created: 30-min quickstart (clone, npm ci, verify, android-build, assembleRelease, adb install, check totals match, opens only), tag-triggered pipeline (`v*`), GitHub Release with assets, changelog generation, OTA guard, offline test, privacy canary report, P2 checklist vs spec (28 Section J items + P2 scope), manual steps for production AAB.
+   - `scripts/android/check-ota-guard.mjs`: checks updates.enabled false/absent or narrow-only, telemetry false, privacyModeDefault private, remoteConfig narrow-only, permissions only PACKAGE_USAGE_STATS, blockedPermissions includes SYSTEM_ALERT_WINDOW, ACCESS_LOCAL_NETWORK, location, camera, etc, no custom OTA url, no analytics SDKs.
+   - `scripts/android/check-offline.mjs`: allowBackup false, no analytics/tracking SDKs, mobile does not import services/api (local store only), no secrets in repo, telemetry false, privacy private, ACCESS_LOCAL_NETWORK blocked, manual airplane mode test steps.
+   - `scripts/release/changelog.mjs`: generates CHANGELOG.md since previous tag via `git log prev..current --pretty`, includes P2 highlights and checklist, verification steps.
+   - `.github/workflows/release.yml`: tag `v*` trigger, permissions contents write, jobs: Node 22.13, JDK 17, SDK 36, npm ci, verify, OTA guard, offline test, privacy canary, expo prebuild, restore stable debug keystore from DEBUG_KEYSTORE_BASE64, android-build, processReleaseManifest + gates, assembleRelease → mirror-test.apk, release-stage1 preflight, changelog, GitHub Release via softprops/action-gh-release with assets mirror-test.apk, merged-manifest json, CHANGELOG.md, deployment.md.
+   - `Makefile`: added `ota-guard`, `offline-test`, `changelog` targets, updated help.
+   - Existing `android-build.yml` remains for main branch pushes and workflow_dispatch; release.yml handles tags.
+
+4. **Privacy canary and report.**
+   - `make privacy` / `npm run test:privacy`: 
+     - `privacy:self-test` – JS canary ok (clean transcript 0 findings, leaky transcript caught, nested scan)
+     - `privacy:addon` – Python unittest 9 tests ok (mitmproxy addon that fails on canary in body/URL/header)
+     - `android-manifest` gate – debug + release, SYSTEM_ALERT_WINDOW + ACCESS_LOCAL_NETWORK blocked, DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION allowlisted
+     - Secret scan + bundle check – 721 modules, no analytics SDK, no secrets
+   - Report in `docs/deployment.md`: self-test ok, addon ok, manifest gate ok, secret scan ok, bundle ok, OTA guard ok, offline ok.
+   - Manual offline test documented: airplane mode, open Mirror shows cached totals/opens/IQS from local store, grant usage access works without network, logcat no http.
+
+**Verification:**
+- `npm run test:packages` 251 pass (106 core-analytics, 28 store, etc)
+- `npm run test:privacy` 18 privacy scanner tests + self-test ok + 9 addon tests ok
+- `node scripts/android/check-ota-guard.mjs` PASSED
+- `node scripts/android/check-offline.mjs` PASSED
+- `make release-stage1` preflight ok (package id, versionCode, version, production→AAB, autoIncrement, no keystore)
+- App.tsx: per-app totals OS authoritative matches Digital Wellbeing, app opens only open times no durations no scaling (fixes Genshin 22s→8m54s, Security 7m20s→16s, orphans 319), J3 dashboard IQS tier-D only /75 with Based on usage patterns only chip + Tier D chip + Why sheet
+
+**P2 checklist vs spec (Section J 28 + P2 scope):**
+
+- J3 Dashboard: ✅ wired to real data, Frosted Horizon, IQS /75, chips, Why sheet, per-app totals OS, app opens only
+- J17 Why drawer: ✅ parts add up (Σ points == value asserted), caveat, confidence reasons, tier-D only note, 0.49 cap when approximate
+- J5 Depth: ✅ engine `sessionBands` ready, mockup exists, not yet wired (P3 hold)
+- J6 Curiosity vs habit: ✅ engine `curiositySplit` needs 5 labels, null otherwise, empty state
+- J7 IQS: ✅ `scoreIqs` 5 factors, max 75 usage-only, 100 with vectors, band, caveat, confidence
+- J8 Sessions: ✅ P2 fix open times only, no durations, no scaling, avoids inventing
+- J24 Persona picker: ✅ personas no longer carry iqs/whyParts, demoScores runs real engine
+- X1 Import: ✅ real preview, frozen fixture test-checked
+- Release Stage 1: ✅ tag pipeline v*, GitHub Release, changelog, OTA guard, offline test, deployment.md quickstart, DEBUG_KEYSTORE_BASE64 stable sig, mirror-test.apk phone-testable, preflight ok
+- Privacy canary: ✅ self-test ok, addon ok, manifest gate ok, secret scan ok, bundle 721, OTA guard ok, offline ok
+- Data tier + Based on usage patterns only: ✅ TierBadge D, ConfidenceChip D, Chip label, Callout tier-D only 75 max
+- Per-app totals OS: ✅ queryUsageStats INTERVAL_DAILY, matches by construction, excludes launchers HOME role + Mirror + system UI, Settings rule consistent
+- Session timeline: ✅ open times only, no durations, no scaling, orphans 319 explained in debug
+- Hidden debug 7x tap: ✅ validation same period, OS vs Mirror single-day, Honkai/Genshin raw, raw events Share JSON, data quality details, why open times only
+- Settings rule consistent: ✅ DEFAULT_IGNORED everywhere, only launchers+Mirror close previous
+- Fixture README: ✅ synthetic honkai-day-raw will be replaced via debug Share
+- OTA guard: ✅ updates disabled/narrow-only, no new permissions/collection, telemetry false, privacy private, blockedPermissions
+- Offline test: ✅ works with backend off, no analytics, allowBackup false, no secrets, local store only, manual airplane test
+- deployment.md + 30-min quickstart: ✅ docs/deployment.md with quickstart, tag pipeline, Release, changelog, OTA guard, offline, canary report, P2 checklist, manual production AAB steps
+- Tag-triggered pipeline: ✅ release.yml on v*, build, guards, changelog, GitHub Release with assets
+- GitHub Release: ✅ softprops/action-gh-release with mirror-test.apk, manifests, CHANGELOG.md, deployment.md
+- Changelog: ✅ scripts/release/changelog.mjs generates since previous tag, includes P2 highlights and checklist
+- Privacy canary report: ✅ in deployment.md, self-test ok, addon ok, manifest ok, secret scan ok, bundle ok
+
+**P3 on hold** – interest evolution, discovery timeline, rabbit-hole detection, what-if, focus windows remain mockups, not wired to real data yet. P2 now closed against original spec.
+
