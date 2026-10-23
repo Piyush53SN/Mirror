@@ -10,6 +10,7 @@
  * code, `==`, `var`, an unused import that survived a refactor.
  */
 import tseslint from 'typescript-eslint';
+import reactPlugin from 'eslint-plugin-react';
 
 export default tseslint.config(
   {
@@ -27,10 +28,17 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   {
     files: ['packages/{shared-types,core-analytics,connectors}/src/**/*.ts', 'packages/ui/{src,screens,mockups}/**/*.{ts,tsx}', 'apps/mobile/**/*.{ts,tsx}'],
+    plugins: {
+      react: reactPlugin,
+    },
+    settings: {
+      react: { version: 'detect' },
+    },
     rules: {
       'no-console': 'error',
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'react/no-unescaped-entities': ['error', { forbid: ['<', '>', '{', '}'] }],
     },
   },
   {

@@ -8,6 +8,7 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_SHORT, J4_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import { getTopInvalidPackages, DEFAULT_IGNORED_PACKAGES, scoreIqs, type Score, type ScoredSession, type ScoreGap } from '@mirror/core-analytics';
@@ -103,7 +104,7 @@ const LABELING_EXCLUDED_APPS = new Set<string>([
 // Rule-based hint – duration does NOT indicate intent, so we do NOT guess intentional/mindless from duration
 // Per user request: remove duration-based guess, or show only as clearly labeled hint that never counts toward Deliberate share
 // Only explicit labels feed the score – this hint is UI only, never used in scoring
-function guessIntent(durationMs: number, app: string): { hint: string; neverCounts: true } {
+function guessIntent(durationMs: number, _app: string): { hint: string; neverCounts: true } {
   // Duration alone does not indicate intent – spec says length is not quality, only <8s is unambiguous "did not hold attention" for length mix, not for intent
   // So we show a neutral hint that labeling is optional and only explicit labels count
   if (durationMs > 0 && durationMs < 8000) {
@@ -559,18 +560,18 @@ export default function App(): React.ReactElement {
         </Card>
 
         <Card theme={theme}>
-          <SectionHeader theme={theme} title="What this build is" caption="Stage 1 - OS totals for per-app, raw events for open times only" />
-          <Text role="micro" tone="muted" theme={theme}>
-            {[
-              'Per-app daily totals: from OS aggregate queryUsageStats (same as Digital Wellbeing, one local day per bucket), matches by construction, excludes launchers (HOME role) and Mirror itself',
-              'App opens: from raw UsageEvents (RESUMED/PAUSED/STOPPED/DESTROYED/SCREEN_NON_INTERACTIVE etc), per-activity tracking, single foreground, gap ≤2s merged, 6h max, shown as open times only, no durations, no scaling (P2 fix: orphans 319, Genshin 22s→8m54s)',
-              'IQS: tier-D only, usage-pattern scores, Based on usage patterns only chip, data-tier chip, Why sheet',
-              'Data quality: one-line note on main, full details in debug',
-              'Debug hidden: tap build number 7 times to show validation (same period), OS vs Mirror comparison, Honkai raw events, raw events log',
-              'Fix: validation now compares same period (selected day) on both sides, not last 7 days vs different window',
-              'Honkai fixture: honkai-day-raw.json captures RESUMED/PAUSED/STOPPED with class names, explains 99% loss due to systemui fg closing, className mismatch, 2s overlap, unknown types',
-            ].join('\n')}
-          </Text>
+          <SectionHeader theme={theme} title="P3 guard – why blocked, overlap honesty" caption="honest gate 60s not 120s, 1h does NOT pair unrelated" />
+          <Text role="micro" tone="muted" theme={theme}>{P3_GUARD_FULL(quality?.byReason?.orphan_background ?? 0)}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="J4 Interest Evolution – full details" caption="first seen, depth, overlap 5min→1h" />
+          <Text role="micro" tone="muted" theme={theme}>{J4_FULL}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="What this build is – full" caption="Stage 1 - OS totals for per-app, raw events for open times only" />
+          <Text role="micro" tone="muted" theme={theme}>{BUILD_FULL}</Text>
         </Card>
       </ScrollView>
     );
@@ -677,7 +678,7 @@ export default function App(): React.ReactElement {
 
       {/* J4 Interest Evolution – P3 start, hard gate orphans <50 */}
       <Card theme={theme} elevated>
-        <SectionHeader theme={theme} title="J4 Interest Evolution" caption="first seen, depth over time, trend – P3 start, hard gate orphans <50" />
+        <SectionHeader theme={theme} title="J4 Interest Evolution" caption="first seen, depth over time, trend – P3 start, hard gate orphans ≤50" />
         {(() => {
           const orphanCount = quality?.byReason?.orphan_background ?? 0;
           const totalGaps = quality?.count ?? 0;
@@ -686,7 +687,7 @@ export default function App(): React.ReactElement {
             return (
               <View style={{ gap: theme.space(2) }}>
                 <Text role="label" theme={theme}>Needs more reliable sessions – orphans {orphanCount} (hard gate 50), gaps {totalGaps}</Text>
-                <Text role="micro" tone="muted" theme={theme}>J4 Interest Evolution needs accurate session boundaries (start/end) to show first seen and depth over time. Current orphans {orphanCount} (was 319→64) – P3 features blocked until orphans ≤50 and gaps ≤100. Using only OS totals meanwhile. Real raw-event day capture via debug 7x Share JSON to drive 64→<50.</Text>
+                <Text role="micro" tone="muted" theme={theme}>{J4_SHORT(orphanCount)}</Text>
                 <Callout theme={theme} tone="limit">Hard gate: P3 features (J4, J9, J11, J18, J20) blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative and match Digital Wellbeing.</Callout>
               </View>
             );
@@ -869,9 +870,7 @@ export default function App(): React.ReactElement {
             return (
               <View style={{ gap: theme.space(2) }}>
                 <Text role="label" theme={theme}>Hard gate: needs more reliable sessions – orphans {orphanCount} (must be ≤50), gaps {totalGaps} (must be ≤100)</Text>
-                <Text role="micro" tone="muted" theme={theme}>
-                  {`P3 features (J4 interest evolution, J9 discovery, J11 rabbit-hole, J18 what-if, J20 focus windows) need accurate session boundaries. Current orphans ${orphanCount} (real device 64, was 319→64 via 10s→60s recent-close honest (not 120s to pass gate) +5min→1h overlap +className fix). 1h overlap does NOT pair unrelated – idempotent ids, single-fg, max 6h, merge 2s only, tested A 0-10 B 20-30 A 70-80 stays 3 intervals. Until orphans ≤50 and gaps ≤100, P3 features blocked – hard gate. Using only OS totals meanwhile. Only explicit labels feed Deliberate share, never duration-based guess.`}
-                </Text>
+                <Text role="micro" tone="muted" theme={theme}>{P3_GUARD_SHORT(orphanCount, totalGaps)}</Text>
                 <Callout theme={theme} tone="limit">
                   Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint “Duration doesn’t indicate intent” never counts.
                 </Callout>
@@ -887,19 +886,10 @@ export default function App(): React.ReactElement {
         })()}
       </Card>
 
-      <Pressable onPress={handleBuildTap}>
+            <Pressable onPress={handleBuildTap}>
         <Card theme={theme}>
           <SectionHeader theme={theme} title="What this build is" caption={`Tap 7 times for debug – build ${buildTapCount}/7`} />
-          <Text role="micro" tone="muted" theme={theme}>
-            {[
-              `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror, vending/gms excluded`,
-              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→64 via 10s→60s honest not 120s +5min→1h overlap +className fix, 1h does NOT pair unrelated – idempotent ids, single-fg, max 6h), hard gate 50 for P3`,
-              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet fixed duplicate, 0.49 cap when approximate, only explicit labels feed Deliberate share (never duration guess)`,
-              `Labeling: collapsed on tap, skip system/utility, optional opt-in after longer sessions, hint (not counted) “Duration doesn’t indicate intent”`,
-              `P3 J4 Interest Evolution started with hard gate orphans ≤50, uses OS totals + first seen, degrades gracefully, only explicit labels count`,
-              `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw, Share JSON, a11y-label test)`,
-            ].join('\n')}
-          </Text>
+          <Text role="micro" tone="muted" theme={theme}>{BUILD_SHORT}</Text>
         </Card>
       </Pressable>
     </ScrollView>
