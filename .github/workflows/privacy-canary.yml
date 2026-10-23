@@ -22,49 +22,147 @@ jobs:
   android:
     if: ${{ inputs.platform == 'both' || inputs.platform == 'android' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.22.0'
+          node-version: '22.13.0'
           cache: npm
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK platforms
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
+
+      - name: Install deps
         run: npm ci
-      - name: Is there an installable build?
+
+      - name: Is there an installable build? (multi-location guard)
         id: guard
         run: |
-          if [ -f builds/mirror-debug.apk ]; then
+          APK=""
+          for p in mirror-test.apk .reports/mirror-test.apk apps/mobile/android/app/build/outputs/apk/release/app-release.apk apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk builds/mirror-debug.apk; do
+            if [ -f "$p" ]; then APK="$p"; break; fi
+          done
+          if [ -n "$APK" ]; then
             echo "ready=yes" >> "$GITHUB_OUTPUT"
+            echo "apk=$APK" >> "$GITHUB_OUTPUT"
+            echo "Found APK at $APK"
           else
             echo "ready=no" >> "$GITHUB_OUTPUT"
-            echo "::notice::No debug APK in builds/. Expected before P1; nothing to test yet."
+            echo "No APK found in common locations – will try to build one"
           fi
-      - name: Merged AndroidManifest audit
-        if: steps.guard.outputs.ready == 'yes'
+
+      - name: Expo prebuild (if no APK)
+        if: steps.guard.outputs.ready == 'no'
         run: |
-          # app.json is intent; this reads what Gradle actually merged.
+          cd apps/mobile
+          npx expo prebuild --platform android --clean --non-interactive
+          chmod +x android/gradlew
+          cd ../..
+
+      - name: Restore stable debug keystore (for building APK)
+        if: steps.guard.outputs.ready == 'no'
+        run: |
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_PATH"
+            ls -lh "$KEYSTORE_PATH"
+          else
+            echo "::warning::DEBUG_KEYSTORE_BASE64 not set – ephemeral keystore"
+            keytool -genkeypair -v -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          fi
+
+      - name: Build phone-testable APK if missing
+        if: steps.guard.outputs.ready == 'no'
+        run: |
+          cd apps/mobile/android
+          ./gradlew :app:assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore" \
+            -Pandroid.injected.signing.store.password=android \
+            -Pandroid.injected.signing.key.alias=androiddebugkey \
+            -Pandroid.injected.signing.key.password=android
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/.reports/mirror-test.apk" || true
+          ls -lh "$GITHUB_WORKSPACE/mirror-test.apk"
+          echo "ready=yes" >> "$GITHUB_OUTPUT"
+        # Note: guard output cannot be updated here, but file now exists for next steps
+
+      - name: Merged AndroidManifest audit
+        run: |
           npm run android:manifest || { code=$?; [ "$code" = "2" ] && echo "::warning::merged manifest not built" && exit 0 || exit $code; }
+
       - name: Install mitmproxy
-        if: steps.guard.outputs.ready == 'yes'
         run: pipx install mitmproxy
+
+      - name: Enable KVM for emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          sudo chown root:kvm /dev/kvm || true
+          sudo chmod 0666 /dev/kvm || true
+          ls -lh /dev/kvm || true
+          egrep -c '(vmx|svm)' /proc/cpuinfo || true
+
+      - name: Find APK for canary
+        id: findapk
+        run: |
+          APK=""
+          for p in mirror-test.apk .reports/mirror-test.apk apps/mobile/android/app/build/outputs/apk/release/app-release.apk apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk builds/mirror-debug.apk; do
+            if [ -f "$p" ]; then APK="$p"; break; fi
+          done
+          if [ -z "$APK" ]; then
+            echo "::error::No APK found after build attempt"
+            exit 2
+          fi
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK=$APK"
+
       - name: Run the canary on an emulator
-        if: steps.guard.outputs.ready == 'yes'
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
-          target: google_apis
+          api-level: 33
+          target: default
           arch: x86_64
-          script: bash scripts/privacy/android-emulator.sh
+          ram-size: 2048M
+          disk-size: 4096M
+          emulator-boot-timeout: 900
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot -http-proxy 127.0.0.1:8080
+          script: bash scripts/privacy/android-emulator.sh "${{ steps.findapk.outputs.apk }}"
+
       - name: Upload the canary report
-        if: always() && steps.guard.outputs.ready == 'yes'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: android-canary-report
-          path: privacy/android-report.json
+          path: |
+            privacy/android-report.json
+            privacy/canaries.txt
+            privacy/mitmproxy.log
+            privacy/logcat-http.txt
+            .reports/
+            mirror-test.apk
           if-no-files-found: warn
 
   extension:
@@ -75,7 +173,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22.22.0'
+          node-version: '22.13.0'
           cache: npm
       - name: Install
         run: npm ci
