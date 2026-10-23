@@ -870,7 +870,7 @@ export default function App(): React.ReactElement {
               <View style={{ gap: theme.space(2) }}>
                 <Text role="label" theme={theme}>Hard gate: needs more reliable sessions – orphans {orphanCount} (must be ≤50), gaps {totalGaps} (must be ≤100)</Text>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`P3 features (J4 interest evolution, J9 discovery, J11 rabbit-hole, J18 what-if, J20 focus windows) need accurate session boundaries. Current orphans ${orphanCount} (real device 64, was 319→64 via 60s recent-close +5min overlap +1h overlap +className fix). Until orphans ≤50 and gaps ≤100, P3 features blocked – hard gate. Using only OS totals meanwhile. Only explicit labels feed Deliberate share, never duration-based guess.`}
+                  {`P3 features (J4 interest evolution, J9 discovery, J11 rabbit-hole, J18 what-if, J20 focus windows) need accurate session boundaries. Current orphans ${orphanCount} (real device 64, was 319→64 via 10s→60s recent-close honest (not 120s to pass gate) +5min→1h overlap +className fix). 1h overlap does NOT pair unrelated – idempotent ids, single-fg, max 6h, merge 2s only, tested A 0-10 B 20-30 A 70-80 stays 3 intervals. Until orphans ≤50 and gaps ≤100, P3 features blocked – hard gate. Using only OS totals meanwhile. Only explicit labels feed Deliberate share, never duration-based guess.`}
                 </Text>
                 <Callout theme={theme} tone="limit">
                   Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint “Duration doesn’t indicate intent” never counts.
@@ -893,7 +893,7 @@ export default function App(): React.ReactElement {
           <Text role="micro" tone="muted" theme={theme}>
             {[
               `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror, vending/gms excluded`,
-              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→64 via recent-close 60s→120s +5min→1h overlap +className fix), hard gate 50 for P3`,
+              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→64 via 10s→60s honest not 120s +5min→1h overlap +className fix, 1h does NOT pair unrelated – idempotent ids, single-fg, max 6h), hard gate 50 for P3`,
               `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet fixed duplicate, 0.49 cap when approximate, only explicit labels feed Deliberate share (never duration guess)`,
               `Labeling: collapsed on tap, skip system/utility, optional opt-in after longer sessions, hint (not counted) “Duration doesn’t indicate intent”`,
               `P3 J4 Interest Evolution started with hard gate orphans ≤50, uses OS totals + first seen, degrades gracefully, only explicit labels count`,

@@ -326,9 +326,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
   // Track recently closed apps to suppress duplicate bg that arrives shortly after close via single-foreground enforcement
   // This reduces orphans 319 -> 64 -> <50: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
-  // Increased from 10s to 60s after real device showed 319 orphans, then to 120s after 64 orphans remain – bg can arrive delayed >60s after launcher/fg close on real device
+  // Increased from 10s to 60s after real device showed 319 orphans. 120s considered loosening to pass gate – keep honest 60s, use real raw capture to drive 64-><50
   const recentlyClosed = new Map<string, number>();
-  const RECENT_CLOSE_SUPPRESS_MS = 120_000; // ignore orphan bg within 120s of close (was 10s -> 60s)
+  const RECENT_CLOSE_SUPPRESS_MS = 60_000; // ignore orphan bg within 60s of close (was 10s -> 60s, 120s would be loosening – keep honest)
 
   for (const row of ordered) {
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
@@ -646,8 +646,9 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
   const maxWindowMs = options.maxWindowMs ?? 2 * DAY_MS;
   // P2 fix: increase overlap from 2s to 60s to reduce orphans 319 where fg outside window bg inside
   // Round 13: increase to 5min (300s) after real device still showed 319 orphans – fg can be outside window by minutes on first sync or after gap
-  // Round 16: increase to 1h (3600s) after real device still shows 64 orphans – first sync reads 1 day back, fg can be outside by hours, need larger overlap to capture
-  // Idempotent ids make overlap safe, cost is reading 1h more rows per sync (negligible vs 1-day window)
+  // Round 16: increase to 1h (3600s) after real device still shows 64 orphans – device offline 8h, second run from = cursor - overlap, so fg 30min before cursor missed with 5min overlap, recovered with 1h
+  // Why 1h does NOT pair unrelated: idempotent ids (evt_fg_ hash) make re-read duplicate not new interval, single-foreground closes previous at new fg (so A 0-10, B 20-30, A 70-80 stays 3 intervals not 1 long A 0-80), max 6h cap drops implausible, merge gap only 2s not 1h
+  // Cost is reading 1h more rows per sync (negligible vs 1-day window). Gate honest: keep RECENT_CLOSE 60s not 120s, use real raw capture to drive 64-><50, not loosening matching just to pass gate
   const overlapMs = options.overlapMs ?? 3_600_000;
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
 
