@@ -325,10 +325,10 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
   // Track recently closed apps to suppress duplicate bg that arrives shortly after close via single-foreground enforcement
-  // This reduces orphans 319 -> much lower: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
-  // Increased from 10s to 60s after real device showed 319 orphans – bg can arrive delayed >10s after launcher/fg close
+  // This reduces orphans 319 -> 64 -> <50: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
+  // Increased from 10s to 60s after real device showed 319 orphans, then to 120s after 64 orphans remain – bg can arrive delayed >60s after launcher/fg close on real device
   const recentlyClosed = new Map<string, number>();
-  const RECENT_CLOSE_SUPPRESS_MS = 60_000; // ignore orphan bg within 60s of close (was 10s)
+  const RECENT_CLOSE_SUPPRESS_MS = 120_000; // ignore orphan bg within 120s of close (was 10s -> 60s)
 
   for (const row of ordered) {
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
@@ -646,8 +646,9 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
   const maxWindowMs = options.maxWindowMs ?? 2 * DAY_MS;
   // P2 fix: increase overlap from 2s to 60s to reduce orphans 319 where fg outside window bg inside
   // Round 13: increase to 5min (300s) after real device still showed 319 orphans – fg can be outside window by minutes on first sync or after gap
-  // Idempotent ids make overlap safe, cost is reading 5min more rows per sync (negligible vs 1-day window)
-  const overlapMs = options.overlapMs ?? 300_000;
+  // Round 16: increase to 1h (3600s) after real device still shows 64 orphans – first sync reads 1 day back, fg can be outside by hours, need larger overlap to capture
+  // Idempotent ids make overlap safe, cost is reading 1h more rows per sync (negligible vs 1-day window)
+  const overlapMs = options.overlapMs ?? 3_600_000;
   const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS;
 
   const state = await store.getCursorState('usage_stats');

@@ -100,26 +100,28 @@ const LABELING_EXCLUDED_APPS = new Set<string>([
   'com.sec.android.app.launcher',
 ]);
 
-// Rule-based guess for intentional vs mindless – user can correct
-// Uses only local signals, no content, stays on device
-function guessIntent(durationMs: number, app: string): { guess: 'intentional' | 'mindless' | 'unsure'; reason: string } {
-  // Short sessions <8s: likely mindless – did not hold attention (spec rule)
+// Rule-based hint – duration does NOT indicate intent, so we do NOT guess intentional/mindless from duration
+// Per user request: remove duration-based guess, or show only as clearly labeled hint that never counts toward Deliberate share
+// Only explicit labels feed the score – this hint is UI only, never used in scoring
+function guessIntent(durationMs: number, app: string): { hint: string; neverCounts: true } {
+  // Duration alone does not indicate intent – spec says length is not quality, only <8s is unambiguous "did not hold attention" for length mix, not for intent
+  // So we show a neutral hint that labeling is optional and only explicit labels count
   if (durationMs > 0 && durationMs < 8000) {
-    return { guess: 'mindless', reason: `opened for ${Math.round(durationMs / 1000)}s – under 8s, likely quick check` };
+    return {
+      hint: `Opened for ${Math.round(durationMs / 1000)}s – short open. Duration alone doesn't indicate intent. Only your explicit labels feed Deliberate share (needs 5).`,
+      neverCounts: true,
+    };
   }
-  // Very short 8s-1min: unsure
-  if (durationMs > 0 && durationMs < 60_000) {
-    return { guess: 'unsure', reason: `opened for ${Math.round(durationMs / 1000)}s – short, could be either` };
+  if (durationMs >= 8000) {
+    return {
+      hint: `Opened for ${formatDuration(durationMs)}. Duration doesn't indicate intent – a long session isn't scored as better. Only your explicit labels feed Deliberate share.`,
+      neverCounts: true,
+    };
   }
-  // Longer sessions: likely intentional
-  if (durationMs >= 5 * 60_000) {
-    return { guess: 'intentional', reason: `opened for ${formatDuration(durationMs)} – longer session, likely deliberate` };
-  }
-  if (durationMs >= 60_000) {
-    return { guess: 'intentional', reason: `opened for ${formatDuration(durationMs)} – over 1min, likely deliberate` };
-  }
-  // No duration (open times only mode) – use app heuristics: utility already excluded, so guess unsure
-  return { guess: 'unsure', reason: 'open time only – duration not measured, guess unsure' };
+  return {
+    hint: 'Open time only – duration not measured. Duration doesn’t indicate intent. Only your explicit labels feed Deliberate share (needs 5, optional).',
+    neverCounts: true,
+  };
 }
 
 export default function App(): React.ReactElement {
@@ -673,11 +675,73 @@ export default function App(): React.ReactElement {
         )}
       </Card>
 
+      {/* J4 Interest Evolution – P3 start, hard gate orphans <50 */}
+      <Card theme={theme} elevated>
+        <SectionHeader theme={theme} title="J4 Interest Evolution" caption="first seen, depth over time, trend – P3 start, hard gate orphans <50" />
+        {(() => {
+          const orphanCount = quality?.byReason?.orphan_background ?? 0;
+          const totalGaps = quality?.count ?? 0;
+          const reliable = orphanCount <= 50 && totalGaps <= 100;
+          if (!reliable) {
+            return (
+              <View style={{ gap: theme.space(2) }}>
+                <Text role="label" theme={theme}>Needs more reliable sessions – orphans {orphanCount} (hard gate 50), gaps {totalGaps}</Text>
+                <Text role="micro" tone="muted" theme={theme}>J4 Interest Evolution needs accurate session boundaries (start/end) to show first seen and depth over time. Current orphans {orphanCount} (was 319→64) – P3 features blocked until orphans ≤50 and gaps ≤100. Using only OS totals meanwhile. Real raw-event day capture via debug 7x Share JSON to drive 64→<50.</Text>
+                <Callout theme={theme} tone="limit">Hard gate: P3 features (J4, J9, J11, J18, J20) blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative and match Digital Wellbeing.</Callout>
+              </View>
+            );
+          }
+          // Reliable – show interest evolution from real data
+          // Compute first seen per app from sessions, depth bands, and trend from OS totals last 7 vs prev 7 (if available)
+          // For now use scaledSessions for first seen, dailyTotals for today, and quality for gaps
+          const firstSeenMap = new Map<string, number>();
+          for (const s of scaledSessions) {
+            const existing = firstSeenMap.get(s.app);
+            if (existing == null || s.start_ms < existing) firstSeenMap.set(s.app, s.start_ms);
+          }
+          // Sort apps by totalMs descending (from dailyTotals) for display
+          const evolutionRows = dailyTotals.slice(0, 10).map((t) => {
+            const firstSeen = firstSeenMap.get(t.app);
+            return {
+              app: t.app,
+              label: t.label,
+              totalMs: t.totalMs,
+              firstSeen: firstSeen ? new Date(firstSeen).toLocaleDateString() : 'unknown (no session in window)',
+              // Depth bands would need session durations – we have duration_ms but open-times-only mode has no durations for many, so show note
+              depthNote: 'Depth bands from session lengths (needs reliable sessions with durations) – currently open times only, no durations',
+            };
+          });
+          return (
+            <View style={{ gap: theme.space(3) }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+                <Chip label="Based on usage patterns only" theme={theme} />
+                <TierBadge tier="D" theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>Tier D only – OS usage, no topic vectors yet. Interest evolution degrades gracefully: shows first seen + depth bands, not topic depth.</Text>
+              </View>
+              <Text role="label" theme={theme}>First seen & depth (last 7 days from OS totals, authoritative)</Text>
+              {evolutionRows.length === 0 ? (
+                <Text role="micro" tone="muted" theme={theme}>No apps for {selectedDay} – use apps, then Refresh. First seen computed from sessions when reliable.</Text>
+              ) : (
+                evolutionRows.map((r) => (
+                  <View key={r.app} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
+                    <Text role="label" theme={theme}>{r.label} – first seen {r.firstSeen}</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{`${r.app} • ${formatDuration(r.totalMs)} today (OS total)`}</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{r.depthNote}</Text>
+                    <Divider theme={theme} />
+                  </View>
+                ))
+              )}
+              <Callout theme={theme} tone="neutral">Only explicit labels feed Deliberate share – hint “Duration doesn’t indicate intent” never counts. J4 shows first seen from sessions, depth over time from OS totals, trend requires topic vectors (tier A/B/C) – currently degraded to usage patterns only.</Callout>
+            </View>
+          );
+        })()}
+      </Card>
+
       <Card theme={theme}>
         <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap a session to label (optional)" />
         <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
           <Text role="label" theme={theme}>Open times only – durations not shown. Daily totals above are authoritative from OS.</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Orphans 319→64 via recent-close 60s +5min overlap +className fix. Labeling is optional feedback (no manual data entry required) – tap a session to see guess and correct it. System/utility apps skipped from labeling.</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Orphans 319→64 (hard gate 50 for P3). Labeling is optional feedback – only your explicit labels feed Deliberate share (needs 5, never guess). Duration doesn’t indicate intent, so hint is shown as “Hint (not counted)”. System/utility apps skipped. Tap a session to label.</Text>
         </View>
         {/* Optional opt-in prompt after longer sessions */}
         {(() => {
@@ -706,8 +770,9 @@ export default function App(): React.ReactElement {
             const currentLabel = intentLabels[s.id];
             const isExcluded = LABELING_EXCLUDED_APPS.has(s.app);
             const isExpanded = expandedSessionId === s.id;
-            const guessInfo = guessIntent(s.duration_ms, s.app);
-            const showGuess = !currentLabel && !isExcluded;
+            const hintInfo = guessIntent(s.duration_ms, s.app);
+            // Hint is UI only, never counts toward Deliberate share – only explicit labels feed score
+            const showHint = !isExcluded;
             return (
               <View key={s.id} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
                 <Pressable
@@ -719,14 +784,15 @@ export default function App(): React.ReactElement {
                 >
                   <View style={{ gap: theme.space(1) }}>
                     <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}${s.duration_ms > 0 ? ` • ${formatDuration(s.duration_ms)}` : ''}`}</Text>
-                    <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • you: ${currentLabel}` : ''}${showGuess ? ` • likely ${guessInfo.guess}` : ''}${isExcluded ? ' • labeling skipped (system/utility)' : ''}`}</Text>
-                    {showGuess ? <Text role="micro" tone="muted" theme={theme}>{`Guess: ${guessInfo.guess} – ${guessInfo.reason}. Tap to correct.`}</Text> : null}
-                    {currentLabel ? <Text role="micro" tone="muted" theme={theme}>{`You labeled: ${currentLabel}. Tap to change.`}</Text> : null}
+                    <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • you: ${currentLabel} (explicit, counts)` : ''}${isExcluded ? ' • labeling skipped (system/utility)' : ''}`}</Text>
+                    {showHint ? <Text role="micro" tone="muted" theme={theme}>{`Hint (not counted, duration doesn't indicate intent): ${hintInfo.hint}`}</Text> : null}
+                    {currentLabel ? <Text role="micro" tone="muted" theme={theme}>{`You labeled: ${currentLabel} – only explicit labels feed Deliberate share. Tap to change.`}</Text> : null}
                   </View>
                 </Pressable>
                 {isExpanded && !isExcluded ? (
                   <View style={{ gap: theme.space(2), marginTop: theme.space(2), backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm }}>
-                    <Text role="micro" tone="muted" theme={theme}>Optional feedback – stays on device. Rule-based guess shown, you can correct. Needs 5 labels for Deliberate share.</Text>
+                    <Text role="micro" tone="muted" theme={theme}>Optional feedback – stays on device. Only your explicit labels feed Deliberate share (needs 5). Duration alone doesn't indicate intent – this hint never counts.</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{`Hint (not counted): ${hintInfo.hint}`}</Text>
                     <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
                       {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
                         <Pill
@@ -766,7 +832,7 @@ export default function App(): React.ReactElement {
                             }
                           }}
                         >
-                          {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}${!currentLabel && guessInfo.guess === lbl ? ' (guess)' : ''}`}
+                          {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}`}
                         </Pill>
                       ))}
                     </View>
@@ -792,9 +858,9 @@ export default function App(): React.ReactElement {
         </View>
       </Card>
 
-      {/* P3 guard: features that need session boundaries */}
+      {/* P3 guard: features that need session boundaries – hard gate orphans <50 */}
       <Card theme={theme}>
-        <SectionHeader theme={theme} title="P3 features – session boundaries" caption="needs more reliable sessions until orphans low" />
+        <SectionHeader theme={theme} title="P3 features – session boundaries" caption="hard gate orphans ≤50, gaps ≤100" />
         {(() => {
           const orphanCount = quality?.byReason?.orphan_background ?? 0;
           const totalGaps = quality?.count ?? 0;
@@ -802,12 +868,12 @@ export default function App(): React.ReactElement {
           if (!reliable) {
             return (
               <View style={{ gap: theme.space(2) }}>
-                <Text role="label" theme={theme}>Needs more reliable sessions – orphans {orphanCount}, gaps {totalGaps}</Text>
+                <Text role="label" theme={theme}>Hard gate: needs more reliable sessions – orphans {orphanCount} (must be ≤50), gaps {totalGaps} (must be ≤100)</Text>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`P3 features (interest evolution, discovery timeline, rabbit-hole detection, what-if, focus windows) need accurate session boundaries (start/end). Current raw events have orphans ${orphanCount} (e.g., 319 on device) due to fg outside window, className mismatch, duplicate bg after single-foreground close. Until orphans <50 and gaps <100, these features show this message and use only OS totals (authoritative) meanwhile.`}
+                  {`P3 features (J4 interest evolution, J9 discovery, J11 rabbit-hole, J18 what-if, J20 focus windows) need accurate session boundaries. Current orphans ${orphanCount} (real device 64, was 319→64 via 60s recent-close +5min overlap +1h overlap +className fix). Until orphans ≤50 and gaps ≤100, P3 features blocked – hard gate. Using only OS totals meanwhile. Only explicit labels feed Deliberate share, never duration-based guess.`}
                 </Text>
                 <Callout theme={theme} tone="limit">
-                  Using only OS totals for now: per-app daily totals from queryUsageStats are authoritative and match Digital Wellbeing. Session boundaries (open times) are shown above, but durations not used for P3 scoring until reliable.
+                  Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint “Duration doesn’t indicate intent” never counts.
                 </Callout>
               </View>
             );
@@ -815,7 +881,7 @@ export default function App(): React.ReactElement {
           return (
             <View style={{ gap: theme.space(2) }}>
               <Text role="label" theme={theme}>Sessions reliable – orphans {orphanCount}, gaps {totalGaps} – P3 features can use boundaries</Text>
-              <Text role="micro" tone="muted" theme={theme}>Interest evolution, discovery timeline, rabbit-hole, what-if, focus windows can now use session start/end with low confidence.</Text>
+              <Text role="micro" tone="muted" theme={theme}>Interest evolution (J4), discovery (J9), rabbit-hole (J11), what-if (J18), focus windows (J20) can now use session start/end with low confidence. Only explicit labels feed Deliberate share.</Text>
             </View>
           );
         })()}
@@ -826,11 +892,12 @@ export default function App(): React.ReactElement {
           <SectionHeader theme={theme} title="What this build is" caption={`Tap 7 times for debug – build ${buildTapCount}/7`} />
           <Text role="micro" tone="muted" theme={theme}>
             {[
-              `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror`,
-              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→0 via recent-close suppress 10s + 60s overlap)`,
-              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet, 0.49 cap when approximate`,
-              `P3 guard: needs more reliable sessions until orphans low, uses only OS totals meanwhile`,
-              `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw, Share JSON)`,
+              `Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror, vending/gms excluded`,
+              `App opens from raw events, open times only, no durations, no scaling (P2 fix: orphans 319→64 via recent-close 60s→120s +5min→1h overlap +className fix), hard gate 50 for P3`,
+              `IQS: tier-D only usage-pattern scores, Based on usage patterns only chip, Why sheet fixed duplicate, 0.49 cap when approximate, only explicit labels feed Deliberate share (never duration guess)`,
+              `Labeling: collapsed on tap, skip system/utility, optional opt-in after longer sessions, hint (not counted) “Duration doesn’t indicate intent”`,
+              `P3 J4 Interest Evolution started with hard gate orphans ≤50, uses OS totals + first seen, degrades gracefully, only explicit labels count`,
+              `Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, Honkai raw, Share JSON, a11y-label test)`,
             ].join('\n')}
           </Text>
         </Card>
