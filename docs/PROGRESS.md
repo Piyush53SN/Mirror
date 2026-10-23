@@ -1544,3 +1544,67 @@ Two adjacent JSX expressions inside Pill → React creates array children `['int
 
 **P3 plan:** See `docs/P3.md` 10-line plan for J4, J9, J11, J18, J20 (updated) awaiting continue.
 
+
+### Round 16 — Pre-continue feedback: remove duration guess, only explicit labels count, hard gate 50, test release workflow, start J4 (2026-10-22)
+
+**User request before continue:**
+1. Remove duration-based “likely intentional” guess, or show only as clearly labeled hint that never counts toward Deliberate share, since duration doesn’t indicate intent
+2. Confirm only explicit labels feed the score
+3. Keep orphans under 50 as hard gate for P3 features
+4. Test release workflow on throwaway tag
+Then start P3 with J4 only and stop for review.
+
+**Fixes:**
+
+1. **Duration guess removed / hint only never counts:**
+   - Old `guessIntent` guessed intentional/mindless from duration (<8s mindless, ≥1min intentional) – removed because duration doesn't indicate intent (spec: length is not quality, only <8s is unambiguous for length mix, not intent)
+   - New `guessIntent` returns `{hint, neverCounts:true}` with neutral hint: “Opened for Xs – short open. Duration alone doesn't indicate intent. Only your explicit labels feed Deliberate share (needs 5).” or “Opened for Xm. Duration doesn't indicate intent – a long session isn't scored as better. Only your explicit labels feed Deliberate share.”
+   - UI shows `Hint (not counted, duration doesn't indicate intent): ${hintInfo.hint}` not “likely X”, and expanded view says “Optional feedback – stays on device. Only your explicit labels feed Deliberate share (needs 5). Duration alone doesn't indicate intent – this hint never counts.”
+   - Pills no longer show “(guess)”, only `✓ label` when explicit.
+
+2. **Only explicit labels feed Deliberate share – confirmed:**
+   - `scoreIqs` receives `labels` array only from `runtime.loadIntentLabels()` which reads `intent_label` events tier D origin user content metadata, sealed, stored via `store.appendEvents`
+   - Guess/hint never passed to `scoreIqs`, only UI hint
+   - UI says “you: X (explicit, counts)” vs “Hint (not counted)”, expanded says “Only your explicit labels feed Deliberate share”
+   - `Deliberate share` factor needs 5 decisive explicit labels, otherwise “Not measured: N decisive labels (5 needed)”
+   - Verified via code review and tests
+
+3. **Hard gate orphans ≤50 for P3:**
+   - `quality.byReason.orphan_background` ≤50 and `quality.count` ≤100 required
+   - `App.tsx` J4 Interest Evolution and P3 guard both check `orphanCount <=50 && totalGaps <=100`
+   - If >50, show “Hard gate: needs more reliable sessions – orphans N (must be ≤50), gaps M” + Callout “Hard gate enforced: P3 blocked until orphans ≤50”
+   - Real device 64 → still blocked, needs 64→<50 via larger overlap 5min→1h (3_600_000) + recent-close 60s→120s + className fix
+   - OS totals authoritative meanwhile
+
+4. **Orphan reduction 64→<50 (trust):**
+   - Increased overlap 300s→3_600_000 (1h) after real device still shows 64 orphans – first sync reads 1 day back, fg can be outside by hours, need larger overlap to capture
+   - Increased recent-close 60s→120s after 64 orphans remain – bg can arrive delayed >60s after launcher/fg close on real device
+   - Test: honkai 12 rows → 0 orphans, device-day 44 → 1 orphan, sim duplicate → 0; core-analytics 106 pass
+   - Real raw-event day capture still needed via debug 7x Share JSON to verify 64→<50
+
+5. **Release workflow throwaway tag test:**
+   - Created throwaway tag `v0.0.0-test-round16-j4` on commit 91db38f and pushed – expected to trigger `release.yml` (on push tags v*)
+   - Result: No release run appeared for tag – only branch pushes showed failure with 0s (workflow validation failure due to en-dash `–` in name `Release – tag-triggered` and warning message)
+   - Fixed locally `.github/workflows/release.yml`: replace en-dash `–` with hyphen `-` in 3 places (name, warning, release name) – but cannot push via GitHub App due to missing `workflows` permission (error: refusing to allow a GitHub App to create or update workflow without workflows permission)
+   - Tested locally via `npm run verify` (251 tests pass), `make release-stage1` preflight ok, `check-ota-guard` PASSED, `check-offline` PASSED, `test:privacy` ok
+   - Deleted throwaway tag `v0.0.0-test-round16-j4` (git tag -d + push delete)
+   - Note: Need web UI upload for fixed release.yml to make tag-triggered releases work – same as previous privacy-canary.yml workflow permission issue
+   - Smoke test: previous run 39776381888 on fb3a0d6 had smoke test 1m53s ✓ but missed a11y crash (grep only dev.mirror.app) – now fixed to catch accessibilityLabel/ReadableNativeArray/RCTView
+
+6. **P3 J4 Interest Evolution – started, only J4 for review:**
+   - Added J4 card in App.tsx after per-app totals, before app opens, with hard gate orphans ≤50
+   - When not reliable (orphans 64): shows hard gate message, OS totals authoritative, real raw-event capture steps
+   - When reliable (≤50): computes firstSeen per app from sessions (min start_ms), shows evolution rows for top 10 apps by OS total today, with first seen date, total today (OS total), depth note “Depth bands from session lengths (needs reliable sessions) – currently open times only”
+   - Degrades gracefully: Chip “Based on usage patterns only”, Tier D, text “Tier D only – OS usage, no topic vectors yet. Interest evolution degrades gracefully: shows first seen + depth bands, not topic depth”
+   - Callout: “Only explicit labels feed Deliberate share – hint never counts. J4 shows first seen from sessions, depth over time from OS totals, trend requires topic vectors (tier A/B/C) – currently degraded”
+   - Uses only OS totals for time (authoritative), sessions for first seen only when reliable, only explicit labels count, no duration guess
+   - J9, J11, J18, J20 remain plan only, not implemented – P3 guard still shows they are blocked until orphans ≤50
+
+**Verification:**
+- `node --test packages/ui/tests/a11y-label.test.mjs` 4 pass, `ui.test.mjs` 37 pass, `core-analytics` 106 pass, `test:packages` 251 pass
+- `App.tsx`: labeling collapsed on tap, skip system/utility, optional opt-in after longer sessions, hint (not counted) “Duration doesn't indicate intent”, only explicit labels feed score, hard gate 50, J4 card with first seen + OS totals, degrades gracefully
+- `P3.md` updated 10-line plan for J4,J9,J11,J18,J20 with pre-continue fixes, awaiting review
+- Release workflow test: throwaway tag pushed and deleted, local verify ok, workflow fix needs web UI upload due to workflows permission
+
+**Next:** Stop for review after J4, wait for continue to implement J9,J11,J18,J20.
+
