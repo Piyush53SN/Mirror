@@ -1,4 +1,4 @@
-name: Release – tag-triggered, GitHub Release, changelog, OTA guard, offline, privacy
+name: Release - tag-triggered, GitHub Release, changelog, OTA guard, offline, privacy
 
 on:
   push:
@@ -74,7 +74,7 @@ jobs:
             echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_PATH"
             ls -lh "$KEYSTORE_PATH"
           else
-            echo "::warning::DEBUG_KEYSTORE_BASE64 not set – ephemeral keystore"
+            echo "::warning::DEBUG_KEYSTORE_BASE64 not set - ephemeral keystore"
             keytool -genkeypair -v -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
           fi
 
@@ -114,7 +114,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }} – P2: OS totals, open-times only, J3 dashboard
+          name: ${{ github.ref_name }} - P2: OS totals, open-times only, J3 dashboard
           body_path: CHANGELOG.md
           files: |
             mirror-test.apk
