@@ -56,10 +56,10 @@ max = Σ max(f)     over measurable factors f
 
 | engine factor | max | one-line formula |
 | --- | --- | --- |
-| `session_length` | 25 | `25 × (1 − shortSessions / sessions)` |
+| `session_length` | 25 | `25 × (1 − shortSessions / sessions)`; needs ≥ 5 sittings |
 | `deliberate_share` | 20 | `20 × intentional / (intentional + mindless)`; needs ≥ 5 decisive labels |
-| `switching` | 15 | `15 × 20 / (switchesPerHour + 20)`; needs ≥ 3 sittings |
-| `late_night` | 15 | `15 × (1 − lateMs / totalMs)`; late = 23:00–05:00 local |
+| `switching` | 15 | `15 × 20 / (switchesPerHour + 20)`; needs ≥ 3 non-system sittings and ≥ 15 min (`0.25 h`) active time |
+| `late_night` | 15 | `15 × (1 − lateMs / totalMs)`; late = 23:00–05:00 local; needs ≥ 15 min sitting time |
 | `topic_depth` | 25 | `25 × mean pairwise cosine` of up to 120 scorable session vectors; needs ≥ 5 |
 
 ### 2.3 Crosswalk — spec component → engine factor
@@ -142,7 +142,7 @@ foreground interval inside the window.
 **Inputs.** `app_foreground` / `app_background` events from Android UsageStats,
 sessionised. No content, no titles.
 
-**Measurable when.** `nSessions > 0`. Otherwise `null` and 25 points leave `max`.
+**Measurable when.** `nSessions ≥ 5` (`MIN_SESSION_MIX_SITTINGS`). Below 5 complete sittings, a bounce share is a small-sample coin flip (`0 %` or `100 %`), so it stays unmeasured (`null`) and 25 points leave `max`.
 
 **Caveats.**
 - It measures **abandoned opens**, not depth: a 3-hour sitting and a 9-minute
@@ -195,7 +195,7 @@ different-app sessions whose gap is ≤ 5 minutes (`SWITCH_GAP_MS`).
 
 **Inputs.** Session app ids and timings. App identity is metadata, sealed at rest.
 
-**Measurable when.** ≥ 3 sittings. Otherwise `null` and 15 points leave `max`.
+**Measurable when.** ≥ 3 non-system sittings (`MIN_SWITCHING_SITTINGS`) **and** ≥ 15 minutes (`0.25` active hours, `MIN_SWITCHING_ACTIVE_MS`) of non-system sitting time. Dividing switches by a tiny denominator (e.g. `0.1` active hours = 6 min) inflates noisy rates, so small-activity windows stay unmeasured (`null`) and 15 points leave `max`.
 
 **Caveats.**
 - Smooth by design: 0/h scores 15, 20/h scores 7.5, 100/h scores 2.5, and it never
@@ -221,7 +221,7 @@ so a session crossing midnight is counted on both sides. Local time comes from
 
 **Inputs.** Session start/end and the device's UTC offset. No content.
 
-**Measurable when.** `totalMs > 0`. Otherwise `null` and 15 points leave `max`.
+**Measurable when.** `totalMs ≥ 15 min` (`MIN_LATE_NIGHT_ACTIVE_MS`). Computing a daily late-night share on a 2-minute day produces `0 %` or `100 %` noise, so windows under 15 minutes of sitting time stay unmeasured (`null`) and 15 points leave `max`.
 
 **Caveats.**
 - **Time zone is an input.** A wrong offset shifts the window; the engine never
@@ -368,4 +368,4 @@ gaps and vectors are all retained, so a re-score does not need the old payload �
 but the UI must not compare scores computed under different versions without
 saying so.
 
-Current version: **1** (P2).
+Current version: **2** (P3 minimum-activity floors: `session_length` ≥ 5 sittings, `switching` ≥ 3 sittings & ≥ 15 min / 0.25 active hours, `late_night` ≥ 15 min sitting time; v1 shipped in P2).

@@ -1,5 +1,6 @@
 export * from './discovery';
 export * from './evolution';
+export * from './focuswindows';
 export * from './ingest';
 export * from './rabbithole';
 export * from './scoring';

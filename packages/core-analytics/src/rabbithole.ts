@@ -94,6 +94,8 @@ export type RabbitHoleResult = {
   totalClusterMs: number;
   /** Share of cluster sitting time in 23:00–05:00 local, bounded [0, 1]. */
   lateNightShare: number;
+  /** False when total cluster sitting time is under 5 min (small sample). */
+  lateNightShareMeasurable: boolean;
   /** Explicit user labels attached to sittings inside detected clusters. */
   clusterExplicitLabels: ExplicitLabelCounts;
   /** Top recent clusters (up to `clusterLimit`), newest first. */
@@ -161,6 +163,7 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
       totalClusterSittings: 0,
       totalClusterMs: 0,
       lateNightShare: 0,
+      lateNightShareMeasurable: false,
       clusterExplicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
       clusters: [],
       capabilities: CAPABILITIES,
@@ -273,6 +276,7 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
     totalClusterSittings,
     totalClusterMs,
     lateNightShare,
+    lateNightShareMeasurable: totalClusterMs >= 5 * 60_000,
     clusterExplicitLabels: {
       intentional,
       mindless,

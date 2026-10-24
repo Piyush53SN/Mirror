@@ -8,7 +8,7 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
-import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL, J11_FULL, J18_FULL } from './src/buildDetails';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL, J11_FULL, J18_FULL, J20_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import {
@@ -20,12 +20,14 @@ import {
   computeInterestEvolution,
   computeDiscoveryJourney,
   computeRabbitHoles,
+  computeFocusWindows,
   computeWhatIf,
   scoreIqs,
   type OrphanDiagnosticSummary,
   type InterestEvolutionResult,
   type DiscoveryJourneyResult,
   type RabbitHoleResult,
+  type FocusWindowsResult,
   type WhatIfResult,
   type Score,
   type ScoredSession,
@@ -128,6 +130,7 @@ export default function App(): React.ReactElement {
   const [evolution, setEvolution] = React.useState<InterestEvolutionResult | null>(null);
   const [discovery, setDiscovery] = React.useState<DiscoveryJourneyResult | null>(null);
   const [rabbitHole, setRabbitHole] = React.useState<RabbitHoleResult | null>(null);
+  const [focusWindows, setFocusWindows] = React.useState<FocusWindowsResult | null>(null);
   const [dayScoredSessions, setDayScoredSessions] = React.useState<ScoredSession[]>([]);
   const [dayScoreGaps, setDayScoreGaps] = React.useState<ScoreGap[]>([]);
   const [launcherPackages, setLauncherPackages] = React.useState<string[]>([]);
@@ -256,15 +259,18 @@ export default function App(): React.ReactElement {
           setIntentLabels(loadedLabels);
         } catch {}
 
-        // Multi-day history for J4 Interest Evolution, J9 Discovery Journey & J11 Rabbit Hole (last 30 days; requires 3+ distinct local days)
+        // Multi-day history for J4/J9/J11 (last 30 days) and J20 Focus Windows (last 84 days / 12 weeks; requires 21+ local days & 5+ sittings/cell)
         try {
           const histFrom = dayTo - 30 * 86_400_000;
-          const histSessions = await runtime.store.sessions({ fromMs: histFrom, toMs: dayTo });
-          const histApps = [...new Set(histSessions.map((s) => s.app))].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
+          const focusHistFrom = dayTo - 84 * 86_400_000;
+          const allHistSessions = await runtime.store.sessions({ fromMs: focusHistFrom, toMs: dayTo });
+          const histSessions = allHistSessions.filter((s) => s.end_ms > histFrom && s.start_ms < dayTo);
+          const histApps = [...new Set(allHistSessions.map((s) => s.app))].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
           const histResolved = await resolveAppLabels(histApps);
           const mergedLabels = { ...allLabelsForDay, ...histResolved };
           setLabels((prev) => ({ ...prev, ...mergedLabels }));
           const histScored: ScoredSession[] = histSessions.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
+          const focusScored: ScoredSession[] = allHistSessions.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
           const utcOffsetMinutes = -new Date().getTimezoneOffset();
           const evo = computeInterestEvolution({
             sessions: histScored,
@@ -291,10 +297,19 @@ export default function App(): React.ReactElement {
             utcOffsetMinutes,
           });
           setRabbitHole(rh);
+          const fw = computeFocusWindows({
+            sessions: focusScored,
+            intentLabels: loadedLabels,
+            labels: mergedLabels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          });
+          setFocusWindows(fw);
         } catch {
           setEvolution(null);
           setDiscovery(null);
           setRabbitHole(null);
+          setFocusWindows(null);
         }
 
         const osMap = new Map<string, number>();
@@ -475,8 +490,17 @@ export default function App(): React.ReactElement {
             approximate: true,
           }),
         );
-        const histSessions = await rt.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
-        const histScored: ScoredSession[] = histSessions.map((x: any) => ({
+        const histFrom = dayTo - 30 * 86_400_000;
+        const allHistSessions = await rt.store.sessions({ fromMs: dayTo - 84 * 86_400_000, toMs: dayTo });
+        const histScored: ScoredSession[] = allHistSessions
+          .filter((x: any) => x.end_ms > histFrom && x.start_ms < dayTo)
+          .map((x: any) => ({
+            id: x.id,
+            app: x.app,
+            startMs: x.start_ms,
+            endMs: x.end_ms,
+          }));
+        const focusScored: ScoredSession[] = allHistSessions.map((x: any) => ({
           id: x.id,
           app: x.app,
           startMs: x.start_ms,
@@ -496,6 +520,15 @@ export default function App(): React.ReactElement {
         setRabbitHole(
           computeRabbitHoles({
             sessions: histScored,
+            intentLabels: updatedLabels,
+            labels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          }),
+        );
+        setFocusWindows(
+          computeFocusWindows({
+            sessions: focusScored,
             intentLabels: updatedLabels,
             labels,
             ignorePackages: launcherPkgs,
@@ -786,8 +819,13 @@ export default function App(): React.ReactElement {
         </Card>
 
         <Card theme={theme}>
-          <SectionHeader theme={theme} title="J18 What-if Simulator – full details" caption="Estimate labels, never /100, measured factors only, assumptions" />
+          <SectionHeader theme={theme} title="J18 What-if Simulator – full details" caption="Estimate labels, never /100, measured factors only, assumptions, no-change reason" />
           <Text role="micro" tone="muted" theme={theme}>{J18_FULL}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="J20 Focus Windows – full details" caption="21+ days (3 weeks), 5+ sittings/cell, descriptive timing only" />
+          <Text role="micro" tone="muted" theme={theme}>{J20_FULL}</Text>
         </Card>
 
         <Card theme={theme}>
@@ -814,7 +852,7 @@ export default function App(): React.ReactElement {
             {`Mirror's encrypted database was sealed with key \"${keyMismatch.oldKey}\" but the current key is \"${keyMismatch.newKey}\". This happens after reinstall, clear data, or when Android restores a backup of the database without its key (SecureStore is not backed up).`}
           </Text>
           <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
-            <Pill theme={theme} onPress={async () => { try { const rt = runtimeRef.current; if (rt) { await rt.store.deleteAll(); setKeyMismatch(null); setError(null); setSessions([]); setDailyTotals([]); setScaledSessions([]); setEvolution(null); setDiscovery(null); setLastCollect('store reset'); await checkPermissionAndCollect(); } } catch (e: any) { setError(e?.message ?? String(e)); } }}>Reset stored data</Pill>
+            <Pill theme={theme} onPress={async () => { try { const rt = runtimeRef.current; if (rt) { await rt.store.deleteAll(); setKeyMismatch(null); setError(null); setSessions([]); setDailyTotals([]); setScaledSessions([]); setEvolution(null); setDiscovery(null); setRabbitHole(null); setFocusWindows(null); setLastCollect('store reset'); await checkPermissionAndCollect(); } } catch (e: any) { setError(e?.message ?? String(e)); } }}>Reset stored data</Pill>
             <LinkButton theme={theme} onPress={() => setKeyMismatch(null)}>Dismiss</LinkButton>
           </View>
         </Card>
@@ -831,6 +869,9 @@ export default function App(): React.ReactElement {
         <SectionHeader theme={theme} title="Interaction quality" caption="out of what Mirror can actually measure" />
         <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', marginBottom: theme.space(2) }}>
           <Chip label="Based on usage patterns only" theme={theme} />
+          {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? (
+            <Chip label="Small sample" theme={theme} />
+          ) : null}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(1) }}>
             <TierBadge tier="D" theme={theme} />
             <Text role="micro" tone="muted" theme={theme}>Tier D only – OS usage, no content</Text>
@@ -841,11 +882,15 @@ export default function App(): React.ReactElement {
           <View style={{ gap: theme.space(2) }}>
             <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(2) }}>
               <Text role="display" theme={theme}>{iqs.value === null ? '—' : String(Math.round(iqs.value))}</Text>
-              <Text role="label" tone="muted" theme={theme}>{`/ ${iqs.max}`}</Text>
+              {iqs.value !== null ? (
+                <Text role="label" tone="muted" theme={theme}>{`/ ${iqs.max}`}</Text>
+              ) : null}
               <Text role="micro" tone="muted" theme={theme}>{iqs.band}</Text>
             </View>
             <View style={{ flexDirection: 'row', gap: theme.space(2), alignItems: 'center' }}>
-              <Text role="micro" tone="muted" theme={theme}>{`Confidence: ${iqs.confidence.level} (${Math.round(iqs.confidence.score * 100)}%) – ${iqs.confidence.sample} sittings`}</Text>
+              <Text role="micro" tone="muted" theme={theme}>
+                {`Confidence: ${iqs.confidence.level} (${Math.round(iqs.confidence.score * 100)}%) – ${iqs.confidence.sample} sitting${iqs.confidence.sample === 1 ? '' : 's'} (${formatDuration(iqs.confidence.activeMs)} sitting time)`}
+              </Text>
             </View>
             {!showWhy ? <Text role="micro" tone="muted" theme={theme}>{iqs.caveat}</Text> : null}
             <View style={{ marginTop: theme.space(2) }}>
@@ -868,7 +913,7 @@ export default function App(): React.ReactElement {
                 </View>
                 <View style={{ marginTop: theme.space(2) }}>
                   <Callout theme={theme} tone="neutral">
-                    {`Current max is /${iqs.max}: only measured factors enter the denominator — session length (25)${iqs.factors.find((f) => f.id === 'switching')?.measurable ? ', switching (15)' : ''}${iqs.factors.find((f) => f.id === 'late_night')?.measurable ? ', late-night (15)' : ''}${iqs.factors.find((f) => f.id === 'deliberate_share')?.measurable ? ', deliberate share (20)' : ''}. Unmeasured factors reduce the max rather than counting as zero (reaches /75 with 5+ decisive labels and 3+ sittings; /100 adds Tier A/B/C topic depth).`}
+                    {`Current max is /${iqs.max}: only measured factors enter the denominator — session length (25, needs 5+ sittings)${iqs.factors.find((f) => f.id === 'switching')?.measurable ? ', switching (15)' : ' [switching hidden until 3+ sittings & 15+ min active]'}${iqs.factors.find((f) => f.id === 'late_night')?.measurable ? ', late-night (15)' : ' [late-night hidden until 15+ min sitting time]'}${iqs.factors.find((f) => f.id === 'deliberate_share')?.measurable ? ', deliberate share (20)' : ''}. Small-sample rates leave the max rather than counting as zero (reaches /75 with 5+ decisive labels and 15+ min; /100 adds Tier A/B/C topic depth).`}
                   </Callout>
                 </View>
               </View>
@@ -998,7 +1043,9 @@ export default function App(): React.ReactElement {
 
               <View style={{ gap: theme.space(1) }}>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (${Math.round(discovery.repeatSessionShare * 100)}% of sustained sittings) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`}
+                  {discovery.repeatShareMeasurable
+                    ? `Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (${Math.round(discovery.repeatSessionShare * 100)}% of sustained sittings) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`
+                    : `Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (repeat share hidden: ${discovery.sustainedSessionCount} sustained sitting${discovery.sustainedSessionCount === 1 ? '' : 's'}, needs 5+) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {`Top app by time (${selectedDay}): ${discovery.topAppByTime ? `${discovery.topAppByTime.label} (${formatDuration(discovery.topAppByTime.totalMs)}, OS aggregate)` : 'none recorded'}`}
@@ -1063,7 +1110,9 @@ export default function App(): React.ReactElement {
               ) : (
                 <View style={{ gap: theme.space(2) }}>
                   <Text role="label" theme={theme}>
-                    {`${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · ${Math.round(rabbitHole.lateNightShare * 100)}% in 23:00–05:00)`}
+                    {rabbitHole.lateNightShareMeasurable
+                      ? `${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · ${Math.round(rabbitHole.lateNightShare * 100)}% in 23:00–05:00)`
+                      : `${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · late-night % hidden below 5m cluster time)`}
                   </Text>
                   <Text role="micro" tone="muted" theme={theme}>
                     {rabbitHole.clusterExplicitLabels.total > 0
@@ -1125,12 +1174,16 @@ export default function App(): React.ReactElement {
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Chip label="Estimate" theme={theme} />
                 <Chip label="Measured factors only" theme={theme} />
+                {whatIf.smallSampleBaseline ? <Chip label="Small sample today" theme={theme} /> : null}
                 <TierBadge tier="D" theme={theme} />
               </View>
 
               <View style={{ gap: theme.space(1) }}>
+                {whatIf.minimumActivityNote ? (
+                  <Text role="micro" tone="muted" theme={theme}>{whatIf.minimumActivityNote}</Text>
+                ) : null}
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Measured in estimates (${whatIf.baselineIqs.max} max, never rescaled to 100): ${whatIf.measuredFactorSummary.join(' · ') || 'none'}`}
+                  {`Measured in estimates (${whatIf.baselineIqs.max} max, never rescaled to 100): ${whatIf.measuredFactorSummary.join(' · ') || 'none (below minimum activity)'}`}
                 </Text>
                 {whatIf.unmeasuredFactorSummary.length > 0 ? (
                   <Text role="micro" tone="muted" theme={theme}>
@@ -1181,6 +1234,9 @@ export default function App(): React.ReactElement {
                   </View>
                   <Text role="body" theme={theme}>{sc.timeEstimateLabel}</Text>
                   <Text role="micro" theme={theme}>{sc.iqsEstimateLabel}</Text>
+                  {sc.noChangeReason ? (
+                    <Text role="micro" tone="muted" theme={theme}>{sc.noChangeReason}</Text>
+                  ) : null}
                   {sc.estimatedIqs.measuredFactors.length > 0 ? (
                     <Text role="micro" tone="muted" theme={theme}>
                       {sc.estimatedIqs.measuredFactors.map((mf) => mf.estimateLabel).join(' · ')}
@@ -1194,6 +1250,91 @@ export default function App(): React.ReactElement {
               ))}
 
               <Text role="micro" tone="muted" theme={theme}>{whatIf.disclaimer}</Text>
+            </View>
+          </Card>
+        );
+      })()}
+
+      {/* J20 Focus Windows – requires 21+ local days (3 weeks) and 5+ sittings per weekday × 4-hour cell; shows clear empty state until met */}
+      {(() => {
+        const orphanCount = quality?.byReason?.orphan_background ?? 0;
+        const totalGaps = quality?.count ?? 0;
+        const reliable = orphanCount <= 50 && totalGaps <= 100;
+        if (!reliable || !focusWindows) {
+          return null;
+        }
+        return (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title="Focus Windows"
+              caption={
+                focusWindows.ready
+                  ? `${focusWindows.distinctDays} days (${focusWindows.historyStartDay} to ${focusWindows.lastDay}) · ${focusWindows.cellsMeetingSampleFloor} cells at 5+ sittings`
+                  : 'requires 3 weeks (21+ days) and 5+ sittings per cell'
+              }
+            />
+            <View style={{ gap: theme.space(3) }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Chip label="Based on usage patterns only" theme={theme} />
+                <TierBadge tier="D" theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>
+                  {'Observed phone-timing blocks only; never blocks apps or nudges.'}
+                </Text>
+              </View>
+
+              {!focusWindows.ready ? (
+                <View style={{ backgroundColor: theme.color.card, padding: theme.space(3), borderRadius: theme.radius.sm, gap: theme.space(2) }}>
+                  <Text role="label" theme={theme}>
+                    {focusWindows.emptyStateTitle ?? 'Needs 3 weeks of data and 5 sittings per cell'}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {focusWindows.emptyStateBody ?? ''}
+                  </Text>
+                  <Text role="micro" theme={theme}>
+                    {`Progress: ${focusWindows.progressLabel}`}
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ gap: theme.space(2) }}>
+                  <Text role="micro" tone="muted" theme={theme}>{focusWindows.progressLabel}</Text>
+                  {focusWindows.suggestedWindows.length === 0 ? (
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {`0 weekday × 4-hour blocks matched the low-switching pattern across ${focusWindows.cellsMeetingSampleFloor} qualified cell${focusWindows.cellsMeetingSampleFloor === 1 ? '' : 's'} (requires 15+ min active, 80%+ sittings of 8 s or longer, and at most 12 switches/h).`}
+                    </Text>
+                  ) : (
+                    focusWindows.suggestedWindows.map((w) => (
+                      <View
+                        key={w.cellId}
+                        style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: theme.space(2), paddingVertical: theme.space(1) }}
+                      >
+                        <Text role="label" theme={theme} style={{ flex: 1 }}>
+                          {`${w.label} · ${w.sessionCount} sittings across ${w.distinctDays} days`}
+                        </Text>
+                        <Text role="micro" tone="muted" theme={theme}>
+                          {`${Math.round(w.sustainedShare * 100)}% 8s+ · ${w.switchesPerHour !== null ? `${w.switchesPerHour}/h` : 'rate hidden'}`}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+
+              <Divider theme={theme} />
+
+              <View style={{ gap: theme.space(1) }}>
+                <Text role="label" theme={theme}>What Tier D can show</Text>
+                {focusWindows.capabilities.tierDCanShow.map((line, idx) => (
+                  <Text key={`fw-can-${idx}`} role="micro" tone="muted" theme={theme}>{`• ${line}`}</Text>
+                ))}
+                <Text role="label" theme={theme} style={{ marginTop: theme.space(1) }}>What Tier D cannot show</Text>
+                {focusWindows.capabilities.tierDCannotShow.map((line, idx) => (
+                  <Text key={`fw-cannot-${idx}`} role="micro" tone="muted" theme={theme}>{`• ${line}`}</Text>
+                ))}
+                <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+                  {focusWindows.capabilities.nonDiagnosticRule}
+                </Text>
+              </View>
             </View>
           </Card>
         );
@@ -1390,8 +1531,8 @@ export default function App(): React.ReactElement {
               <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, unmatched/gap events ${totalGaps}`}</Text>
               <Text role="micro" tone="muted" theme={theme}>
                 {hasEvoHistory
-                  ? `Interest Evolution (J4), Discovery Journey (J9), Rabbit Hole (J11), and What-if Simulator (J18, Estimates) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 item (J20) awaits review.`
-                  : `What-if Simulator (J18, Estimates) is active for ${selectedDay}; multi-day cards (J4, J9, J11) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far).`}
+                  ? `Interest Evolution (J4), Discovery Journey (J9), Rabbit Hole (J11), What-if Simulator (J18, Estimates), and Focus Windows (J20, ${focusWindows?.ready ? 'active' : `${focusWindows?.distinctDays ?? daysCollected}/21 days`}) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}).`
+                  : `What-if Simulator (J18, Estimates) and Focus Windows (J20 empty state: ${focusWindows?.distinctDays ?? daysCollected}/21 days) are shown above; 3-day cards (J4, J9, J11) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far).`}
               </Text>
             </View>
           );

@@ -1741,3 +1741,24 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Calls `scoreIqs` directly — never rescaled to 100 (`/55` without 5 labels, `/75` with 5+ decisive explicit labels on Tier D, `/40` below 3 sittings), includes only measured factors (listing unmeasured factors separately), and prints explicit assumptions under every scenario.
 - Added unit + `fast-check` property tests in `packages/core-analytics/tests/whatif.test.mjs`, `usage.test.mjs`, `ingest.test.mjs`, and `evolution.test.mjs`. Stopping for review before J20.
 
+### Round 23 — Minimum-activity floors (`IQS v2`), J18 no-change reasons, and J20 Focus Windows (2026-10-25)
+
+**Phone verification of Round 22 (`21ecdaa`):**
+- Confirmed on device: `orphan_background` dropped to **`0`**, and J18 (`What-if Simulator`) renders accurately.
+
+**1. Minimum-activity rule for small-sample scores and rates (`IQS_METRICS_VERSION = 2`):**
+- `packages/core-analytics/src/scoring.ts` & `docs/metrics.md`:
+  - `session_length` (`<8 s` bounce share) requires `≥ 5` complete sittings (`MIN_SESSION_MIX_SITTINGS = 5`).
+  - `switching` (`switches / activeHours`) requires `≥ 3` non-system sittings **and** `≥ 15 min` (`0.25` active hours, `MIN_SWITCHING_ACTIVE_MS`) — hiding noisy divisions like `0.1` active hours (`6 min`).
+  - `late_night` (`23:00–05:00` share) requires `≥ 15 min` sitting time (`MIN_LATE_NIGHT_ACTIVE_MS`) — hiding `0 %` / `100 %` shares on a 2-minute day.
+  - When all factors fall below minimum activity, `score.value = null` (`max = 0`) and `caveat` states the exact minimum-activity threshold; measurable small samples (`< 15` sittings or `< 30 min`) set `confidence.smallSample = true` and render a `Small sample` chip in `App.tsx`.
+- `discovery.ts` & `rabbithole.ts`: added `repeatShareMeasurable` (`≥ 5` sustained sittings) and `lateNightShareMeasurable` (`≥ 5 min` cluster time) guards.
+
+**2. J18 no-change explanations (`packages/core-analytics/src/whatif.ts`, `App.tsx`):**
+- Added `noChangeReason` on `WhatIfScenario`, explaining both zero-affected cases (`"No change today: no sitting longer than 10 min today (longest sitting was ...)"`, no quiet-hours overlap, no `<8 s` bounce) and cases where screen time drops while rounded IQS points stay unchanged (`0.0 pts`).
+
+**3. J20 Focus Windows (`packages/core-analytics/src/focuswindows.ts`, `apps/mobile/App.tsx`):**
+- Enforces `MIN_FOCUS_WINDOW_DAYS = 21` (3 weeks of distinct local days) and `MIN_FOCUS_CELL_SESSIONS = 5` per `weekday × 4-hour` cell (`42` cells), plus `≥ 15 min` active inside a cell before computing `switchesPerHour`.
+- Renders a calm, explicit empty state reporting `distinctDays / 21` and cells at `5+` sittings until met; uses purely descriptive timing language with a unit-tested ban on clinical/diagnostic/chronotype wording.
+- Added unit + `fast-check` property tests in `packages/core-analytics/tests/focuswindows.test.mjs` and updated `scoring.test.mjs`, `metrics-doc.test.mjs`, and `whatif.test.mjs`. Stopping for review.
+

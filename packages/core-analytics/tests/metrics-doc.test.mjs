@@ -55,7 +55,7 @@ test('the four deviations are recorded as decisions (now approved)', () => {
 });
 
 test('the documented version matches the engine', () => {
-  assert.equal(core.IQS_METRICS_VERSION, 1);
+  assert.equal(core.IQS_METRICS_VERSION, 2);
   assert.ok(DOC.includes(`Current version: **${core.IQS_METRICS_VERSION}**`), 'docs/metrics.md §9 is out of date');
   const score = core.scoreIqs({ window: { fromMs: 0, toMs: 86_400_000 }, sessions: [{ id: 'ses_x', app: 'a', startMs: 1000, endMs: 2000 }] });
   assert.equal(score.metricsVersion, core.IQS_METRICS_VERSION);

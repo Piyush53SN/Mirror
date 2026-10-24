@@ -4,9 +4,9 @@
  * Tests for J18 What-if Simulator (`computeWhatIf`):
  *   - 4 standing edge cases: empty, zero-duration, single-event, all-sessions-under-8s
  *   - Every scenario output is explicitly labelled "Estimate"
- *   - Never rescaled to 100 (/55 without 5 labels, /75 with 5+ labels, /40 when <3 sittings)
+ *   - Never rescaled to 100 (/55 without 5 labels, /75 with 5+ labels, smaller when minimum-activity hides noisy factors)
  *   - Only measured factors enter value and max; unmeasured factors remain unmeasured
- *   - Every scenario states its assumptions explicitly
+ *   - Every scenario states its assumptions explicitly AND explains when a scenario shows no change
  *   - Property-based invariants via fast-check
  */
 import test from 'node:test';
@@ -48,7 +48,7 @@ test('edge 2: zero-duration sessions are ignored and produce hasBaseline false',
   assert.deepEqual(res.scenarios, []);
 });
 
-test('edge 3: single-event (<3 sittings -> switching unmeasured -> max 40, never rescaled to 100)', () => {
+test('edge 3: single-event (1 sitting of 25m -> only late_night /15 meets minimum-activity floor, never rescaled to 100)', () => {
   const res = computeWhatIf({
     window: WINDOW,
     sessions: [
@@ -64,7 +64,8 @@ test('edge 3: single-event (<3 sittings -> switching unmeasured -> max 40, never
   });
 
   assert.equal(res.hasBaseline, true);
-  assert.equal(res.baselineIqs.max, 40, 'only session_length (25) + late_night (15) = 40 measured on 1 sitting');
+  assert.equal(res.smallSampleBaseline, true);
+  assert.equal(res.baselineIqs.max, 15, 'only late_night (15) meets minimum activity on 1 sitting of 25 min');
   assert.equal(res.scenarios.length, 4);
 
   for (const sc of res.scenarios) {
@@ -72,7 +73,7 @@ test('edge 3: single-event (<3 sittings -> switching unmeasured -> max 40, never
     assert.ok(sc.timeEstimateLabel.startsWith('Estimate:'));
     assert.ok(sc.iqsEstimateLabel.startsWith('Estimate:'));
     assert.ok(sc.assumption.length > 20);
-    assert.ok(sc.estimatedIqs.max <= 40, 'never rescaled to 100');
+    assert.ok(sc.estimatedIqs.max <= 15, 'never rescaled to 100');
   }
 
   // Pausing the only app leaves 0 sittings -> IQS not measurable (max 0, value null)
@@ -80,10 +81,11 @@ test('edge 3: single-event (<3 sittings -> switching unmeasured -> max 40, never
   assert.equal(paused.estimatedIqs.value, null);
   assert.equal(paused.estimatedIqs.max, 0);
   assert.ok(paused.iqsEstimateLabel.includes('not rescaled to 100'));
+  assert.match(paused.noChangeReason, /0 sittings remain/);
 });
 
-test('edge 4: all-sessions-under-8s produces valid Estimates out of 55 with zero NaN', () => {
-  const sessions = [0, 1, 2, 3].map((i) => ({
+test('edge 4: all-sessions-under-8s (>=5 opens, <15m total) measures session_length (/25) only and flags small sample', () => {
+  const sessions = [0, 1, 2, 3, 4, 5].map((i) => ({
     id: `b_${i}`,
     app: i % 2 === 0 ? 'com.reddit.frontpage' : 'org.wikipedia',
     startMs: DAY_START + 10 * 3_600_000 + i * 10 * MIN_MS,
@@ -91,12 +93,62 @@ test('edge 4: all-sessions-under-8s produces valid Estimates out of 55 with zero
   }));
   const res = computeWhatIf({ window: WINDOW, sessions, utcOffsetMinutes: 0 });
   assert.equal(res.hasBaseline, true);
-  assert.equal(res.baselineIqs.max, 55);
+  assert.equal(res.smallSampleBaseline, true);
+  assert.equal(res.baselineIqs.max, 25, 'session_length (25) only; switching & late_night hidden on 24s total');
   const skipShort = res.scenarios.find((s) => s.id === 'skip_short_bounces');
   assert.equal(skipShort.remainingSessions, 0);
   assert.equal(skipShort.estimatedIqs.value, null);
   assert.ok(skipShort.timeEstimateLabel.startsWith('Estimate:'));
   assert.ok(skipShort.iqsEstimateLabel.startsWith('Estimate:'));
+});
+
+/* ---------------- J18 no-change explanation & small-sample baseline --------- */
+
+test('explains clearly when scenarios show no change (e.g. no sitting longer than 10 min today, no quiet-hours activity, no <8s bounce)', () => {
+  // 5 daytime sittings of 4m–7m each (total 27m >= 15m, longest = 7m <= 10m, 0 late-night, 0 bounces <8s)
+  const sessions = [
+    { id: 's1', app: 'org.wikipedia', startMs: DAY_START + 9 * 3_600_000, endMs: DAY_START + 9 * 3_600_000 + 7 * MIN_MS },
+    { id: 's2', app: 'com.reddit.frontpage', startMs: DAY_START + 10 * 3_600_000, endMs: DAY_START + 10 * 3_600_000 + 6 * MIN_MS },
+    { id: 's3', app: 'org.wikipedia', startMs: DAY_START + 12 * 3_600_000, endMs: DAY_START + 12 * 3_600_000 + 5 * MIN_MS },
+    { id: 's4', app: 'com.reddit.frontpage', startMs: DAY_START + 14 * 3_600_000, endMs: DAY_START + 14 * 3_600_000 + 5 * MIN_MS },
+    { id: 's5', app: 'org.wikipedia', startMs: DAY_START + 16 * 3_600_000, endMs: DAY_START + 16 * 3_600_000 + 4 * MIN_MS },
+  ];
+
+  const res = computeWhatIf({
+    window: WINDOW,
+    sessions,
+    sittingCapMinutes: 10,
+    quietHours: { startHour: 23, endHour: 5 },
+    utcOffsetMinutes: 0,
+  });
+
+  const cap = res.scenarios.find((s) => s.id === 'cap_sittings');
+  assert.equal(cap.deltaTimeMs, 0);
+  assert.match(cap.noChangeReason, /no sitting longer than 10 min today/i);
+  assert.match(cap.noChangeReason, /longest sitting was 7m/i);
+
+  const qh = res.scenarios.find((s) => s.id === 'quiet_hours');
+  assert.equal(qh.deltaTimeMs, 0);
+  assert.match(qh.noChangeReason, /no sitting activity fell inside 23:00–05:00 local today/i);
+
+  const skip = res.scenarios.find((s) => s.id === 'skip_short_bounces');
+  assert.equal(skip.deltaTimeMs, 0);
+  assert.match(skip.noChangeReason, /no brief open under 8 s recorded today/i);
+});
+
+test('explains when cap_sittings reduces screen time while composite IQS stays unchanged (0.0 pts)', () => {
+  // 5 daytime sittings on same app (0 switches, 0 late-night, 0 <8s opens), one 18m sitting capped to 10m -> -8m time, 0.0 pts IQS delta
+  const sessions = [0, 1, 2, 3, 4].map((i) => ({
+    id: `c_${i}`,
+    app: 'org.wikipedia',
+    startMs: DAY_START + (9 + i) * 3_600_000,
+    endMs: DAY_START + (9 + i) * 3_600_000 + (i === 0 ? 18 * MIN_MS : 5 * MIN_MS),
+  }));
+  const res = computeWhatIf({ window: WINDOW, sessions, sittingCapMinutes: 10, utcOffsetMinutes: 0 });
+  const cap = res.scenarios.find((s) => s.id === 'cap_sittings');
+  assert.equal(cap.deltaTimeMs, -8 * MIN_MS);
+  assert.equal(cap.estimatedIqs.deltaPoints, 0);
+  assert.match(cap.noChangeReason, /Screen time drops by 8m, while IQS stays unchanged \(0\.0 pts\)/);
 });
 
 /* -------------------------- core J18 acceptance criteria -------------------- */
@@ -187,6 +239,7 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
 });
 
 test('property: What-if invariants hold across arbitrary sessions, OS totals, labels, caps, and quiet hours', () => {
+  const VALID_TIER_D_MAXIMA = [0, 15, 25, 30, 40, 45, 55, 60, 75];
   const appArb = fc.constantFrom(
     'org.wikipedia',
     'com.reddit.frontpage',
@@ -229,7 +282,7 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
         });
 
         assert.ok(res.baselineIqs.max !== 100, 'Tier-D without topic vectors can never have max 100');
-        assert.ok([0, 40, 55, 60, 75].includes(res.baselineIqs.max));
+        assert.ok(VALID_TIER_D_MAXIMA.includes(res.baselineIqs.max));
 
         for (const sc of res.scenarios) {
           assert.equal(sc.badge, 'Estimate');
@@ -239,7 +292,10 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
           assert.ok(sc.estimatedTimeMs >= 0 && sc.estimatedTimeMs <= res.baselineTimeMs);
           assert.ok(sc.deltaTimePct >= -1 && sc.deltaTimePct <= 0);
           assert.equal(Number.isNaN(sc.deltaTimePct), false);
-          assert.ok([0, 40, 55, 60, 75].includes(sc.estimatedIqs.max));
+          assert.ok(VALID_TIER_D_MAXIMA.includes(sc.estimatedIqs.max));
+          if (sc.affectedSessions === 0 && sc.deltaTimeMs === 0) {
+            assert.ok(typeof sc.noChangeReason === 'string' && sc.noChangeReason.length > 10);
+          }
           if (sc.estimatedIqs.value !== null) {
             const sumPts = Math.round(sc.estimatedIqs.measuredFactors.reduce((a, b) => a + b.points, 0) * 10) / 10;
             assert.equal(sc.estimatedIqs.value, sumPts);

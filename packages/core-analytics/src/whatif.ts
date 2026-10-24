@@ -78,6 +78,8 @@ export type WhatIfScenario = {
   estimatedIqs: WhatIfIqsEstimate;
   /** Always prefixed with `Estimate:`. */
   iqsEstimateLabel: string;
+  /** Explains why time and/or IQS did not change (or fell below minimum activity) today. */
+  noChangeReason: string | null;
   /** Explicit assumption stated alongside the estimate. */
   assumption: string;
 };
@@ -102,6 +104,8 @@ export type WhatIfResult = {
   timeSource: 'os_aggregate' | 'sessions';
   baselineSessionCount: number;
   baselineIqs: Score;
+  smallSampleBaseline: boolean;
+  minimumActivityNote: string | null;
   measuredFactorSummary: string[];
   unmeasuredFactorSummary: string[];
   sittingCapMinutes: number;
@@ -301,6 +305,16 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
   const disclaimer =
     'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores include only measured factors and are never rescaled to 100.';
 
+  const smallSampleBaseline = baselineIqs.value === null || baselineIqs.confidence.smallSample;
+  const minimumActivityNote =
+    validSessions.length === 0
+      ? null
+      : baselineIqs.value === null
+        ? baselineIqs.caveat
+        : baselineIqs.confidence.smallSample
+          ? `Small sample today (${validSessions.length} sitting${validSessions.length === 1 ? '' : 's'}, ${fmtDurationShort(sessionSumMs)} sitting time) — rates below their minimum-activity floor stay unmeasured.`
+          : null;
+
   if (validSessions.length === 0) {
     return {
       hasBaseline: false,
@@ -308,6 +322,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       timeSource,
       baselineSessionCount: 0,
       baselineIqs,
+      smallSampleBaseline: true,
+      minimumActivityNote,
       measuredFactorSummary,
       unmeasuredFactorSummary,
       sittingCapMinutes,
@@ -316,6 +332,11 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       disclaimer,
     };
   }
+
+  const longestSittingMs = validSessions.reduce(
+    (maxDur, s) => Math.max(maxDur, Math.max(0, s.endMs - s.startMs)),
+    0,
+  );
 
   const baselineFactorMap = new Map<Factor['id'], Factor>();
   for (const f of baselineIqs.factors) baselineFactorMap.set(f.id, f);
@@ -326,6 +347,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     cfSessions: ScoredSession[];
     affectedSessions: number;
     removedTimeMs: number;
+    zeroAffectedReason: string;
+    zeroIqsDeltaReason?: string;
     assumption: string;
   }): WhatIfScenario => {
     const cfScore = scoreIqs({
@@ -382,11 +405,29 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     let iqsEstimateLabel: string;
     if (cfScore.value === null || cfScore.max === 0) {
       iqsEstimateLabel =
-        'Estimate: IQS not measurable (0 remaining sittings in window; not rescaled to 100)';
+        params.cfSessions.length === 0
+          ? 'Estimate: IQS not measurable (0 remaining sittings in window; not rescaled to 100)'
+          : 'Estimate: IQS not measurable (remaining activity below minimum-activity threshold; not rescaled to 100)';
+    } else if (baselineIqs.value === null) {
+      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (baseline below minimum activity; not rescaled to 100)`;
     } else if (sameDenominator && deltaPoints !== null) {
       iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${fmtSignedPoints(deltaPoints)} across ${measuredFactors.length} measured factor${measuredFactors.length === 1 ? '' : 's'}; not rescaled to 100)`;
     } else {
       iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (measured max changed from /${baselineIqs.max} to /${cfScore.max}; not rescaled to 100)`;
+    }
+
+    let noChangeReason: string | null = null;
+    if (params.affectedSessions === 0 && deltaTimeMs === 0) {
+      noChangeReason = params.zeroAffectedReason;
+    } else if (cfScore.value === null && baselineIqs.value !== null) {
+      noChangeReason =
+        params.cfSessions.length === 0
+          ? 'After this scenario, 0 sittings remain in the window, so counterfactual IQS is hidden rather than guessed.'
+          : 'After this scenario, remaining activity falls below the minimum-activity threshold (needs at least 5 sittings or 15 min), so counterfactual IQS is hidden rather than computed on a tiny sample.';
+    } else if (sameDenominator && deltaPoints === 0) {
+      noChangeReason =
+        params.zeroIqsDeltaReason ??
+        'Screen time changes, while composite IQS stays unchanged (0.0 pts) across the measured factors today.';
     }
 
     return {
@@ -409,6 +450,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         unmeasuredFactors,
       },
       iqsEstimateLabel,
+      noChangeReason,
       assumption: params.assumption,
     };
   };
@@ -447,6 +489,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         cfSessions: remaining,
         affectedSessions: affected,
         removedTimeMs: topApp.removedMs,
+        zeroAffectedReason: `No change today: no recorded sittings for ${topApp.label} in this window.`,
         assumption: `Assumes time spent in ${topApp.label} is not replaced by another app (in practice, part of it usually shifts), and recomputes only measured factors on the remaining sittings.`,
       }),
     );
@@ -472,6 +515,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         cfSessions: capped,
         affectedSessions: affected,
         removedTimeMs: trimmedMs,
+        zeroAffectedReason: `No change today: no sitting longer than ${sittingCapMinutes} min today (longest sitting was ${fmtDurationShort(longestSittingMs)}).`,
+        zeroIqsDeltaReason: `Screen time drops by ${fmtDurationShort(trimmedMs)}, while IQS stays unchanged (0.0 pts): capping above ${sittingCapMinutes} min keeps opens at 8 s or longer (longer is not scored as better) and did not shift switching or late-night share enough to move rounded points today.`,
         assumption: `Assumes sittings longer than ${sittingCapMinutes} min end at ${sittingCapMinutes} min without extra re-opens later. Time delta sums recorded sitting time above ${sittingCapMinutes} min${timeSource === 'os_aggregate' ? ' (subtracted from the OS total and clamped to ≥ 0)' : ''}.`,
       }),
     );
@@ -497,6 +542,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         cfSessions: quietFiltered,
         affectedSessions: affected,
         removedTimeMs: removedQuietMs,
+        zeroAffectedReason: `No change today: no sitting activity fell inside ${quietHoursLabel} local today.`,
         assumption: `Assumes usage inside ${quietHoursLabel} local does not happen and is not shifted earlier into the evening, leaving daytime sittings unchanged.`,
       }),
     );
@@ -523,6 +569,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         cfSessions: sustainedOnly,
         affectedSessions: affected,
         removedTimeMs: removedBounceMs,
+        zeroAffectedReason: 'No change today: no brief open under 8 s recorded today.',
         assumption:
           'Assumes reflex or accidental opens under 8 s do not occur, leaving all sittings of 8 s or longer unchanged.',
       }),
@@ -535,6 +582,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     timeSource,
     baselineSessionCount: validSessions.length,
     baselineIqs,
+    smallSampleBaseline,
+    minimumActivityNote,
     measuredFactorSummary,
     unmeasuredFactorSummary,
     sittingCapMinutes,

@@ -51,23 +51,70 @@ test('zero-duration sessions are not sessions', () => {
   assert.equal(score.confidence.sample, 0);
 });
 
-test('a single session is measurable but low-confidence', () => {
-  const score = scoreIqs({ window: DAY, sessions: [session('ses_one', T0, 5 * MIN)] });
-  assert.equal(score.confidence.sample, 1);
-  assert.equal(score.confidence.level, 'low');
-  assert.equal(score.factors.find((f) => f.id === 'switching').measurable, false, 'one sitting cannot show switching');
-  assert.equal(score.max, 40, 'length 25 + late night 15; switching and labels need more sittings, topic has no vectors');
-  assert.equal(score.value, 25 + 15);
+test('single-event edge: 1 short sitting (5 min) stays unmeasured under minimum-activity rule; 1 long sitting (20 min) measures only late-night (/15) at low confidence', () => {
+  const shortSingle = scoreIqs({ window: DAY, sessions: [session('ses_one', T0, 5 * MIN)] });
+  assert.equal(shortSingle.confidence.sample, 1);
+  assert.equal(shortSingle.confidence.level, 'low');
+  assert.equal(shortSingle.confidence.smallSample, true);
+  assert.equal(shortSingle.value, null, '5 min across 1 sitting is below all minimum-activity floors');
+  assert.equal(shortSingle.max, 0);
+  assert.match(shortSingle.caveat, /Minimum activity not met yet/);
+
+  const longSingle = scoreIqs({ window: DAY, sessions: [session('ses_long', T0, 20 * MIN)] });
+  assert.equal(longSingle.confidence.sample, 1);
+  assert.equal(longSingle.confidence.level, 'low');
+  assert.equal(longSingle.confidence.smallSample, true);
+  assert.equal(longSingle.factors.find((f) => f.id === 'session_length').measurable, false, '<5 sittings');
+  assert.equal(longSingle.factors.find((f) => f.id === 'switching').measurable, false, '<3 sittings');
+  assert.equal(longSingle.factors.find((f) => f.id === 'late_night').measurable, true, '20 min >= 15 min');
+  assert.equal(longSingle.max, 15);
+  assert.equal(longSingle.value, 15);
 });
 
-test('all sessions under 8 s: the length part is zero, not undefined', () => {
+test('minimum-activity rule: hides late-night share on a 2-minute day and hides switching rate on 0.1 active hours (6 min)', () => {
+  // 2-minute day at 23:30 local -> late_night MUST be hidden (not 0/15!)
+  const twoMinLate = scoreIqs({
+    window: DAY,
+    sessions: [
+      session('ln_1', Date.parse('2026-10-16T23:30:00Z'), 1 * MIN, 'com.a'),
+      session('ln_2', Date.parse('2026-10-16T23:35:00Z'), 1 * MIN, 'com.b'),
+    ],
+    utcOffsetMinutes: 0,
+  });
+  const lateFactor = twoMinLate.factors.find((f) => f.id === 'late_night');
+  assert.equal(lateFactor.measurable, false, 'late-night share hidden on 2-min day');
+  assert.match(lateFactor.detail, /at least 15 min needed/);
+  assert.equal(twoMinLate.value, null);
+  assert.equal(twoMinLate.max, 0);
+
+  // 0.1 active hours (6 min across 6 sittings with rapid switches) -> switching MUST be hidden!
+  const sixMinSwitchy = scoreIqs({
+    window: DAY,
+    sessions: Array.from({ length: 6 }, (_, i) =>
+      session(`sw_${i}`, T0 + i * 2 * MIN, 1 * MIN, i % 2 === 0 ? 'com.a' : 'com.b'),
+    ),
+    utcOffsetMinutes: 0,
+  });
+  const swFactor = sixMinSwitchy.factors.find((f) => f.id === 'switching');
+  assert.equal(swFactor.measurable, false, 'switching rate hidden on 0.1 active hours (6 min)');
+  assert.match(swFactor.detail, /0\.25 active hours/);
+  assert.equal(sixMinSwitchy.factors.find((f) => f.id === 'late_night').measurable, false, '6 min < 15 min');
+  assert.equal(sixMinSwitchy.factors.find((f) => f.id === 'session_length').measurable, true, '6 >= 5 sittings');
+  assert.equal(sixMinSwitchy.max, 25);
+  assert.equal(sixMinSwitchy.confidence.smallSample, true);
+});
+
+test('all sessions under 8 s: the length part is zero, not undefined, while sub-minute rates stay hidden', () => {
   const sessions = Array.from({ length: 12 }, (_, i) => session(`ses_s${i}`, T0 + i * MIN, 4_000));
   const score = scoreIqs({ window: DAY, sessions });
   const factor = score.factors.find((f) => f.id === 'session_length');
   assert.equal(factor.measurable, true);
   assert.equal(factor.points, 0);
   assert.match(factor.detail, /12 of 12 opens ended under 8 s/);
-  assert.ok(score.value > 0, 'the other parts still count');
+  assert.equal(score.factors.find((f) => f.id === 'switching').measurable, false, '48 s < 15 min active');
+  assert.equal(score.factors.find((f) => f.id === 'late_night').measurable, false, '48 s < 15 min sitting time');
+  assert.equal(score.max, 25);
+  assert.equal(score.value, 0);
 });
 
 /* ------------------------------------------------------------- arithmetic --- */

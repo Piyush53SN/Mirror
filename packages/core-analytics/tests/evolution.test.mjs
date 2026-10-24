@@ -56,6 +56,8 @@ test('scoreIqs confidence: 39 unspanned orphan gaps never say "No collection gap
     { id: 's1', app: 'com.whatsapp', startMs: T0 + 10 * MIN_MS, endMs: T0 + 25 * MIN_MS },
     { id: 's2', app: 'org.wikipedia', startMs: T0 + 40 * MIN_MS, endMs: T0 + 55 * MIN_MS },
     { id: 's3', app: 'com.whatsapp', startMs: T0 + 70 * MIN_MS, endMs: T0 + 80 * MIN_MS },
+    { id: 's4', app: 'org.wikipedia', startMs: T0 + 95 * MIN_MS, endMs: T0 + 105 * MIN_MS },
+    { id: 's5', app: 'com.whatsapp', startMs: T0 + 120 * MIN_MS, endMs: T0 + 130 * MIN_MS },
   ];
   const score = scoreIqs({
     window,
@@ -64,7 +66,7 @@ test('scoreIqs confidence: 39 unspanned orphan gaps never say "No collection gap
     approximate: true,
   });
 
-  assert.equal(score.max, 55, 'without 5 labels or vectors, usage-only max is 55');
+  assert.equal(score.max, 55, 'with 5+ sittings and 15+ min active (without 5 labels or vectors), usage-only max is 55');
   assert.ok(!score.confidence.reasons.some((r) => /No collection gaps/i.test(r)));
   assert.ok(score.confidence.reasons.some((r) => /39 unmatched OS events recorded/i.test(r)));
   assert.ok(!score.confidence.reasons.some((r) => /0 min unmeasured/i.test(r)));

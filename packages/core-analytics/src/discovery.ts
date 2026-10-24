@@ -34,6 +34,7 @@ import { isIgnoredSystemApp } from './usage';
 export const MIN_DISCOVERY_DAYS = 3;
 export const FULL_DISCOVERY_DAYS = 14;
 export const MIN_REPEATED_ROUTE_COUNT = 2;
+export const MIN_REPEAT_SHARE_SESSIONS = 5;
 
 export type DiscoveryRouteRow = {
   fromApp: string;
@@ -96,6 +97,8 @@ export type DiscoveryJourneyResult = {
   singleDayAppsCount: number;
   /** Share of sustained sittings spent in apps active on 2+ days, bounded [0, 1]. */
   repeatSessionShare: number;
+  /** False when fewer than `MIN_REPEAT_SHARE_SESSIONS` (5) sustained sittings exist. */
+  repeatShareMeasurable: boolean;
   /** Total sustained cross-app handoffs (A -> B within 5 min) across window. */
   totalHandoffs: number;
   /** Repeated cross-app handoffs (count >= 2), ranked by activeDays then count. */
@@ -188,6 +191,7 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
       repeatAppsCount: 0,
       singleDayAppsCount: 0,
       repeatSessionShare: 0,
+      repeatShareMeasurable: false,
       totalHandoffs: 0,
       routes: [],
       topAppByTime,
@@ -293,6 +297,7 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
     repeatAppsCount,
     singleDayAppsCount,
     repeatSessionShare,
+    repeatShareMeasurable: sustained.length >= MIN_REPEAT_SHARE_SESSIONS,
     totalHandoffs,
     routes,
     topAppByTime,
