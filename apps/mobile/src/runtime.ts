@@ -11,7 +11,7 @@
  */
 import * as SQLite from 'expo-sqlite';
 import { MirrorStore } from '@mirror/store';
-import { collectUsage, describeGapSummary, validateDailyTotals, isIgnoredSystemApp } from '@mirror/core-analytics';
+import { buildUsageEvents, collectUsage, describeGapSummary, validateDailyTotals, isIgnoredSystemApp } from '@mirror/core-analytics';
 import type { OsTotal } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
@@ -86,7 +86,30 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           try {
             launcherPkgs = await usage.getLauncherPackages();
           } catch {}
-          return collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+          const res = await collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+          // One-time repair of today's `data_gaps` from authoritative raw UsageEvents
+          // so stale false orphans recorded earlier today before the PAUSED->STOPPED
+          // lifecycle fix are replaced with the honest recomputed count for today.
+          try {
+            const repairMarker = await store.getCursor('lifecycle_repair_v22');
+            const todayStart = new Date(now);
+            todayStart.setHours(0, 0, 0, 0);
+            const fromDayMs = todayStart.getTime();
+            const toDayMs = fromDayMs + 86_400_000;
+            if (repairMarker === null && await usage.hasPermission()) {
+              const rawToday = await usage.queryEvents(fromDayMs - 3_600_000, now);
+              const rebuilt = buildUsageEvents(rawToday, {
+                sinceMs: fromDayMs - 3_600_000,
+                untilMs: now,
+                ignorePackages: launcherPkgs,
+                gapFloorMs: fromDayMs,
+              });
+              await store.appendEvents(rebuilt.events);
+              await store.replaceGapsForWindow('usage_stats', { fromMs: fromDayMs, toMs: toDayMs }, rebuilt.gaps, now);
+              await store.setCursor('lifecycle_repair_v22', now);
+            }
+          } catch {}
+          return res;
         })();
         try {
           return await collectInFlight;

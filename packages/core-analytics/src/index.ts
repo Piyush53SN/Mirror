@@ -7,3 +7,4 @@ export * from './sessionize';
 export * from './synthetic';
 export * from './usage';
 export * from './validate';
+export * from './whatif';

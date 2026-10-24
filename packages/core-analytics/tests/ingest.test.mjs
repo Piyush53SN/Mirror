@@ -173,13 +173,20 @@ test('a day with only a gap still gets a rollup: silence is data', () => {
   assert.equal(result.rollups[0].payload.gaps.count, 1);
 });
 
-test('describeGapSummary: no gaps is a sentence, not a friendly zero', () => {
+test('describeGapSummary: no gaps is a sentence, spanned gaps report unmeasured time, and zero-length unmatched events are not presented as lost data', () => {
   assert.equal(describeGapSummary({ count: 0, byReason: {}, measuredGapMs: 0 }), 'No collection gaps recorded.');
   assert.equal(describeGapSummary({ count: 1, byReason: { too_long: 1 }, measuredGapMs: 3_600_000 }), '1 collection gap (1 h unmeasured; 1 too long).');
   assert.equal(
     describeGapSummary({ count: 5, byReason: { orphan_background: 4, too_long: 1 }, measuredGapMs: 2 * 3_600_000 + 30 * 60_000 }),
     '5 collection gaps (2 h 30 min unmeasured; 4 orphan background, 1 too long).',
   );
+  const zeroSpan = describeGapSummary({ count: 49, byReason: { orphan_background: 49 }, measuredGapMs: 0 });
+  assert.equal(
+    zeroSpan,
+    '49 unmatched OS events (49 orphan background) — point-in-time boundary events, not lost usage time.',
+  );
+  assert.ok(!zeroSpan.includes('collection gap'), 'zero-length unmatched events must not say collection gaps');
+  assert.ok(!zeroSpan.includes('0 min unmeasured'), 'zero-length unmatched events must not say 0 min unmeasured');
 });
 
 /* ----------------------------------------------------------------- rollups --- */

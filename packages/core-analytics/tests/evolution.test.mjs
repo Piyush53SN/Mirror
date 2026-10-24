@@ -66,7 +66,8 @@ test('scoreIqs confidence: 39 unspanned orphan gaps never say "No collection gap
 
   assert.equal(score.max, 55, 'without 5 labels or vectors, usage-only max is 55');
   assert.ok(!score.confidence.reasons.some((r) => /No collection gaps/i.test(r)));
-  assert.ok(score.confidence.reasons.some((r) => /39 collection gaps recorded/i.test(r)));
+  assert.ok(score.confidence.reasons.some((r) => /39 unmatched OS events recorded/i.test(r)));
+  assert.ok(!score.confidence.reasons.some((r) => /0 min unmeasured/i.test(r)));
   assert.ok(!score.confidence.reasons.some((r) => /scaled to daily totals/i.test(r)));
 });
 

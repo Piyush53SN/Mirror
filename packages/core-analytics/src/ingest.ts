@@ -281,12 +281,15 @@ export function ingest(batch: IngestBatch, options: IngestOptions = {}): IngestR
  */
 export function describeGapSummary(summary: { count: number; byReason: Record<string, number>; measuredGapMs: number }): string {
   if (!Number.isFinite(summary.count) || summary.count <= 0) return 'No collection gaps recorded.';
-  const minutes = Math.round(summary.measuredGapMs / 60_000);
-  const hours = Math.floor(minutes / 60);
-  const minutesText = hours === 0 ? `${minutes} min` : minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
   const reasons = Object.entries(summary.byReason)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([reason, count]) => `${count} ${reason.replace(/_/g, ' ')}`)
     .join(', ');
+  if (!Number.isFinite(summary.measuredGapMs) || summary.measuredGapMs <= 0) {
+    return `${summary.count} unmatched OS event${summary.count === 1 ? '' : 's'} (${reasons}) — point-in-time boundary events, not lost usage time.`;
+  }
+  const minutes = Math.round(summary.measuredGapMs / 60_000);
+  const hours = Math.floor(minutes / 60);
+  const minutesText = hours === 0 ? `${minutes} min` : minutes % 60 === 0 ? `${hours} h` : `${hours} h ${minutes % 60} min`;
   return `${summary.count} collection gap${summary.count === 1 ? '' : 's'} (${minutesText} unmeasured; ${reasons}).`;
 }

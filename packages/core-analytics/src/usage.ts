@@ -71,11 +71,9 @@ export const USAGE_EVENT_TYPE = {
 } as const;
 
 const FOREGROUND_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, USAGE_EVENT_TYPE.ACTIVITY_RESUMED]);
-const BACKGROUND_TYPES = new Set<number>([
-  USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND,
-  USAGE_EVENT_TYPE.ACTIVITY_PAUSED,
-  USAGE_EVENT_TYPE.ACTIVITY_STOPPED,
-]);
+const PAUSE_TYPES = new Set<number>([USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, USAGE_EVENT_TYPE.ACTIVITY_PAUSED]);
+const STOP_TYPES = new Set<number>([USAGE_EVENT_TYPE.ACTIVITY_STOPPED]);
+const BACKGROUND_TYPES = new Set<number>([...PAUSE_TYPES, ...STOP_TYPES]);
 // Destroyed removes a class but does not by itself close the app unless it was last activity
 const DESTROY_TYPES = new Set<number>([USAGE_EVENT_TYPE.ACTIVITY_DESTROYED]);
 // Screen-off, keyguard and shutdown implicitly end any foreground interval.
@@ -130,7 +128,148 @@ export type UsageDropReason =
   | 'too_long'
   | 'below_minimum';
 
-export type UsageDrop = { reason: UsageDropReason; app?: string; at?: number };
+export type UsageDrop = {
+  reason: UsageDropReason;
+  app?: string;
+  at?: number;
+  eventType?: number;
+  className?: string;
+};
+
+const EVENT_TYPE_NAMES: Readonly<Record<number, string>> = {
+  0: 'NONE',
+  1: 'ACTIVITY_RESUMED',
+  2: 'ACTIVITY_PAUSED',
+  3: 'END_OF_DAY',
+  4: 'CONTINUE_PREVIOUS_DAY',
+  5: 'CONFIGURATION_CHANGE',
+  6: 'SYSTEM_INTERACTION',
+  7: 'USER_INTERACTION',
+  8: 'SHORTCUT_INVOCATION',
+  9: 'CHOOSER_ACTION',
+  10: 'NOTIFICATION_SEEN',
+  11: 'STANDBY_BUCKET_CHANGED',
+  12: 'NOTIFICATION_INTERRUPTION',
+  13: 'SLICE_PINNED_PRIV',
+  14: 'SLICE_PINNED',
+  15: 'SCREEN_INTERACTIVE',
+  16: 'SCREEN_NON_INTERACTIVE',
+  17: 'KEYGUARD_SHOWN',
+  18: 'KEYGUARD_HIDDEN',
+  19: 'FOREGROUND_SERVICE_START',
+  20: 'FOREGROUND_SERVICE_STOP',
+  21: 'CONTINUING_FOREGROUND_SERVICE',
+  22: 'ROLLOVER_FOREGROUND_SERVICE',
+  23: 'ACTIVITY_STOPPED',
+  24: 'ACTIVITY_DESTROYED',
+  25: 'FLUSH_TO_DISK',
+  26: 'DEVICE_SHUTDOWN',
+  27: 'DEVICE_STARTUP',
+};
+
+export function usageEventTypeName(eventType?: number): string {
+  if (eventType === undefined || !Number.isFinite(eventType)) return 'UNKNOWN';
+  return EVENT_TYPE_NAMES[eventType] ?? `TYPE_${eventType}`;
+}
+
+export type OrphanEventTypeRow = {
+  eventType: number;
+  typeName: string;
+  count: number;
+};
+
+export type OrphanAppRow = {
+  app: string;
+  label: string;
+  count: number;
+  byType: string;
+};
+
+export type OrphanNewestRow = {
+  app: string;
+  label: string;
+  eventType: number;
+  typeName: string;
+  at: number;
+};
+
+export type OrphanDiagnosticSummary = {
+  total: number;
+  byEventType: OrphanEventTypeRow[];
+  byApp: OrphanAppRow[];
+  newest: OrphanNewestRow[];
+};
+
+/**
+ * Summarise `orphan_background` drops by Android `UsageEvents.Event` type code,
+ * by app, and newest-first so device diagnostics show exactly where unmatched
+ * close events come from.
+ */
+export function summarizeOrphanDrops(
+  dropped: readonly UsageDrop[],
+  labels: Readonly<Record<string, string>> = {},
+  limit = 6,
+): OrphanDiagnosticSummary {
+  const orphans = dropped.filter((d) => d.reason === 'orphan_background');
+  const typeCounts = new Map<number, number>();
+  const appStats = new Map<string, { count: number; types: Map<number, number> }>();
+
+  for (const d of orphans) {
+    const et = d.eventType ?? -1;
+    typeCounts.set(et, (typeCounts.get(et) ?? 0) + 1);
+    const app = d.app ?? '<unknown>';
+    let entry = appStats.get(app);
+    if (!entry) {
+      entry = { count: 0, types: new Map() };
+      appStats.set(app, entry);
+    }
+    entry.count += 1;
+    entry.types.set(et, (entry.types.get(et) ?? 0) + 1);
+  }
+
+  const byEventType: OrphanEventTypeRow[] = [...typeCounts.entries()]
+    .map(([eventType, count]) => ({
+      eventType,
+      typeName: eventType >= 0 ? `${eventType}:${usageEventTypeName(eventType)}` : 'unknown',
+      count,
+    }))
+    .sort((a, b) => b.count - a.count || a.eventType - b.eventType);
+
+  const byApp: OrphanAppRow[] = [...appStats.entries()]
+    .map(([app, st]) => ({
+      app,
+      label: labels[app] ?? app,
+      count: st.count,
+      byType: [...st.types.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([et, c]) => `${et >= 0 ? `${et}:${usageEventTypeName(et)}` : 'unknown'}×${c}`)
+        .join(', '),
+    }))
+    .sort((a, b) => b.count - a.count || a.app.localeCompare(b.app))
+    .slice(0, Math.max(1, limit));
+
+  const newest: OrphanNewestRow[] = [...orphans]
+    .sort((a, b) => (b.at ?? 0) - (a.at ?? 0))
+    .slice(0, Math.max(1, limit))
+    .map((d) => {
+      const app = d.app ?? '<unknown>';
+      const et = d.eventType ?? -1;
+      return {
+        app,
+        label: labels[app] ?? app,
+        eventType: et,
+        typeName: et >= 0 ? `${et}:${usageEventTypeName(et)}` : 'unknown',
+        at: d.at ?? 0,
+      };
+    });
+
+  return {
+    total: orphans.length,
+    byEventType,
+    byApp,
+    newest,
+  };
+}
 
 /** A counted gap. `count` is how many intervals/rows it represents. */
 export type UsageGap = {
@@ -389,11 +528,23 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   }
 
   const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
-  // Track recently closed apps to suppress duplicate bg that arrives shortly after close via single-foreground enforcement
-  // This reduces orphans 319 -> 64 -> <50: when fg A closes B at T, later bg B at T+ few sec is duplicate, not a real gap
-  // Increased from 10s to 60s after real device showed 319 orphans. 120s considered loosening to pass gate – keep honest 60s, use real raw capture to drive 64-><50
+  // Track recently closed apps to suppress duplicate bg within honest 60s window
+  // (never loosened beyond 60s), PLUS Android Activity lifecycle state:
+  //   1. `closedInStream`: packages whose foreground sitting already opened and
+  //      closed in this stream (cleared on next RESUMED). A subsequent
+  //      `ACTIVITY_STOPPED (23)` without an intervening `RESUMED` is Android's
+  //      normal `PAUSED -> STOPPED` transition (e.g. Recents cache / PiP >60s
+  //      after `onPause`), never a missed foreground sitting; whereas an
+  //      `ACTIVITY_PAUSED (2)` >60s after close still honestly counts as
+  //      `orphan_background`.
+  //   2. `orphanPausedAt`: when an unmatched `ACTIVITY_PAUSED (2)` fires for a
+  //      never-opened package, Android emits `ACTIVITY_STOPPED (23)` ~300ms
+  //      later for that same close; record the pause so one missed sitting
+  //      counts as 1 orphan rather than 2.
   const recentlyClosed = new Map<string, number>();
-  const RECENT_CLOSE_SUPPRESS_MS = 60_000; // ignore orphan bg within 60s of close (was 10s -> 60s, 120s would be loosening – keep honest)
+  const closedInStream = new Set<string>();
+  const orphanPausedAt = new Map<string, number>();
+  const RECENT_CLOSE_SUPPRESS_MS = 60_000;
 
   for (const row of ordered) {
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
@@ -402,19 +553,20 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     // is global: the user is no longer looking at any app.
     if (IMPLICIT_BACKGROUND_TYPES.has(row.eventType)) {
       if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
-        drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
+        drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
         continue;
       }
       for (const [app, entry] of open) {
         closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
         recentlyClosed.set(app, row.timeStamp);
+        closedInStream.add(app);
       }
       open.clear();
       continue;
     }
 
     if (!PACKAGE.test(row.packageName)) {
-      drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
       if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
         addGap(gaps, { reason: 'invalid_package', count: 1 });
       }
@@ -422,7 +574,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     }
 
     if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
-      drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
       continue;
     }
 
@@ -436,15 +588,16 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         for (const [app, entry] of open) {
           closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
           recentlyClosed.set(app, row.timeStamp);
+          closedInStream.add(app);
         }
         open.clear();
       }
-      drops.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'ignored_package', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
       continue;
     }
 
     if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType) && !DESTROY_TYPES.has(row.eventType)) {
-      drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp });
+      drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
       continue;
     }
 
@@ -457,13 +610,14 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       const className = row.className && row.className.length > 0 ? row.className : '__default__';
       const entry = open.get(row.packageName);
       if (!entry) {
-        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
+        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp, eventType: row.eventType, className: row.className });
         continue;
       }
       entry.activities.delete(className);
       if (entry.activities.size === 0) {
         closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
         recentlyClosed.set(row.packageName, row.timeStamp);
+        closedInStream.add(row.packageName);
         open.delete(row.packageName);
       }
       continue;
@@ -479,9 +633,13 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         if (otherApp !== row.packageName) {
           closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
           recentlyClosed.set(otherApp, row.timeStamp);
+          closedInStream.add(otherApp);
           open.delete(otherApp);
         }
       }
+
+      closedInStream.delete(row.packageName);
+      orphanPausedAt.delete(row.packageName);
 
       let entry = open.get(row.packageName);
       if (!entry) {
@@ -496,18 +654,33 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
-    // Background: PAUSED, STOPPED, MOVE_TO_BACKGROUND
-    // Close an app only when its last activity is paused/stopped.
-    // STOPPED must not close an app whose other activity is resumed.
+    // Background: PAUSED (2) and STOPPED (23)
+    // Close an app only when its last resumed activity pauses/stops.
+    // STOPPED (23) for an already-paused activity must NEVER close a different
+    // currently-resumed activity of the same app (e.g. Splash -> Main or Home -> Chat).
     const entry = open.get(row.packageName);
     if (!entry) {
       const recentClose = recentlyClosed.get(row.packageName);
       if (recentClose !== undefined && row.timeStamp - recentClose <= RECENT_CLOSE_SUPPRESS_MS) {
-        // Duplicate bg shortly after close via single-foreground – ignore, not a real gap
-        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
+        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp, eventType: row.eventType, className: row.className });
         continue;
       }
-      drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
+      if (STOP_TYPES.has(row.eventType)) {
+        // Delayed `onStop (23)` for an already-closed sitting (`RESUMED -> PAUSED -> ... -> STOPPED`)
+        // or companion `STOPPED (23)` within 60s of an already-counted orphan `PAUSED (2)`
+        const priorOrphanPause = orphanPausedAt.get(row.packageName);
+        if (
+          closedInStream.has(row.packageName) ||
+          (priorOrphanPause !== undefined && row.timeStamp - priorOrphanPause <= RECENT_CLOSE_SUPPRESS_MS)
+        ) {
+          drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp, eventType: row.eventType, className: row.className });
+          continue;
+        }
+      }
+      if (PAUSE_TYPES.has(row.eventType)) {
+        orphanPausedAt.set(row.packageName, row.timeStamp);
+      }
+      drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp, eventType: row.eventType, className: row.className });
       if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
         addGap(gaps, { reason: 'orphan_background', count: 1 });
       }
@@ -518,22 +691,23 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     // which should be closed by any background for that app.
     let deleted = entry.activities.delete(className);
     if (!deleted) {
-      // Try fallbacks for mismatched classNames (OS sometimes reports empty className on bg)
       deleted = entry.activities.delete('__default__');
     }
     if (!deleted) {
       deleted = entry.activities.delete('__carried__');
     }
     if (!deleted && entry.activities.size > 0) {
-      // Fix for 319 orphans: OS sometimes reports different className on bg than fg (e.g., fg MainActivity, bg empty or different)
-      // Previously we kept open when size>1 and className mismatch, causing abandoned_open accumulation and later orphans
-      // Now always close one activity when bg className not found – ensures progress and reduces orphans
-      // This is safe because single-foreground already ensures only one app is fg at a time, so multiple activities for same app
-      // are usually the same app with different classNames, not truly concurrent
-      const firstKey = entry.activities.keys().next().value;
-      if (firstKey) {
-        entry.activities.delete(firstKey);
-        deleted = true;
+      // Only apply the `firstKey` class-mismatch fallback on `ACTIVITY_PAUSED (2)`
+      // (or when `ACTIVITY_STOPPED (23)` carries no className). When `ACTIVITY_STOPPED (23)`
+      // names a specific Activity `A` while Activity `B` is currently resumed in `entry.activities`,
+      // `A` is simply finishing its `PAUSED -> STOPPED` transition after in-app navigation `A -> B`;
+      // deleting `B` here prematurely killed multi-activity sessions and caused +2 false orphans later.
+      if (PAUSE_TYPES.has(row.eventType) || className === '__default__') {
+        const firstKey = entry.activities.keys().next().value;
+        if (firstKey) {
+          entry.activities.delete(firstKey);
+          deleted = true;
+        }
       }
     }
 
@@ -541,6 +715,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       // Last activity closed, close interval
       closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
       recentlyClosed.set(row.packageName, row.timeStamp);
+      closedInStream.add(row.packageName);
       open.delete(row.packageName);
     } else {
       // Still has other resumed activities, keep earliestStart unchanged

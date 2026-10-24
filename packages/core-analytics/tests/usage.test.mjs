@@ -16,7 +16,7 @@ import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, '..');
 const core = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.build', 'core.mjs') });
-const { buildUsageEvents, collectUsage, USAGE_EVENT_TYPE, DEFAULT_IGNORED_PACKAGES } = core;
+const { buildUsageEvents, collectUsage, summarizeOrphanDrops, USAGE_EVENT_TYPE, DEFAULT_IGNORED_PACKAGES } = core;
 
 const T0 = Date.parse('2026-10-16T09:00:00Z');
 const at = (minutes) => T0 + minutes * 60_000;
@@ -467,4 +467,50 @@ test('ACTIVITY_DESTROYED (24) on an already-closed app >60s later does not infla
   const orphans = result.gaps.find((g) => g.reason === 'orphan_background')?.count ?? 0;
   assert.equal(orphans, 1, 'only unmatched ACTIVITY_STOPPED counts as orphan_background; ACTIVITY_DESTROYED cleanup does not');
 });
+
+test('in-app Activity A -> Activity B transition: STOPPED(A) does not kill resumed B or create +2 false orphans when B closes >60s later', () => {
+  // Reproduces real Android navigation: HomeActivity -> ConversationActivity
+  // 1) HomeActivity RESUMED at 0s, PAUSED at 2s
+  // 2) ConversationActivity RESUMED at 2.02s
+  // 3) HomeActivity STOPPED (23) at 2.4s (finishing off-screen transition)
+  // 4) User reads chat for 5 minutes (> 60s), then leaves ConversationActivity (PAUSED + STOPPED at 5m02s)
+  const t0 = at(0);
+  const rows = [
+    { packageName: 'com.whatsapp', className: 'HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 },
+    { packageName: 'com.whatsapp', className: 'HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 2_000 },
+    { packageName: 'com.whatsapp', className: 'ConversationActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 + 2_020 },
+    { packageName: 'com.whatsapp', className: 'HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: t0 + 2_400 },
+    { packageName: 'com.whatsapp', className: 'ConversationActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 302_000 },
+    { packageName: 'com.whatsapp', className: 'ConversationActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: t0 + 302_350 },
+  ];
+  const result = buildUsageEvents(rows, { sinceMs: t0 - 1_000, untilMs: t0 + 400_000 });
+  const orphans = result.gaps.find((g) => g.reason === 'orphan_background')?.count ?? 0;
+  assert.equal(orphans, 0, 'in-app navigation + normal close >60s later must produce 0 orphans');
+  // Because the gap between 2.00s and 2.02s is <= 2s, both intervals merge into a single 302s sitting!
+  assert.equal(result.stats.intervals, 1);
+  assert.equal(result.stats.totalMs, 302_000);
+});
+
+test('delayed ACTIVITY_STOPPED (23) >60s after an already-closed sitting does not count as orphan, while unmatched PAUSED >60s still counts once and summarizeOrphanDrops breaks down by eventType & app', () => {
+  const t0 = at(0);
+  const rows = [
+    // App 1 closes cleanly at t=1m, then Android moves cached task from PAUSED to STOPPED at t=4m (>60s)
+    { packageName: 'com.instagram.android', className: 'MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 },
+    { packageName: 'com.instagram.android', className: 'MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 60_000 },
+    { packageName: 'com.instagram.android', className: 'MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: t0 + 240_000 },
+    // App 2 was never seen opening in foreground; when it closes at t=5m, Android emits PAUSED (2) + STOPPED (23) 300ms apart
+    { packageName: 'com.reddit.frontpage', className: 'MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 300_000 },
+    { packageName: 'com.reddit.frontpage', className: 'MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: t0 + 300_300 },
+  ];
+  const result = buildUsageEvents(rows, { sinceMs: t0 - 1_000, untilMs: t0 + 400_000 });
+  const orphans = result.gaps.find((g) => g.reason === 'orphan_background')?.count ?? 0;
+  assert.equal(orphans, 1, 'delayed STOPPED on closed Instagram = 0; unmatched PAUSED+STOPPED pair on Reddit = 1');
+
+  const diag = summarizeOrphanDrops(result.dropped, { 'com.reddit.frontpage': 'Reddit' });
+  assert.equal(diag.total, 1);
+  assert.deepEqual(diag.byEventType, [{ eventType: 2, typeName: '2:ACTIVITY_PAUSED', count: 1 }]);
+  assert.equal(diag.byApp[0].label, 'Reddit');
+  assert.equal(diag.newest[0].typeName, '2:ACTIVITY_PAUSED');
+});
+
 

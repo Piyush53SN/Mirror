@@ -8,20 +8,25 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
-import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL, J11_FULL } from './src/buildDetails';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL, J11_FULL, J18_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import {
+  buildUsageEvents,
   getTopInvalidPackages,
+  summarizeOrphanDrops,
   isIgnoredSystemApp,
   isLabelingExcludedApp,
   computeInterestEvolution,
   computeDiscoveryJourney,
   computeRabbitHoles,
+  computeWhatIf,
   scoreIqs,
+  type OrphanDiagnosticSummary,
   type InterestEvolutionResult,
   type DiscoveryJourneyResult,
   type RabbitHoleResult,
+  type WhatIfResult,
   type Score,
   type ScoredSession,
   type ScoreGap,
@@ -123,6 +128,13 @@ export default function App(): React.ReactElement {
   const [evolution, setEvolution] = React.useState<InterestEvolutionResult | null>(null);
   const [discovery, setDiscovery] = React.useState<DiscoveryJourneyResult | null>(null);
   const [rabbitHole, setRabbitHole] = React.useState<RabbitHoleResult | null>(null);
+  const [dayScoredSessions, setDayScoredSessions] = React.useState<ScoredSession[]>([]);
+  const [dayScoreGaps, setDayScoreGaps] = React.useState<ScoreGap[]>([]);
+  const [launcherPackages, setLauncherPackages] = React.useState<string[]>([]);
+  const [whatIfCapMin, setWhatIfCapMin] = React.useState<10 | 20>(10);
+  const [whatIfQuietPreset, setWhatIfQuietPreset] = React.useState<'23-05' | '22-07'>('23-05');
+  const [latestSyncOrphans, setLatestSyncOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
+  const [raw24hOrphans, setRaw24hOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
   const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
@@ -186,9 +198,23 @@ export default function App(): React.ReactElement {
           return acc;
         }, {});
         const gapTotal = collectResult.gaps.reduce((sum: number, g: any) => sum + g.count, 0);
+        const spannedCount = collectResult.gaps
+          .filter((g: any) => g.fromMs !== undefined && g.toMs !== undefined && g.toMs > g.fromMs)
+          .reduce((sum: number, g: any) => sum + g.count, 0);
+        const kindLabel =
+          gapTotal === 0
+            ? '0 unmatched events'
+            : spannedCount === 0
+              ? `${gapTotal} unmatched event${gapTotal === 1 ? '' : 's'}`
+              : `${gapTotal} gap/unmatched event${gapTotal === 1 ? '' : 's'}`;
         setLastCollect(
-          `collect: ${collectResult.events} events (${collectResult.inserted} new, ${collectResult.duplicate} skipped), ${gapTotal} gap${gapTotal === 1 ? '' : 's'}${gapTotal > 0 ? ` (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})` : ''}`,
+          `collect: ${collectResult.events} events (${collectResult.inserted} new, ${collectResult.duplicate} skipped), ${kindLabel}${gapTotal > 0 ? ` (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})` : ''}`,
         );
+        try {
+          const orphanPkgs = [...new Set(collectResult.dropped.filter((d) => d.reason === 'orphan_background' && d.app).map((d) => d.app!))];
+          const orphanLabels = orphanPkgs.length > 0 ? await resolveAppLabels(orphanPkgs) : {};
+          setLatestSyncOrphans(summarizeOrphanDrops(collectResult.dropped, orphanLabels, 6));
+        } catch {}
         try {
           const top = getTopInvalidPackages(collectResult.dropped as any);
           setInvalidTop(top);
@@ -206,6 +232,7 @@ export default function App(): React.ReactElement {
         const osRows = await runtime.osTotals({ fromMs: dayFrom, toMs: dayTo });
         let launcherPkgs: string[] = [];
         try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
+        setLauncherPackages(launcherPkgs);
         const launcherSet = new Set(launcherPkgs);
         // Exclude launchers, Mirror, Settings, Play Store/Services, and all Package installers (by pkg and label)
         const candidateOs = osRows.filter((r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName) && r.totalMs > 0);
@@ -298,6 +325,8 @@ export default function App(): React.ReactElement {
           const scored: ScoredSession[] = sessFiltered.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
           const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
           const scoreGaps: ScoreGap[] = gapsRaw.map((g) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+          setDayScoredSessions(scored);
+          setDayScoreGaps(scoreGaps);
           const labelArray = Object.entries(loadedLabels).map(([sessionId, label]) => ({ sessionId, label }));
           const iqsResult = scoreIqs({
             window: { fromMs: dayFrom, toMs: dayTo },
@@ -310,6 +339,8 @@ export default function App(): React.ReactElement {
           setIqs(iqsResult);
         } catch (e) {
           console.log('IQS compute failed', e);
+          setDayScoredSessions([]);
+          setDayScoreGaps([]);
           setIqs(null);
         }
 
@@ -341,9 +372,23 @@ export default function App(): React.ReactElement {
 
       try {
         const now = Date.now();
-        const debug = await usage.queryEventsDebug(now - 24 * 3_600_000, now);
+        const since24h = now - 24 * 3_600_000;
+        const debug = await usage.queryEventsDebug(since24h, now);
         setDebugEvents(debug.slice(-100));
         console.log('RAW UsageEvents debug (last 24h, count):', debug.length, JSON.stringify(debug.slice(-30), null, 2));
+        try {
+          let launcherPkgs: string[] = [];
+          try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
+          const built24h = buildUsageEvents(debug, {
+            sinceMs: since24h,
+            untilMs: now,
+            ignorePackages: launcherPkgs,
+          });
+          const orphanPkgs = [...new Set(built24h.dropped.filter((d) => d.reason === 'orphan_background' && d.app).map((d) => d.app!))];
+          const orphanLabels = orphanPkgs.length > 0 ? await resolveAppLabels(orphanPkgs) : {};
+          setLabels((prev) => ({ ...prev, ...orphanLabels }));
+          setRaw24hOrphans(summarizeOrphanDrops(built24h.dropped, orphanLabels, 8));
+        } catch {}
         const honkaiPkgs = ['com.HoYoverse.hkrpgoversea', 'com.miHoYo.hkrpg', 'com.HoYoverse.StarRail', 'com.miHoYo.GenshinImpact'];
         const honkai = debug.filter((e) => honkaiPkgs.some((p) => e.packageName.toLowerCase().includes('hkrpg') || e.packageName.toLowerCase().includes('honkai') || e.packageName.toLowerCase().includes('genshin') || e.packageName === p));
         if (honkai.length > 0) {
@@ -417,6 +462,8 @@ export default function App(): React.ReactElement {
         const scored: ScoredSession[] = sessDay
           .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
           .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+        setDayScoredSessions(scored);
+        setDayScoreGaps(scoreGaps);
         const utcOffsetMinutes = -new Date().getTimezoneOffset();
         setIqs(
           scoreIqs({
@@ -459,6 +506,42 @@ export default function App(): React.ReactElement {
     },
     [selectedDay, labels, dailyTotals],
   );
+
+  const whatIf: WhatIfResult | null = React.useMemo(() => {
+    try {
+      const dayFrom = dayStartMs(selectedDay);
+      const dayTo = dayEndMs(selectedDay);
+      const quietHours =
+        whatIfQuietPreset === '22-07'
+          ? { startHour: 22, endHour: 7 }
+          : { startHour: 23, endHour: 5 };
+      return computeWhatIf({
+        window: { fromMs: dayFrom, toMs: dayTo },
+        sessions: dayScoredSessions,
+        osTotals: dailyTotals,
+        labels: intentLabels,
+        appLabels: labels,
+        ignorePackages: launcherPackages,
+        gaps: dayScoreGaps,
+        utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        approximate: true,
+        sittingCapMinutes: whatIfCapMin,
+        quietHours,
+      });
+    } catch {
+      return null;
+    }
+  }, [
+    selectedDay,
+    dayScoredSessions,
+    dailyTotals,
+    intentLabels,
+    labels,
+    launcherPackages,
+    dayScoreGaps,
+    whatIfCapMin,
+    whatIfQuietPreset,
+  ]);
 
   const copyRawEvents = React.useCallback(async () => {
     try {
@@ -636,9 +719,42 @@ export default function App(): React.ReactElement {
         ) : null}
 
         <Card theme={theme}>
-          <SectionHeader theme={theme} title="Data quality details" caption="full gaps" />
-          <Text role="micro" tone="muted" theme={theme}>{quality?.sentence ?? 'No gaps'}</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>{`${quality?.count ?? 0} gaps, by reason: ${Object.entries(quality?.byReason ?? {}).map(([k, v]) => `${k}:${v}`).join(', ') || 'none'}`}</Text>
+          <SectionHeader theme={theme} title="Data quality details" caption="unmatched OS events & spanned gaps" />
+          <Text role="micro" tone="muted" theme={theme}>{quality?.sentence ?? 'No collection gaps recorded.'}</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>{`${quality?.count ?? 0} recorded events, by reason: ${Object.entries(quality?.byReason ?? {}).map(([k, v]) => `${k}:${v}`).join(', ') || 'none'}`}</Text>
+          {latestSyncOrphans ? (
+            <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>
+              <Text role="label" theme={theme}>{`Latest sync unmatched closes: ${latestSyncOrphans.total}`}</Text>
+              {latestSyncOrphans.total > 0 ? (
+                <>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`By event type: ${latestSyncOrphans.byEventType.map((t) => `${t.typeName} × ${t.count}`).join(', ')}`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`By app: ${latestSyncOrphans.byApp.map((a) => `${a.label} × ${a.count} (${a.byType})`).join('; ')}`}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
+          {raw24hOrphans ? (
+            <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>
+              <Text role="label" theme={theme}>{`Last 24h raw OS stream unmatched closes (after lifecycle fix): ${raw24hOrphans.total}`}</Text>
+              {raw24hOrphans.total > 0 ? (
+                <>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`By event type: ${raw24hOrphans.byEventType.map((t) => `${t.typeName} × ${t.count}`).join(', ')}`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`By app: ${raw24hOrphans.byApp.map((a) => `${a.label} × ${a.count} (${a.byType})`).join('; ')}`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Newest: ${raw24hOrphans.newest.map((n) => `${new Date(n.at).toLocaleTimeString()} ${n.label} (${n.typeName})`).join(' · ')}`}
+                  </Text>
+                </>
+              ) : null}
+            </View>
+          ) : null}
           {invalidTop.length > 0 ? (
             <View style={{ marginTop: theme.space(1) }}>
               <Text role="label" theme={theme}>Top invalid_package:</Text>
@@ -647,9 +763,6 @@ export default function App(): React.ReactElement {
               ))}
             </View>
           ) : null}
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(2) }}>
-            {`336 orphan events explanation: many bg without fg due to (1) fg outside 2s overlap window, bg inside; (2) single-foreground closes previous at next fg, later bg becomes orphan; (3) className mismatch fg vs bg; (4) systemui fg closes previous (notification shade) – should not close for games. With OS totals for per-app daily, orphan count no longer affects totals, only timeline.`}
-          </Text>
         </Card>
 
         <Card theme={theme}>
@@ -670,6 +783,11 @@ export default function App(): React.ReactElement {
         <Card theme={theme}>
           <SectionHeader theme={theme} title="J11 Rabbit Hole – full details" caption="short-return clusters, Tier-D can/cannot, neutral rules" />
           <Text role="micro" tone="muted" theme={theme}>{J11_FULL}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="J18 What-if Simulator – full details" caption="Estimate labels, never /100, measured factors only, assumptions" />
+          <Text role="micro" tone="muted" theme={theme}>{J18_FULL}</Text>
         </Card>
 
         <Card theme={theme}>
@@ -988,6 +1106,99 @@ export default function App(): React.ReactElement {
         );
       })()}
 
+      {/* J18 What-if Simulator – every output labelled Estimate, never rescaled to 100, measured factors only, assumptions stated */}
+      {(() => {
+        const orphanCount = quality?.byReason?.orphan_background ?? 0;
+        const totalGaps = quality?.count ?? 0;
+        const reliable = orphanCount <= 50 && totalGaps <= 100;
+        if (!reliable || !whatIf || !whatIf.hasBaseline) {
+          return null;
+        }
+        return (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title="What-if Simulator — Estimates"
+              caption={`${selectedDay} · Baseline ${formatDuration(whatIf.baselineTimeMs)} (${whatIf.timeSource === 'os_aggregate' ? 'OS aggregate' : 'sittings'}) · IQS ${whatIf.baselineIqs.value ?? '—'} / ${whatIf.baselineIqs.max} (never rescaled to 100)`}
+            />
+            <View style={{ gap: theme.space(3) }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Chip label="Estimate" theme={theme} />
+                <Chip label="Measured factors only" theme={theme} />
+                <TierBadge tier="D" theme={theme} />
+              </View>
+
+              <View style={{ gap: theme.space(1) }}>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Measured in estimates (${whatIf.baselineIqs.max} max, never rescaled to 100): ${whatIf.measuredFactorSummary.join(' · ') || 'none'}`}
+                </Text>
+                {whatIf.unmeasuredFactorSummary.length > 0 ? (
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Excluded (not measured, never guessed): ${whatIf.unmeasuredFactorSummary.join(' · ')}`}
+                  </Text>
+                ) : null}
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Text role="micro" tone="muted" theme={theme}>Adjust:</Text>
+                <Pill
+                  theme={theme}
+                  variant={whatIfCapMin === 10 ? 'primary' : 'secondary'}
+                  onPress={() => setWhatIfCapMin(10)}
+                >
+                  Cap 10m
+                </Pill>
+                <Pill
+                  theme={theme}
+                  variant={whatIfCapMin === 20 ? 'primary' : 'secondary'}
+                  onPress={() => setWhatIfCapMin(20)}
+                >
+                  Cap 20m
+                </Pill>
+                <Pill
+                  theme={theme}
+                  variant={whatIfQuietPreset === '23-05' ? 'primary' : 'secondary'}
+                  onPress={() => setWhatIfQuietPreset('23-05')}
+                >
+                  Quiet 23:00–05:00
+                </Pill>
+                <Pill
+                  theme={theme}
+                  variant={whatIfQuietPreset === '22-07' ? 'primary' : 'secondary'}
+                  onPress={() => setWhatIfQuietPreset('22-07')}
+                >
+                  Quiet 22:00–07:00
+                </Pill>
+              </View>
+
+              <Divider theme={theme} />
+
+              {whatIf.scenarios.map((sc) => (
+                <View key={sc.id} style={{ gap: theme.space(1), paddingVertical: theme.space(1) }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.space(2) }}>
+                    <Text role="label" theme={theme} style={{ flex: 1 }}>{sc.title}</Text>
+                    <Chip label={sc.badge} theme={theme} />
+                  </View>
+                  <Text role="body" theme={theme}>{sc.timeEstimateLabel}</Text>
+                  <Text role="micro" theme={theme}>{sc.iqsEstimateLabel}</Text>
+                  {sc.estimatedIqs.measuredFactors.length > 0 ? (
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {sc.estimatedIqs.measuredFactors.map((mf) => mf.estimateLabel).join(' · ')}
+                    </Text>
+                  ) : null}
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Assumption: ${sc.assumption}`}
+                  </Text>
+                  <Divider theme={theme} />
+                </View>
+              ))}
+
+              <Text role="micro" tone="muted" theme={theme}>{whatIf.disclaimer}</Text>
+            </View>
+          </Card>
+        );
+      })()}
+
       <Card theme={theme}>
         <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap a session to label (optional)" />
         <View style={{ backgroundColor: theme.color.card, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
@@ -1122,8 +1333,31 @@ export default function App(): React.ReactElement {
       </Card>
 
       <Card theme={theme}>
-        <SectionHeader theme={theme} title="Data quality" caption="one-line note" />
+        <SectionHeader theme={theme} title="Data quality" caption="boundary diagnostics — daily totals come from OS stats" />
         <Text role="body" theme={theme}>{quality?.sentence ?? 'No collection gaps recorded.'}</Text>
+        {(latestSyncOrphans || raw24hOrphans) ? (
+          <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>
+            {latestSyncOrphans ? (
+              <Text role="micro" tone="muted" theme={theme}>
+                {latestSyncOrphans.total === 0
+                  ? 'Latest sync: 0 new unmatched close events.'
+                  : `Latest sync: ${latestSyncOrphans.total} unmatched close${latestSyncOrphans.total === 1 ? '' : 's'} — ${latestSyncOrphans.newest.map((n) => `${n.label} (${n.typeName} at ${new Date(n.at).toLocaleTimeString()})`).join(', ')}`}
+              </Text>
+            ) : null}
+            {raw24hOrphans ? (
+              <Text role="micro" tone="muted" theme={theme}>
+                {raw24hOrphans.total === 0
+                  ? 'Last 24h raw OS stream (after lifecycle fix): 0 unmatched close events.'
+                  : `Last 24h raw OS stream (${raw24hOrphans.total}): by type [${raw24hOrphans.byEventType.map((t) => `${t.typeName}×${t.count}`).join(', ')}] · by app [${raw24hOrphans.byApp.slice(0, 4).map((a) => `${a.label}×${a.count}`).join(', ')}] · newest [${raw24hOrphans.newest.slice(0, 3).map((n) => `${new Date(n.at).toLocaleTimeString()} ${n.label} ${n.typeName}`).join(', ')}]`}
+              </Text>
+            ) : null}
+            {raw24hOrphans && (quality?.byReason?.orphan_background ?? 0) > raw24hOrphans.total ? (
+              <Text role="micro" tone="muted" theme={theme}>
+                {`Stored today count (${quality?.byReason?.orphan_background ?? 0}) includes syncs recorded earlier today before the PAUSED→STOPPED lifecycle fix and resets at midnight.`}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(2) }}>
           <Pill theme={theme} onPress={checkPermissionAndCollect}>Refresh</Pill>
           <LinkButton theme={theme} onPress={openSettings}>Open usage settings</LinkButton>
@@ -1132,7 +1366,7 @@ export default function App(): React.ReactElement {
 
       {/* P3 guard: features that need session boundaries – hard gate orphans ≤50 */}
       <Card theme={theme}>
-        <SectionHeader theme={theme} title="P3 features – session boundaries" caption="hard gate orphans ≤50, gaps ≤100" />
+        <SectionHeader theme={theme} title="P3 features – session boundaries" caption="hard gate orphans ≤50, total ≤100" />
         {(() => {
           const orphanCount = quality?.byReason?.orphan_background ?? 0;
           const totalGaps = quality?.count ?? 0;
@@ -1140,7 +1374,7 @@ export default function App(): React.ReactElement {
           if (!reliable) {
             return (
               <View style={{ gap: theme.space(2) }}>
-                <Text role="label" theme={theme}>{`Hard gate: needs more reliable sessions – orphans ${orphanCount} (must be ≤50), gaps ${totalGaps} (must be ≤100)`}</Text>
+                <Text role="label" theme={theme}>{`Hard gate: needs more reliable sessions – orphans ${orphanCount} (must be ≤50), total unmatched/gap events ${totalGaps} (must be ≤100)`}</Text>
                 <Text role="micro" tone="muted" theme={theme}>{P3_GUARD_SHORT(orphanCount, totalGaps)}</Text>
                 <Callout theme={theme} tone="limit">
                   {'Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint never counts.'}
@@ -1153,11 +1387,11 @@ export default function App(): React.ReactElement {
           const minDays = evolution?.minDays ?? 3;
           return (
             <View style={{ gap: theme.space(2) }}>
-              <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, gaps ${totalGaps}`}</Text>
+              <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, unmatched/gap events ${totalGaps}`}</Text>
               <Text role="micro" tone="muted" theme={theme}>
                 {hasEvoHistory
-                  ? `Interest Evolution (J4), Discovery Journey (J9), and Rabbit Hole (J11) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 items await review.`
-                  : `Interest Evolution (J4), Discovery Journey (J9), and Rabbit Hole (J11) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
+                  ? `Interest Evolution (J4), Discovery Journey (J9), Rabbit Hole (J11), and What-if Simulator (J18, Estimates) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 item (J20) awaits review.`
+                  : `What-if Simulator (J18, Estimates) is active for ${selectedDay}; multi-day cards (J4, J9, J11) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far).`}
               </Text>
             </View>
           );

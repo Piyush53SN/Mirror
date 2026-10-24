@@ -373,6 +373,13 @@ test('clearIntentLabels deletes only intent_label events and preserves usage eve
     assert.deepEqual(await s.events({ kind: 'intent_label' }), []);
     assert.equal((await s.events()).length, 2, 'app_foreground and app_background events remain intact');
     assert.equal((await s.sessions()).length, 1, 'sessions remain intact');
+
+    // replaceGapsForWindow replaces only gaps in [fromMs, toMs) and preserves earlier days
+    await s.recordGaps('usage_stats', [{ reason: 'orphan_background', count: 12 }], 1_000);
+    await s.recordGaps('usage_stats', [{ reason: 'orphan_background', count: 49 }], 100_000);
+    await s.replaceGapsForWindow('usage_stats', { fromMs: 50_000, toMs: 150_000 }, [{ reason: 'orphan_background', count: 3 }], 110_000);
+    assert.equal((await s.gapSummary({ fromMs: 0, toMs: 50_000 })).count, 12);
+    assert.equal((await s.gapSummary({ fromMs: 50_000, toMs: 150_000 })).count, 3);
   } finally {
     close();
   }

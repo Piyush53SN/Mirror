@@ -1718,3 +1718,26 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Prints the exact Tier-D definition (`3+` consecutive short sittings `8 s` to under `5 min` within `60 min` on the same app with no other app in between), late-night share (`23:00–05:00` local), and explicit user labels inside clusters, alongside explicit **What Tier D can detect** vs **What Tier D cannot detect** disclosures and neutral non-punitive commitments.
 - Added unit + `fast-check` property tests in `packages/core-analytics/tests/rabbithole.test.mjs`. Stopping for review before J18 / J20.
 
+### Round 22 — PAUSED→STOPPED orphan root-cause fixes & per-eventType/app diagnostics, unmatched-event wording cleanup, and J18 What-if Simulator (2026-10-24)
+
+**Phone verification of Round 21 (`39a84b3`):**
+- Confirmed on device: J4, J9, and J11 render accurately and label counts reconcile across J9, Why sheet, and App opens.
+
+**1. Why `orphan_background` kept rising (`39 → 41 → 43 → 49`), per-eventType/app breakdown, and honest fix (gate stays ≤50, recent-close stays 60s):**
+- **Root causes in `packages/core-analytics/src/usage.ts`:**
+  1. **In-app `Activity A -> Activity B` transition (`+2` false orphans per multi-activity sitting >60s):** When navigating within the same app (`HomeActivity -> ConversationActivity`, `SplashActivity -> MainActivity`), `A` emits `ACTIVITY_PAUSED (2)`, `B` emits `ACTIVITY_RESUMED (1)`, and ~400ms later `A` finishes animating off-screen and emits `ACTIVITY_STOPPED (23)` naming `A`. Because `A` was already removed on `PAUSED`, `entry.activities.delete('A')` returned `false` and the Round-13 `firstKey` fallback deleted `B` — prematurely closing the app 400ms in, so leaving `B` minutes later (>60s) fired **2** false orphans (`PAUSED (2)` + `STOPPED (23)`).
+  2. **Delayed `ACTIVITY_STOPPED (23)` (`PAUSED -> STOPPED` >60s after close):** On gesture Home, PiP, or Recents thumbnail caching, Android emits `ACTIVITY_PAUSED (2)` immediately when an app closes, then emits `ACTIVITY_STOPPED (23)` minutes later (>60s) without any intervening `ACTIVITY_RESUMED (1)`. Treating `STOPPED (23)` on an already-closed sitting as a fresh foreground exit fabricated orphans.
+  3. **Double-counting `PAUSED (2)` + `STOPPED (23)` on a single unmatched close:** When an actually unmeasured sitting ended, Android emitted `ACTIVITY_PAUSED (2)` followed ~300ms later by `ACTIVITY_STOPPED (23)`, counting 1 missed sitting as 2 orphans.
+- **Fixes & diagnostics (`usage.ts`, `App.tsx`):**
+  - Separated `PAUSE_TYPES (2)` and `STOP_TYPES (23)`: `STOP_TYPES` with an explicit `className` never triggers the `firstKey` fallback against a different resumed activity; `STOP_TYPES` on an already-closed package (`closedInStream`, cleared on `RESUMED`) or within 60s of an already-counted orphan `PAUSED` is dropped as normal lifecycle completion, while `PAUSE_TYPES (2)` >60s after close and `STOP_TYPES` on never-opened packages still honestly count as `orphan_background`. Gate (`orphans ≤ 50`, `total ≤ 100`) and `RECENT_CLOSE_SUPPRESS_MS = 60_000` remain unchanged.
+  - Added `eventType` and `className` to `UsageDrop`, exported `summarizeOrphanDrops`, and surfaced `Latest sync unmatched closes` + `Last 24h raw OS stream` breakdowns **by event type (`2:ACTIVITY_PAUSED` vs `23:ACTIVITY_STOPPED`), by app, and newest-first** on the Data quality card and Debug view.
+
+**2. Reworded zero-length unmatched events (`ingest.ts`, `scoring.ts`, `App.tsx`):**
+- When `measuredGapMs <= 0`, `describeGapSummary` now renders `"N unmatched OS events (...) — point-in-time boundary events, not lost usage time."` and `scoreIqs` confidence renders `"N unmatched OS events recorded (point-in-time boundary events, not lost usage time)."` instead of `"collection gaps (0 min unmeasured)"`. Spanned gaps (`measuredGapMs > 0`, e.g. `too_long`) continue to report unmeasured duration honestly.
+
+**3. J18 What-if Simulator (`packages/core-analytics/src/whatif.ts`, `apps/mobile/App.tsx`):**
+- Pure on-device counterfactual engine (`computeWhatIf`) with interactive parameter toggles (`Cap 10m / 20m`, `Quiet 23:00–05:00 / 22:00–07:00`) gated by `orphans ≤ 50` and `total ≤ 100`.
+- Every scenario output (`badge`, `timeEstimateLabel`, `iqsEstimateLabel`, and every per-factor `estimateLabel`) is explicitly labelled `"Estimate"`.
+- Calls `scoreIqs` directly — never rescaled to 100 (`/55` without 5 labels, `/75` with 5+ decisive explicit labels on Tier D, `/40` below 3 sittings), includes only measured factors (listing unmeasured factors separately), and prints explicit assumptions under every scenario.
+- Added unit + `fast-check` property tests in `packages/core-analytics/tests/whatif.test.mjs`, `usage.test.mjs`, `ingest.test.mjs`, and `evolution.test.mjs`. Stopping for review before J20.
+

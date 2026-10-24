@@ -595,6 +595,32 @@ export class MirrorStore {
     }
   }
 
+  /**
+   * Atomically replace recorded gaps for `source` in `[fromMs, toMs)` when
+   * recomputing the current day's raw `UsageEvents` stream after a collector
+   * lifecycle bug fix.
+   */
+  async replaceGapsForWindow(
+    source: string,
+    window: { fromMs: number; toMs: number },
+    gaps: { reason: GapReason; count: number; fromMs?: number; toMs?: number }[],
+    recordedAtMs = this.clock(),
+  ): Promise<void> {
+    await this.driver.transaction(async () => {
+      await this.driver.run(
+        `DELETE FROM data_gaps WHERE source = ? AND recorded_at >= ? AND recorded_at < ?`,
+        [source, window.fromMs, window.toMs],
+      );
+      for (const gap of gaps) {
+        if (!Number.isInteger(gap.count) || gap.count <= 0) continue;
+        await this.driver.run(
+          `INSERT INTO data_gaps (source, reason, from_ms, to_ms, count, recorded_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          [source, gap.reason, gap.fromMs ?? null, gap.toMs ?? null, gap.count, recordedAtMs],
+        );
+      }
+    });
+  }
+
   async gaps(options: { fromMs?: number; toMs?: number; source?: string } = {}): Promise<DataGap[]> {
     const clauses: string[] = [];
     const params: unknown[] = [];

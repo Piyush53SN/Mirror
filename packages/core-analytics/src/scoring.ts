@@ -514,7 +514,7 @@ function confidenceFor(
     gapMs > 0
       ? `${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`
       : gapCount > 0
-        ? `${gapCount} collection gap${gapCount === 1 ? '' : 's'} recorded (0 min unmeasured span — unspanned orphan/close events).`
+        ? `${gapCount} unmatched OS event${gapCount === 1 ? '' : 's'} recorded (point-in-time boundary events, not lost usage time).`
         : 'No collection gaps in this window.';
   if (sessions.length === 0) {
     return {
