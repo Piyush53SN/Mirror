@@ -12,7 +12,7 @@ function findUnescapedJsxText(filePath) {
   const issues = [];
   // Find <Text ...>...</Text> where inner is plain text (no { } interpolation) containing < that would break Metro bundler (e.g., <50, <=2s)
   // If inner contains {, it's a JS expression like {`... >= ...`} or {variable}, so < > inside JS string is safe – skip
-  const textTagRegex = /<Text[^>]*>([^<]*?)<\/Text>/gs;
+  const textTagRegex = /<(?:Text|Body|Caption|H1|H2|Mono|Pill|LinkButton)[^>]*>([^<]*?)<\/(?:Text|Body|Caption|H1|H2|Mono|Pill|LinkButton)>/gs;
   for (const m of text.matchAll(textTagRegex)) {
     const inner = m[1];
     if (inner.trim() === '') continue;
@@ -41,16 +41,27 @@ function findUnescapedJsxText(filePath) {
   return issues;
 }
 
-test('App.tsx has no unescaped < > in JSX Text that would break Metro bundler (e.g., <50, <=2s)', () => {
-  const appPath = join(ROOT, 'apps/mobile/App.tsx');
-  const issues = findUnescapedJsxText(appPath);
-  if (issues.length > 0) {
-    console.error('Found unescaped JSX issues in App.tsx:');
-    for (const iss of issues) {
-      console.error(`  Line ${iss.line}: ${iss.snippet}`);
+test('apps/mobile (.tsx files) have no unescaped < > in JSX text that would break Metro bundler', async () => {
+  const { globSync } = await import('node:fs');
+  const files = ['apps/mobile/App.tsx', ...globSync('apps/mobile/src/**/*.tsx', { cwd: ROOT })];
+  assert.ok(files.length >= 9, `expected mobile .tsx files to be scanned, found ${files.length}`);
+  const allIssues = [];
+  for (const rel of files) {
+    const full = join(ROOT, rel);
+    const issues = findUnescapedJsxText(full);
+    allIssues.push(...issues.map((i) => ({ ...i, file: rel })));
+  }
+  if (allIssues.length > 0) {
+    console.error('Found unescaped JSX issues in apps/mobile:');
+    for (const iss of allIssues) {
+      console.error(`  ${iss.file}:${iss.line}: ${iss.snippet}`);
     }
   }
-  assert.equal(issues.length, 0, `App.tsx has ${issues.length} unescaped < > in JSX Text – use {'...'} or &lt; &gt; to avoid SyntaxError in :app:createBundleReleaseJsAndAssets (like 689:364 <50 bug)`);
+  assert.equal(
+    allIssues.length,
+    0,
+    `apps/mobile has ${allIssues.length} unescaped < > in JSX text – use {'...'} or &lt; &gt;`,
+  );
 });
 
 test('packages/ui has no unescaped < > in JSX Text', async () => {
@@ -71,15 +82,18 @@ test('packages/ui has no unescaped < > in JSX Text', async () => {
   assert.equal(allIssues.length, 0, `packages/ui has ${allIssues.length} unescaped < > in JSX Text`);
 });
 
-test('no literal {{ }} double braces in JSX Text', () => {
-  const appPath = join(ROOT, 'apps/mobile/App.tsx');
-  const text = readFileSync(appPath, 'utf8');
+test('no literal {{ }} double braces in JSX text across apps/mobile', async () => {
+  const { globSync } = await import('node:fs');
+  const files = ['apps/mobile/App.tsx', ...globSync('apps/mobile/src/**/*.tsx', { cwd: ROOT })];
   const issues = [];
-  const regex = /<Text[^>]*>([^<]*\{\{[^}]*\}\}[^<]*?)<\/Text>/gs;
-  for (const m of text.matchAll(regex)) {
-    const inner = m[1];
-    const line = text.slice(0, m.index).split('\n').length;
-    issues.push({ line, snippet: inner.trim().slice(0, 200) });
+  const regex = /<(?:Text|Body|Caption|H1|H2|Mono|Pill|LinkButton)[^>]*>([^<]*\{\{[^}]*\}\}[^<]*?)<\/(?:Text|Body|Caption|H1|H2|Mono|Pill|LinkButton)>/gs;
+  for (const rel of files) {
+    const text = readFileSync(join(ROOT, rel), 'utf8');
+    for (const m of text.matchAll(regex)) {
+      const inner = m[1];
+      const line = text.slice(0, m.index).split('\n').length;
+      issues.push({ file: rel, line, snippet: inner.trim().slice(0, 200) });
+    }
   }
-  assert.equal(issues.length, 0, `Found literal {{ }} in JSX Text: ${JSON.stringify(issues)}`);
+  assert.equal(issues.length, 0, `Found literal {{ }} in JSX text: ${JSON.stringify(issues)}`);
 });

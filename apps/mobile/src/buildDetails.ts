@@ -9,7 +9,7 @@ export const BUILD_SHORT = [
   'App opens only – no durations, no scaling',
   'IQS out of measured factors (/55 before labels, /75 with 5+ labels; minimum-activity floor enforced, never rescaled)',
   'Labeling optional, only explicit labels count',
-  'J4, J9, J11, J18 (Estimate) & J20 (Focus Windows) shown when orphans ≤50',
+  '5-tab layout (Home · Insights · Journey · Sessions · You); short-history views show progress empty states instead of disappearing',
 ].join('\n');
 
 export const BUILD_FULL = [
@@ -41,7 +41,7 @@ export const J4_SHORT = (orphanCount: number) =>
 
 export const J4_FULL = [
   'J4 Interest Evolution requires both reliable session boundaries (orphans ≤50, total ≤100) and multi-day history (3+ distinct local days).',
-  'When fewer than 3 days of sessions exist, J4 is hidden on the main screen rather than repeating single-day OS totals.',
+  'When fewer than 3 days of sessions exist, J4 shows a clear progress empty state rather than disappearing or repeating single-day OS totals.',
   'Dates are labelled “Seen since YYYY-MM-DD (history starts ...)” so the start of Mirror’s recording window never implies a first-ever app use.',
   'Direction compares recent vs earlier recorded days (growing / steady / fading) and carries “(limited history)” whenever fewer than 14 days are recorded.',
   'Full topic-level evolution requires Tier A/B/C topic vectors; Tier D degrades honestly to app-level evolution.',

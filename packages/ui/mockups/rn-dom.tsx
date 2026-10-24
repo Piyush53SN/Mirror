@@ -163,6 +163,7 @@ export const ScrollView = ({ children, contentContainerStyle, ...props }: Common
 );
 
 export const ActivityIndicator = () => <span data-spinner="1">…</span>;
+export const StatusBar = Object.assign((_props: Common) => null, { currentHeight: 28 });
 export const Image = ({ source, ...props }: Common) => (
   <span {...(domProps(props) as React.HTMLAttributes<HTMLSpanElement>)} data-image={JSON.stringify(source)} />
 );
