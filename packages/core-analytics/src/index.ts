@@ -1,3 +1,4 @@
+export * from './discovery';
 export * from './evolution';
 export * from './ingest';
 export * from './scoring';

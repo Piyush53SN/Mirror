@@ -1686,3 +1686,19 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
    - Removed single-day OS totals duplication and removed contradictory `"needs reliable sessions"` note when gate is open.
    - Hidden on main screen until 3+ distinct local days of sessions exist; once 3+ days exist, shows `firstSeenDay`, `activeDays`, multi-day `trend` (`new` / `growing` / `steady` / `fading`), and typical sitting depth band.
 5. **Typecheck & CI fixes:** Fixed `packages/ui/src/primitives/controls.tsx` `TS2339` and `App.tsx` token/prop types so full `npm run verify` passes cleanly (0 typecheck/lint errors, 256 package tests, 723 Metro modules in `bundle-check` / 664 in direct `expo export:embed`).
+
+### Round 20 — J4 4-day device refinements + J9 Discovery Journey (2026-10-24)
+
+**Phone verification of Round 19 (`48a9a11`):**
+- Confirmed working on phone: no SQLite UNIQUE error, Package installer excluded, texts consistent, and J4 rendered across 4 days (`2026-10-21` to `2026-10-24`).
+
+**J4 refinements from 4-day phone review (`packages/core-analytics/src/evolution.ts`, `apps/mobile/App.tsx`):**
+1. Replaced `"First seen 2026-10-21"` with `"Seen since 2026-10-21 (history starts)"` (and `"Seen since YYYY-MM-DD (history starts YYYY-MM-DD)"` for apps opened on a later day) plus card caption `"history starts YYYY-MM-DD · N days"`, never implying a first-ever app use.
+2. Removed misleading `"New after 2026-10-21: 31"` and removed the `'new'` trend on Tier-D history windows; summary counts (`Shown: X growing, Y fading`) reconcile 1-for-1 with the displayed rows.
+3. Added `"limited history"` caveat (`distinctDays < 14`) both on row labels (`growing (limited history)`, `fading (limited history)`) and as a short caveat line in the J4 card.
+
+**J9 Discovery Journey (`packages/core-analytics/src/discovery.ts`, `apps/mobile/App.tsx`):**
+1. Pure `computeDiscoveryJourney` gated by the same honest reliability (`orphans ≤ 50`, `gaps ≤ 100`) and multi-day history (`MIN_DISCOVERY_DAYS = 3`) gates.
+2. Detects repeated cross-app handoff routes (`App A → App B` within `SWITCH_GAP_MS = 5 min` across sustained `≥ 8 s` sittings, `count ≥ 2`), ranked by distinct active days then count; excludes launchers, Mirror, Settings, Play Store/Services, and all Android/OEM Package installers.
+3. Summarises multi-day repeat apps (`2+` days) vs single-day visits with a `(limited history — not necessarily new apps)` caveat below 14 days, authoritative OS `topAppByTime` for `selectedDay`, explicit `unavailable` capability flags for `New topics opened` (Tier A/B/C) and `Searches started` (Tier C), and explicit user `intent_label` counts only (updated live on session labelling).
+4. Added 7 unit + `fast-check` property tests in `packages/core-analytics/tests/discovery.test.mjs` and expanded `evolution.test.mjs` (empty, zero, single-event, all-under-8s, 4-day routes, 14-day full history, and property invariants).

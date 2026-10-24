@@ -9,7 +9,7 @@ export const BUILD_SHORT = [
   'App opens only – no durations, no scaling',
   'IQS out of measured factors (/55 before labels, /75 with 5+ labels; never rescaled)',
   'Labeling optional, only explicit labels count',
-  'J4 Interest Evolution hidden until 3+ days of history & orphans ≤50',
+  'J4 Interest Evolution & J9 Discovery Journey shown when 3+ days & orphans ≤50',
 ].join('\n');
 
 export const BUILD_FULL = [
@@ -17,7 +17,8 @@ export const BUILD_FULL = [
   'App opens from raw events, open times only, no durations, no scaling (60s recent-close honest + 1h overlap + per-class persisted map; 1h overlap does NOT pair unrelated – idempotent ids, single-fg, max 6h, merge gap 2s only)',
   'IQS: Tier-D usage-pattern score out of measured parts (/55 without 5 labels, /75 with 5+ labels, /100 with topic vectors; never rescaled), 0.49 confidence cap on reconstructed boundaries, only explicit labels feed Deliberate share',
   'Labeling: collapsed on tap, skip system/utility, optional opt-in after longer sessions, neutral hint (never counted) “Duration doesn’t indicate intent”',
-  'P3 J4 Interest Evolution: hard gate orphans ≤50 and gaps ≤100, and requires 3+ distinct local days of session history (hidden on day 1–2 so it never duplicates single-day OS totals)',
+  'P3 J4 Interest Evolution: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; labels “Seen since YYYY-MM-DD (history starts ...)” (never implies first-ever use), omits misleading “New after” counts, and marks growing/fading with “(limited history)” below 14 days',
+  'P3 J9 Discovery Journey: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; repeated cross-app handoff routes (sustained ≥8s sittings within 5 min), repeat vs single-day app visits (with limited-history caveat), OS top app by time, explicit unavailable flags for Tier A/B/C topics & Tier C searches, and explicit user labels only',
   'Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, raw UsageEvents, Share JSON, P3 guard details)',
 ].join('\n');
 
@@ -40,7 +41,15 @@ export const J4_SHORT = (orphanCount: number) =>
 export const J4_FULL = [
   'J4 Interest Evolution requires both reliable session boundaries (orphans ≤50, gaps ≤100) and multi-day history (3+ distinct local days).',
   'When fewer than 3 days of sessions exist, J4 is hidden on the main screen rather than repeating single-day OS totals.',
-  'When 3+ days exist and the gate is open, J4 shows multi-day app evolution: first-seen date across days, active days out of total days, direction (new / growing / steady / fading), and typical session depth band from sessionBands.',
+  'Dates are labelled “Seen since YYYY-MM-DD (history starts ...)” so the start of Mirror’s recording window never implies a first-ever app use.',
+  'Direction compares recent vs earlier recorded days (growing / steady / fading) and carries “(limited history)” whenever fewer than 14 days are recorded.',
   'Full topic-level evolution requires Tier A/B/C topic vectors; Tier D degrades honestly to app-level evolution.',
-  'Only explicit labels feed Deliberate share; duration hints never count.',
+].join('\n');
+
+export const J9_FULL = [
+  'J9 Discovery Journey requires both reliable session boundaries (orphans ≤50, gaps ≤100) and multi-day history (3+ distinct local days).',
+  'Step-by-step topic discovery (search → page → follow-up) requires Tier A/B/C; on Tier D OS usage alone, New topics opened and Searches started explicitly show unavailable rather than guessing from app names.',
+  'Repeated cross-app handoffs track sustained sittings (≥8s) where App A transitions to App B within 5 minutes across days, excluding launchers, Mirror, Settings, Play Store/Services, and all Package installers.',
+  'Repeat vs single-day visits carry a limited-history caveat below 14 days so single-day visits are never misread as newly installed apps.',
+  'Top app by time comes from authoritative OS queryUsageStats totals, and intent summaries count only explicit user intent_label events (never duration hints).',
 ].join('\n');

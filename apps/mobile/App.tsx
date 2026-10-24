@@ -8,15 +8,17 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
-import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL } from './src/buildDetails';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import {
   getTopInvalidPackages,
   isIgnoredSystemApp,
   computeInterestEvolution,
+  computeDiscoveryJourney,
   scoreIqs,
   type InterestEvolutionResult,
+  type DiscoveryJourneyResult,
   type Score,
   type ScoredSession,
   type ScoreGap,
@@ -165,6 +167,7 @@ export default function App(): React.ReactElement {
   const [scaledSessions, setScaledSessions] = React.useState<{ id: string; app: string; label: string; start_ms: number; end_ms: number; duration_ms: number; scaled_duration_ms: number; isScaled: boolean }[]>([]);
   const [iqs, setIqs] = React.useState<Score | null>(null);
   const [evolution, setEvolution] = React.useState<InterestEvolutionResult | null>(null);
+  const [discovery, setDiscovery] = React.useState<DiscoveryJourneyResult | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
   const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
@@ -264,7 +267,14 @@ export default function App(): React.ReactElement {
         const sessFiltered = sessDay.filter((s) => !launcherSet.has(s.app) && !isIgnoredSystemApp(s.app, allLabelsForDay[s.app]));
         setSessions(sessFiltered.slice(-50).reverse());
 
-        // Multi-day history for J4 Interest Evolution (last 30 days; requires 3+ distinct local days)
+        // Load intent labels for deliberate share and J9 explicit-labels summary
+        let loadedLabels: Record<string, 'intentional' | 'mindless' | 'unsure'> = {};
+        try {
+          loadedLabels = await runtime.loadIntentLabels();
+          setIntentLabels(loadedLabels);
+        } catch {}
+
+        // Multi-day history for J4 Interest Evolution & J9 Discovery Journey (last 30 days; requires 3+ distinct local days)
         try {
           const histFrom = dayTo - 30 * 86_400_000;
           const histSessions = await runtime.store.sessions({ fromMs: histFrom, toMs: dayTo });
@@ -272,15 +282,27 @@ export default function App(): React.ReactElement {
           const histResolved = await resolveAppLabels(histApps);
           const mergedLabels = { ...allLabelsForDay, ...histResolved };
           setLabels((prev) => ({ ...prev, ...mergedLabels }));
+          const histScored: ScoredSession[] = histSessions.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms }));
+          const utcOffsetMinutes = -new Date().getTimezoneOffset();
           const evo = computeInterestEvolution({
-            sessions: histSessions.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms })),
-            utcOffsetMinutes: -new Date().getTimezoneOffset(),
+            sessions: histScored,
+            utcOffsetMinutes,
             labels: mergedLabels,
             ignorePackages: launcherPkgs,
           });
           setEvolution(evo);
+          const disc = computeDiscoveryJourney({
+            sessions: histScored,
+            osTotals: totals,
+            intentLabels: loadedLabels,
+            labels: mergedLabels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          });
+          setDiscovery(disc);
         } catch {
           setEvolution(null);
+          setDiscovery(null);
         }
 
         const osMap = new Map<string, number>();
@@ -305,13 +327,6 @@ export default function App(): React.ReactElement {
         }
         openOnly.sort((a, b) => b.start_ms - a.start_ms);
         setScaledSessions(openOnly);
-
-        // Load intent labels for deliberate share
-        let loadedLabels: Record<string, 'intentional' | 'mindless' | 'unsure'> = {};
-        try {
-          loadedLabels = await runtime.loadIntentLabels();
-          setIntentLabels(loadedLabels);
-        } catch {}
 
         // J3 dashboard: compute IQS from real sessions (tier-D only, usage patterns) with labels
         try {
@@ -611,8 +626,13 @@ export default function App(): React.ReactElement {
         </Card>
 
         <Card theme={theme}>
-          <SectionHeader theme={theme} title="J4 Interest Evolution – full details" caption="first seen, depth, overlap 5min→1h" />
+          <SectionHeader theme={theme} title="J4 Interest Evolution – full details" caption="seen since, limited-history caveat, depth" />
           <Text role="micro" tone="muted" theme={theme}>{J4_FULL}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="J9 Discovery Journey – full details" caption="cross-app routes, repeat rhythm, Tier-D bounds" />
+          <Text role="micro" tone="muted" theme={theme}>{J9_FULL}</Text>
         </Card>
 
         <Card theme={theme}>
@@ -639,7 +659,7 @@ export default function App(): React.ReactElement {
             {`Mirror's encrypted database was sealed with key \"${keyMismatch.oldKey}\" but the current key is \"${keyMismatch.newKey}\". This happens after reinstall, clear data, or when Android restores a backup of the database without its key (SecureStore is not backed up).`}
           </Text>
           <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3) }}>
-            <Pill theme={theme} onPress={async () => { try { const rt = runtimeRef.current; if (rt) { await rt.store.deleteAll(); setKeyMismatch(null); setError(null); setSessions([]); setDailyTotals([]); setScaledSessions([]); setLastCollect('store reset'); await checkPermissionAndCollect(); } } catch (e: any) { setError(e?.message ?? String(e)); } }}>Reset stored data</Pill>
+            <Pill theme={theme} onPress={async () => { try { const rt = runtimeRef.current; if (rt) { await rt.store.deleteAll(); setKeyMismatch(null); setError(null); setSessions([]); setDailyTotals([]); setScaledSessions([]); setEvolution(null); setDiscovery(null); setLastCollect('store reset'); await checkPermissionAndCollect(); } } catch (e: any) { setError(e?.message ?? String(e)); } }}>Reset stored data</Pill>
             <LinkButton theme={theme} onPress={() => setKeyMismatch(null)}>Dismiss</LinkButton>
           </View>
         </Card>
@@ -737,31 +757,109 @@ export default function App(): React.ReactElement {
             <SectionHeader
               theme={theme}
               title="Interest Evolution"
-              caption={`across ${evolution.distinctDays} days (${evolution.firstDay} to ${evolution.lastDay})`}
+              caption={`history starts ${evolution.historyStartDay} · ${evolution.distinctDays} days (${evolution.historyStartDay} to ${evolution.lastDay})`}
             />
             <View style={{ gap: theme.space(3) }}>
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Chip label="Based on usage patterns only" theme={theme} />
                 <TierBadge tier="D" theme={theme} />
                 <Text role="micro" tone="muted" theme={theme}>
-                  {'App-level evolution across days; topic evolution requires Tier A/B/C.'}
+                  {'App-level across days; topic evolution requires Tier A/B/C.'}
                 </Text>
               </View>
-              <Text role="micro" tone="muted" theme={theme}>
-                {`New after ${evolution.firstDay}: ${evolution.newlySeenCount} · Fading: ${evolution.fadedCount} · History: ${evolution.distinctDays} days`}
-              </Text>
+              <Text role="micro" tone="muted" theme={theme}>{evolution.summaryLine}</Text>
+              {evolution.limitedHistory ? (
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Limited history (${evolution.distinctDays} days recorded): growing and fading compare recent vs earlier days in this short window, not long-term change.`}
+                </Text>
+              ) : null}
               {evolution.rows.map((r) => (
                 <View key={r.app} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: theme.space(2) }}>
                     <Text role="label" theme={theme}>{r.label}</Text>
-                    <Text role="micro" tone="muted" theme={theme}>{r.trend}</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{r.trendLabel}</Text>
                   </View>
                   <Text role="micro" tone="muted" theme={theme}>
-                    {`First seen ${r.firstSeenDay} · active ${r.activeDays} of ${evolution.distinctDays} days · ${r.sessionCount} sitting${r.sessionCount === 1 ? '' : 's'} (typical: ${r.dominantBand})`}
+                    {`${r.seenSinceText} · active ${r.activeDays} of ${evolution.distinctDays} days · ${r.sessionCount} sitting${r.sessionCount === 1 ? '' : 's'} (typical: ${r.dominantBand})`}
                   </Text>
                   <Divider theme={theme} />
                 </View>
               ))}
+            </View>
+          </Card>
+        );
+      })()}
+
+      {/* J9 Discovery Journey – shown only when session gate is open AND 3+ days of history exist */}
+      {(() => {
+        const orphanCount = quality?.byReason?.orphan_background ?? 0;
+        const totalGaps = quality?.count ?? 0;
+        const reliable = orphanCount <= 50 && totalGaps <= 100;
+        if (!reliable || !discovery || !discovery.hasHistory) {
+          return null;
+        }
+        return (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title="Discovery Journey"
+              caption={`history starts ${discovery.historyStartDay} · ${discovery.distinctDays} days · cross-app routes and repeat rhythm`}
+            />
+            <View style={{ gap: theme.space(3) }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Chip label="Based on usage patterns only" theme={theme} />
+                <TierBadge tier="D" theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>
+                  {'Sustained app handoffs within 5 min; step-by-step topic routes require Tier A/B/C.'}
+                </Text>
+              </View>
+
+              <View style={{ gap: theme.space(2) }}>
+                <Text role="label" theme={theme}>
+                  {`Repeated cross-app routes (${discovery.totalHandoffs} handoff${discovery.totalHandoffs === 1 ? '' : 's'} across ${discovery.distinctDays} days)`}
+                </Text>
+                {discovery.sustainedSessionCount === 0 ? (
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`All ${discovery.shortBounceCount} recorded opens ended in under 8 s — no sustained cross-app routes formed.`}
+                  </Text>
+                ) : discovery.routes.length === 0 ? (
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`No repeated cross-app pair (2+ handoffs within 5 min) across these ${discovery.distinctDays} days.`}
+                  </Text>
+                ) : (
+                  discovery.routes.map((rt) => (
+                    <View
+                      key={`${rt.fromApp}->${rt.toApp}`}
+                      style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: theme.space(2), paddingVertical: theme.space(1) }}
+                    >
+                      <Text role="label" theme={theme} style={{ flex: 1 }}>{`${rt.fromLabel} → ${rt.toLabel}`}</Text>
+                      <Text role="micro" tone="muted" theme={theme}>{`${rt.count}x · ${rt.activeDays} of ${discovery.distinctDays} days`}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+
+              <Divider theme={theme} />
+
+              <View style={{ gap: theme.space(1) }}>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (${Math.round(discovery.repeatSessionShare * 100)}% of sustained sittings) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Top app by time (${selectedDay}): ${discovery.topAppByTime ? `${discovery.topAppByTime.label} (${formatDuration(discovery.topAppByTime.totalMs)}, OS aggregate)` : 'none recorded'}`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`New topics opened: ${discovery.newTopicsOpened.value} — ${discovery.newTopicsOpened.detail}`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Searches started: ${discovery.searchesStarted.value} — ${discovery.searchesStarted.detail}`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {discovery.explicitLabels.total > 0
+                    ? `Explicit labels in window: ${discovery.explicitLabels.intentional} intentional, ${discovery.explicitLabels.mindless} mindless${discovery.explicitLabels.unsure > 0 ? `, ${discovery.explicitLabels.unsure} unsure` : ''} (user-labelled only)`
+                    : 'Explicit labels in window: 0 (optional — intent is never guessed from duration)'}
+                </Text>
+              </View>
             </View>
           </Card>
         );
@@ -863,6 +961,17 @@ export default function App(): React.ReactElement {
                                     approximate: true,
                                   });
                                   setIqs(iqsResult);
+                                  const histSessions = await runtime.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
+                                  setDiscovery(
+                                    computeDiscoveryJourney({
+                                      sessions: histSessions.map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms })),
+                                      osTotals: dailyTotals,
+                                      intentLabels: updatedLabels,
+                                      labels,
+                                      ignorePackages: launcherPkgs,
+                                      utcOffsetMinutes: -new Date().getTimezoneOffset(),
+                                    }),
+                                  );
                                 } catch {}
                               }
                             } finally {
@@ -906,6 +1015,17 @@ export default function App(): React.ReactElement {
                                     gaps: scoreGaps,
                                     utcOffsetMinutes: -new Date().getTimezoneOffset(),
                                     approximate: true,
+                                  }),
+                                );
+                                const histSessions = await rt.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
+                                setDiscovery(
+                                  computeDiscoveryJourney({
+                                    sessions: histSessions.map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms })),
+                                    osTotals: dailyTotals,
+                                    intentLabels: updatedLabels,
+                                    labels,
+                                    ignorePackages: launcherPkgs,
+                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
                                   }),
                                 );
                               } catch {}
@@ -960,8 +1080,8 @@ export default function App(): React.ReactElement {
               <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, gaps ${totalGaps}`}</Text>
               <Text role="micro" tone="muted" theme={theme}>
                 {hasEvoHistory
-                  ? `Interest Evolution (J4) is shown above across ${daysCollected} days of history. Discovery Journey (J9) awaits review.`
-                  : `Interest Evolution (J4) stays hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
+                  ? `Interest Evolution (J4) and Discovery Journey (J9) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 items await review.`
+                  : `Interest Evolution (J4) and Discovery Journey (J9) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
               </Text>
             </View>
           );
