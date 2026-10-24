@@ -20,7 +20,11 @@ import { nativeUsageSource } from './usageSource';
 
 export const USAGE_COLLECTION_TASK = 'mirror-usage-collection';
 
-type Runtime = { store: MirrorStore };
+type Runtime = {
+  store: MirrorStore;
+  collectNow?: (now?: number) => ReturnType<typeof collectUsage>;
+  ingestRecent?: (now?: number) => ReturnType<typeof ingestRecentDays>;
+};
 
 let runtime: Runtime | null = null;
 
@@ -38,7 +42,10 @@ export function defineUsageTask(): void {
   TaskManager.defineTask(USAGE_COLLECTION_TASK, async () => {
     if (!runtime) return BackgroundTask.BackgroundTaskResult.Failed;
     try {
-      const result = await collectUsage(nativeUsageSource(), runtime.store, { now: Date.now() });
+      const now = Date.now();
+      const result = runtime.collectNow
+        ? await runtime.collectNow(now)
+        : await collectUsage(nativeUsageSource(), runtime.store, { now });
       // A missing permission is not a failure: the person may simply not have
       // granted it, and the OS should not retry with backoff for that.
       if (result.status === 'permission-required') return BackgroundTask.BackgroundTaskResult.Success;
@@ -47,8 +54,12 @@ export function defineUsageTask(): void {
       // idempotent, so a retry rewrites the same rows; a partial day is skipped by
       // `ingestDay` rather than replacing a complete rollup with a smaller one.
       // The offset is read here, at pass time, not fixed at registration.
-      const utcOffsetMinutes = -new Date().getTimezoneOffset();
-      await ingestRecentDays(runtime.store, Date.now(), utcOffsetMinutes);
+      if (runtime.ingestRecent) {
+        await runtime.ingestRecent(Date.now());
+      } else {
+        const utcOffsetMinutes = -new Date().getTimezoneOffset();
+        await ingestRecentDays(runtime.store, Date.now(), utcOffsetMinutes);
+      }
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {
       // A thrown task is retried with backoff by the platform; that is the right
@@ -67,6 +78,6 @@ export async function registerUsageTask(): Promise<void> {
 
 export async function unregisterUsageTask(): Promise<void> {
   if (await TaskManager.isTaskRegisteredAsync(USAGE_COLLECTION_TASK)) {
-    await BackgroundTask.unregisterTaskAsync(USAGE_COLLECTION_TASK);
+    await TaskManager.unregisterTaskAsync(USAGE_COLLECTION_TASK);
   }
 }

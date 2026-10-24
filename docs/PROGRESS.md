@@ -1666,3 +1666,23 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - App.tsx updated honest gate text
 - Release workflow throwaway tag test: previous v0.0.0-test-round16-j4 failed 0s due to en-dash, fixed locally, needs web UI upload
 
+
+### Round 19 — Gate open on device (39 orphans): duplicate events.id skip, copy reconciliation, OEM Package installer exclusion, multi-day J4, J9 plan (2026-10-24)
+
+**Real-device findings (orphans = 39, gate open):**
+1. `Error code 19: UNIQUE constraint failed: events.id` after sync (`220 collected, 190 inserted`):
+   - **Root cause:** `App.tsx` mount + `AppState` `'active'` fired two overlapping `collectNow()` passes before `cursor_state` updated; in `expoDriver.ts`, a shared `depth > 0` counter let the staggered second transaction bypass the FIFO queue and interleave `SELECT id` / `INSERT INTO events` inside SQLite.
+   - **Were any new events lost?** No — Pass 1 committed all 190 new events (30 were prior duplicates) and saved `cursor_state`; Pass 2 threw inside `appendEvents` before `setCursorState`, and the 1-hour overlap (`overlapMs = 3_600_000`) with deterministic IDs re-reads any boundary events on the next sync.
+   - **Fix (3 layers):** (a) `MirrorStore.appendEvents` deduplicates in-batch and uses `INSERT OR IGNORE INTO events` + `SELECT changes() AS n` so duplicates are skipped and counted, never raising Error 19; (b) `expoDriver.ts` removes the broken `depth > 0` bypass for strict FIFO transaction serialization; (c) `runtime.ts` coalesces concurrent `collectNow` and `ingestRecent` calls, and `usage.ts` `gapFloorMs` avoids double-counting overlap gaps across syncs.
+2. **Contradictory text cleaned up:**
+   - Removed `"scaled to daily totals"` from `scoring.ts` `confidenceFor` Why-sheet reason.
+   - Removed `"Orphans 319→64"` from the App opens card (and `buildDetails.ts`).
+   - Reconciled `/55` vs `/75`: Why-sheet Callout and `BUILD_SHORT` now reflect dynamic `iqs.max` (`/55` without 5 labels, `/75` with 5+ labels, `/100` with topic vectors; never rescaled).
+   - Reconciled `"39 gaps"` with `"No collection gaps"`: `confidenceFor` now reports `${gapCount} collection gaps recorded (0 min unmeasured span — unspanned orphan/close events)` when `gapCount > 0 && gapMs === 0`.
+3. **Excluded Package installer everywhere:**
+   - Added OEM installer packages (`com.miui.packageinstaller`, `com.miui.global.packageinstaller`, `com.samsung.android.packageinstaller`, `com.coloros.packageinstaller`, `com.oplus.packageinstaller`, `com.oplus.appdetail`, `com.vivo.packageinstaller`) and `isIgnoredSystemApp(pkg, label)` (matches `*.packageinstaller` and resolved label `"Package installer"`) across OS totals, sessions, switching rate, validation, and J4.
+4. **J4 Interest Evolution real multi-day history (or hidden until 3+ days):**
+   - Added `packages/core-analytics/src/evolution.ts` (`computeInterestEvolution`, `MIN_EVOLUTION_DAYS = 3`).
+   - Removed single-day OS totals duplication and removed contradictory `"needs reliable sessions"` note when gate is open.
+   - Hidden on main screen until 3+ distinct local days of sessions exist; once 3+ days exist, shows `firstSeenDay`, `activeDays`, multi-day `trend` (`new` / `growing` / `steady` / `fading`), and typical sitting depth band.
+5. **Typecheck & CI fixes:** Fixed `packages/ui/src/primitives/controls.tsx` `TS2339` and `App.tsx` token/prop types so full `npm run verify` passes cleanly (0 typecheck/lint errors, 256 package tests, 723 Metro modules in `bundle-check` / 664 in direct `expo export:embed`).

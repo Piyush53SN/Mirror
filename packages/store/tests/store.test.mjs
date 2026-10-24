@@ -533,3 +533,28 @@ test('key change: app update keeps same key readable, reinstall with new key fai
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('appendEvents: duplicates inside the same batch and across syncs are skipped without error or data loss', async () => {
+  const { s, close } = await makeStore();
+  try {
+    const first = await s.appendEvents([
+      foreground({ id: 'evt_dup_0001', at: iso(0) }),
+      foreground({ id: 'evt_dup_0001', at: iso(0) }), // in-batch duplicate
+      background({ id: 'evt_dup_0002', at: iso(60_000) }),
+    ]);
+    assert.equal(first.inserted, 2);
+    assert.equal(first.duplicate, 1);
+    assert.deepEqual(first.rejected, []);
+
+    const second = await s.appendEvents([
+      foreground({ id: 'evt_dup_0001', at: iso(0) }),
+      background({ id: 'evt_dup_0002', at: iso(60_000) }),
+      foreground({ id: 'evt_dup_0003', at: iso(120_000) }),
+    ]);
+    assert.equal(second.inserted, 1, 'new events in mixed batch are never lost');
+    assert.equal(second.duplicate, 2, 'existing duplicates are skipped cleanly');
+    assert.equal((await s.counts()).total, 3);
+  } finally {
+    close();
+  }
+});

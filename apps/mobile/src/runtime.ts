@@ -11,7 +11,7 @@
  */
 import * as SQLite from 'expo-sqlite';
 import { MirrorStore } from '@mirror/store';
-import { collectUsage, describeGapSummary, validateDailyTotals } from '@mirror/core-analytics';
+import { collectUsage, describeGapSummary, validateDailyTotals, isIgnoredSystemApp } from '@mirror/core-analytics';
 import type { OsTotal } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
@@ -32,7 +32,7 @@ export type MirrorRuntime = {
   usage(): ReturnType<typeof nativeUsageSource>;
   /** Attribute sessions and write a complete local day's rollup. */
   ingestDay(day: string, utcOffsetMinutes?: number): ReturnType<typeof ingestDay>;
-  /** Recompute the last two complete local days (idempotent). */
+  /** Recompute the last two complete local days + today (idempotent). */
   ingestRecent(now?: number): ReturnType<typeof ingestRecentDays>;
   /** What Mirror could not measure, in words and numbers. */
   dataQuality(range?: { fromMs?: number; toMs?: number }): Promise<DataQuality>;
@@ -57,30 +57,51 @@ export async function createRuntime(options: { allowContent?: boolean; retention
 
   creating = (async () => {
     const db = await SQLite.openDatabaseAsync('mirror.db');
-  const store = new MirrorStore({
-    driver: expoDriver(db),
-    keys: secureStoreKeys(),
-    random: osRandom,
-    allowContent: options.allowContent ?? false,
-    retentionDays: options.retentionDays ?? 180,
-  });
-  await store.open();
+    const store = new MirrorStore({
+      driver: expoDriver(db),
+      keys: secureStoreKeys(),
+      random: osRandom,
+      allowContent: options.allowContent ?? false,
+      retentionDays: options.retentionDays ?? 180,
+    });
+    await store.open();
 
-  const usage = nativeUsageSource();
-  const offsetNow = () => -new Date().getTimezoneOffset();
+    const usage = nativeUsageSource();
+    const offsetNow = () => -new Date().getTimezoneOffset();
+
+    // Single-flight guards so AppState 'active', initial mount, Refresh, and
+    // background WorkManager tasks coalesce rather than racing on cursor_state.
+    let collectInFlight: ReturnType<typeof collectUsage> | null = null;
+    let ingestInFlight: ReturnType<typeof ingestRecentDays> | null = null;
 
     singleton = {
       store,
       usage: () => usage,
       collectNow: async (now = Date.now()) => {
-        let launcherPkgs: string[] = [];
+        if (collectInFlight) return collectInFlight;
+        collectInFlight = (async () => {
+          let launcherPkgs: string[] = [];
+          try {
+            launcherPkgs = await usage.getLauncherPackages();
+          } catch {}
+          return collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+        })();
         try {
-          launcherPkgs = await usage.getLauncherPackages();
-        } catch {}
-        return collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+          return await collectInFlight;
+        } finally {
+          collectInFlight = null;
+        }
       },
       ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
-      ingestRecent: (now = Date.now()) => ingestRecentDays(store, now, offsetNow()),
+      ingestRecent: async (now = Date.now()) => {
+        if (ingestInFlight) return ingestInFlight;
+        ingestInFlight = ingestRecentDays(store, now, offsetNow());
+        try {
+          return await ingestInFlight;
+        } finally {
+          ingestInFlight = null;
+        }
+      },
       dataQuality: async (range = {}) => {
         const summary = await store.gapSummary(range);
         return { ...summary, sentence: describeGapSummary(summary) };
@@ -95,12 +116,19 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       validate: async (range) => {
         try {
+          let launcherPkgs: string[] = [];
+          try {
+            launcherPkgs = await usage.getLauncherPackages();
+          } catch {}
+          const launcherSet = new Set(launcherPkgs);
           const osRows = await usage.queryUsageStats(range.fromMs, range.toMs);
-          const osTotals: OsTotal[] = osRows.map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
+          const osTotals: OsTotal[] = osRows
+            .filter((r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName))
+            .map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
           const sessions = await store.sessions({ fromMs: range.fromMs, toMs: range.toMs });
           const mirrorMap = new Map<string, number>();
           for (const s of sessions) {
-            if (s.app === 'dev.mirror.app') continue;
+            if (launcherSet.has(s.app) || isIgnoredSystemApp(s.app)) continue;
             mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
           }
           const mirrorTotals = [...mirrorMap.entries()].map(([app, totalMs]) => ({ app, totalMs }));

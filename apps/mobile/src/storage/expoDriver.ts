@@ -8,15 +8,12 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { SqlDriver } from '@mirror/store';
 
 export function expoDriver(db: SQLiteDatabase): SqlDriver {
-  // Serialize transactions and allow nesting via depth counter.
-  // The original implementation called `withTransactionAsync` directly, which
-  // fails with "cannot commit - no transaction is active" when two transactions
-  // run concurrently or when a transaction is started inside another (e.g. a
-  // migration calling exec inside a transaction wrapper, or two runtime calls
-  // racing on first launch). SQLite itself does not support nested BEGINs, so
-  // we track depth: if we are already inside a transaction, just run the fn.
-  // Concurrent top-level transactions are queued.
-  let depth = 0;
+  // Strictly serialize all top-level transactions via a FIFO promise queue.
+  // MirrorStore's contract forbids nested transactions (see NodeSqliteDriver).
+  // Previously a shared `depth > 0` counter attempted to allow nesting, which
+  // caused staggered concurrent callers (e.g. AppState 'active' firing while an
+  // initial sync transaction was in flight) to see `depth === 1`, bypass the
+  // queue, and interleave SELECT/INSERT statements inside the same transaction.
   let queue: Promise<void> = Promise.resolve();
 
   return {
@@ -30,15 +27,6 @@ export function expoDriver(db: SQLiteDatabase): SqlDriver {
       return (await db.getAllAsync(sql, params as never[])) as never;
     },
     async transaction<T>(fn: () => Promise<T>): Promise<T> {
-      if (depth > 0) {
-        depth += 1;
-        try {
-          return (await fn()) as unknown as T;
-        } finally {
-          depth -= 1;
-        }
-      }
-
       let release!: () => void;
       const next = new Promise<void>((res) => {
         release = res;
@@ -47,7 +35,6 @@ export function expoDriver(db: SQLiteDatabase): SqlDriver {
       queue = next;
       await prev;
 
-      depth += 1;
       try {
         let result: T | undefined;
         let error: unknown;
@@ -61,7 +48,6 @@ export function expoDriver(db: SQLiteDatabase): SqlDriver {
         if (error) throw error;
         return result as T;
       } finally {
-        depth -= 1;
         release();
       }
     },

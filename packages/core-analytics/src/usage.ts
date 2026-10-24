@@ -152,6 +152,8 @@ export type BuildUsageOptions = {
   maxIntervalMs?: number;
   /** Intervals shorter than this are not a sitting. Default 0. */
   minIntervalMs?: number;
+  /** Only count row/interval gaps strictly at/after this timestamp (prevents re-counting overlap gaps across syncs). */
+  gapFloorMs?: number;
 };
 
 export type BuildUsageResult = {
@@ -189,6 +191,13 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.google.android.permissioncontroller',
   'com.android.packageinstaller',
   'com.google.android.packageinstaller',
+  'com.miui.packageinstaller',
+  'com.miui.global.packageinstaller',
+  'com.samsung.android.packageinstaller',
+  'com.coloros.packageinstaller',
+  'com.oplus.packageinstaller',
+  'com.oplus.appdetail',
+  'com.vivo.packageinstaller',
   'com.android.intentresolver',
   'com.google.android.intentresolver',
   'com.android.settings',
@@ -197,6 +206,20 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.google.android.gsf', // Play Services Framework
   'android', // generic system package that sometimes appears
 ] as const;
+
+const DEFAULT_IGNORED_SET = new Set<string>(DEFAULT_IGNORED_PACKAGES);
+
+/**
+ * True when a package is Mirror itself, Android/OEM system UI, Play Store/Services,
+ * Settings, or any Android/OEM Package Installer (by package pattern or resolved label).
+ */
+export function isIgnoredSystemApp(packageName: string, label?: string): boolean {
+  if (!packageName) return true;
+  if (DEFAULT_IGNORED_SET.has(packageName)) return true;
+  if (/(^|\.)packageinstaller(\.|$)/i.test(packageName)) return true;
+  if (typeof label === 'string' && /^package\s*installer$/i.test(label.trim())) return true;
+  return false;
+}
 
 // Resolver / installer / permission controller / systemui that should close
 // previous app but never be counted. Includes DEFAULT_IGNORED_PACKAGES plus
@@ -256,7 +279,7 @@ function closeInterval(
   app: string,
   start: number,
   end: number,
-  options: { sinceMs: number; maxIntervalMs: number; minIntervalMs: number },
+  options: { sinceMs: number; maxIntervalMs: number; minIntervalMs: number; gapFloorMs?: number },
   intervals: { app: string; start: number; end: number; carried: boolean }[],
   drops: UsageDrop[],
   gaps: UsageGap[],
@@ -264,7 +287,9 @@ function closeInterval(
   const duration = end - start;
   if (duration > options.maxIntervalMs) {
     drops.push({ reason: 'too_long', app, at: start });
-    addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: end });
+    if (options.gapFloorMs === undefined || end > options.gapFloorMs) {
+      addGap(gaps, { reason: 'too_long', count: 1, fromMs: start, toMs: end });
+    }
     return;
   }
   if (duration <= 0 || duration < options.minIntervalMs) {
@@ -341,7 +366,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         continue;
       }
       for (const [app, entry] of open) {
-        closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
         recentlyClosed.set(app, row.timeStamp);
       }
       open.clear();
@@ -350,7 +375,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
     if (!PACKAGE.test(row.packageName)) {
       drops.push({ reason: 'invalid_package', app: row.packageName, at: row.timeStamp });
-      addGap(gaps, { reason: 'invalid_package', count: 1 });
+      if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
+        addGap(gaps, { reason: 'invalid_package', count: 1 });
+      }
       continue;
     }
 
@@ -361,13 +388,13 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
     // Ignored packages handling:
     // - Launchers (HOME role, dynamic) and Mirror itself close previous app on fg (user went home)
-    // - SystemUI, settings, permissioncontroller, etc are ignored WITHOUT closing previous (fixes Honkai 31s vs 52m)
-    if (ignore.has(row.packageName)) {
+    // - SystemUI, settings, permissioncontroller, OEM packageinstaller, etc are ignored WITHOUT closing previous (fixes Honkai 31s vs 52m)
+    if (ignore.has(row.packageName) || isIgnoredSystemApp(row.packageName)) {
       const isLauncher = launcherSet.has(row.packageName);
       const isMirror = row.packageName === 'dev.mirror.app';
       if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
         for (const [app, entry] of open) {
-          closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+          closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
           recentlyClosed.set(app, row.timeStamp);
         }
         open.clear();
@@ -392,12 +419,14 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
           continue;
         }
         drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
-        addGap(gaps, { reason: 'orphan_background', count: 1 });
+        if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
+          addGap(gaps, { reason: 'orphan_background', count: 1 });
+        }
         continue;
       }
       entry.activities.delete(className);
       if (entry.activities.size === 0) {
-        closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+        closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
         recentlyClosed.set(row.packageName, row.timeStamp);
         open.delete(row.packageName);
       }
@@ -412,7 +441,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       // YouTube, Genshin and Brawl Stars all ending at 3:17:44-45.
       for (const [otherApp, otherEntry] of [...open.entries()]) {
         if (otherApp !== row.packageName) {
-          closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+          closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
           recentlyClosed.set(otherApp, row.timeStamp);
           open.delete(otherApp);
         }
@@ -443,7 +472,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         continue;
       }
       drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
-      addGap(gaps, { reason: 'orphan_background', count: 1 });
+      if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
+        addGap(gaps, { reason: 'orphan_background', count: 1 });
+      }
       continue;
     }
 
@@ -472,7 +503,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
 
     if (entry.activities.size === 0) {
       // Last activity closed, close interval
-      closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs }, intervals, drops, gaps);
+      closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
       recentlyClosed.set(row.packageName, row.timeStamp);
       open.delete(row.packageName);
     } else {
@@ -664,6 +695,7 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
     openIntervals: state.open,
     ignorePackages: options.ignorePackages,
     maxIntervalMs,
+    gapFloorMs: state.at ?? undefined,
   });
 
   const appended = await store.appendEvents(built.events);

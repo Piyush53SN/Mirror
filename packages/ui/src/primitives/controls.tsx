@@ -58,8 +58,9 @@ export function Pill({ children, variant = 'primary', onPress, disabled, icon, t
   const press = usePressableBase(t, height, onPress, disabled);
   const background = variant === 'primary' ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
   const colour = variant === 'primary' ? t.color.onAnchor : t.color.ink;
-  // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array (e.g., {a}{b})
-  const labelForA11y = typeof children === 'string' ? children : Array.isArray(children) ? children.join(' ') : String(children ?? '');
+  // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array at runtime
+  const rawChildren: unknown = children;
+  const labelForA11y = typeof rawChildren === 'string' ? rawChildren : Array.isArray(rawChildren) ? rawChildren.join(' ') : String(rawChildren ?? '');
 
   return (
     <Pressable

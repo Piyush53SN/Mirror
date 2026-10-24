@@ -26,6 +26,7 @@
  */
 import type { DataTier } from '@mirror/shared-types';
 import { SHORT_SESSION_MS } from './sessionize';
+import { isIgnoredSystemApp } from './usage';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -59,7 +60,7 @@ export type ScoreInput = {
   utcOffsetMinutes?: number;
   /** Default 23 → 05. */
   lateNight?: { startHour?: number; endHour?: number };
-  /** If true, sessions are approximate (from raw events, scaled to OS totals) and should not feed scores as exact – confidence reduced */
+  /** If true, session boundaries come from reconstructed OS usage events (not exact per-sitting durations) – confidence capped at 0.49 */
   approximate?: boolean;
 };
 
@@ -177,8 +178,8 @@ const SWITCHING_EXCLUDED_APPS = new Set<string>([
 
 /** App changes per active hour. A change after a gap longer than 5 min is a new sitting. Excludes installer/Play Store/Settings-type system apps from switching pressure. */
 export function switchingRate(sessions: readonly ScoredSession[]): { switches: number; activeHours: number; perHour: number } {
-  // Filter out system apps for switching pressure – user request: exclude installer/Play Store/Settings-type
-  const filtered = sessions.filter((s) => !SWITCHING_EXCLUDED_APPS.has(s.app));
+  // Filter out system apps (including all OEM package installers) for switching pressure
+  const filtered = sessions.filter((s) => !SWITCHING_EXCLUDED_APPS.has(s.app) && !isIgnoredSystemApp(s.app));
   const ordered = [...filtered].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
   let switches = 0;
   for (let i = 1; i < ordered.length; i += 1) {
@@ -439,6 +440,12 @@ function confidenceFor(
     }
   }
   const coverage = clamp01(1 - gapMs / windowMs);
+  const gapReason =
+    gapMs > 0
+      ? `${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`
+      : gapCount > 0
+        ? `${gapCount} collection gap${gapCount === 1 ? '' : 's'} recorded (0 min unmeasured span — unspanned orphan/close events).`
+        : 'No collection gaps in this window.';
   if (sessions.length === 0) {
     return {
       score: 0,
@@ -447,7 +454,7 @@ function confidenceFor(
       sample: 0,
       labels,
       reasons: [
-        gapMs > 0 ? `${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).` : 'No collection gaps in this window.',
+        gapReason,
         'No complete sittings in this window.',
         'No deliberate share: no intent labels.',
         'No topic depth: no topic vectors.',
@@ -458,19 +465,16 @@ function confidenceFor(
   const labelScore = clamp01(labels / 20);
   let score = round1((0.4 * coverage + 0.25 * sampleScore + 0.2 * labelScore + 0.15 * clamp01(tierCompleteness)) * 100) / 100;
 
-  const reasons: string[] = [];
-  if (gapMs > 0) reasons.push(`${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`);
-  else reasons.push('No collection gaps in this window.');
+  const reasons: string[] = [gapReason];
   reasons.push(`${sessions.length} complete sitting${sessions.length === 1 ? '' : 's'}${sessions.length < 15 ? ' — a small sample' : ''}.`);
   if (labels >= MIN_LABELS) reasons.push(`${labels} decisive intent labels.`);
   else reasons.push(`No deliberate-share score: ${labels} of ${MIN_LABELS} labels needed.`);
   const topic = input.vectors && input.vectors.size > 0;
   reasons.push(topic ? 'Topic depth is not scored from the placeholder embedder.' : 'Topic depth is not scored: no topic vectors yet.');
 
-  // Approximate session data (from raw events, scaled to OS totals) should not feed scores as exact
+  // Reconstructed session boundaries should not feed scores as high/medium-confidence exact
   if (input.approximate) {
-    reasons.push('Session times are approximate and scaled to daily totals (OS aggregate) – timeline loses 99% for games like Honkai due to systemui fg closing, className mismatch, 2s overlap. Scores use OS totals as authoritative, not approximate timeline as exact.');
-    // Reduce confidence when approximate
+    reasons.push('Session boundaries are reconstructed from OS usage events (not scaled); daily totals come from the OS aggregate.');
     score = Math.min(score, 0.49);
   }
 

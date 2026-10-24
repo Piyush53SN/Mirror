@@ -8,10 +8,19 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
-import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_SHORT, J4_FULL } from './src/buildDetails';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
-import { getTopInvalidPackages, DEFAULT_IGNORED_PACKAGES, scoreIqs, type Score, type ScoredSession, type ScoreGap } from '@mirror/core-analytics';
+import {
+  getTopInvalidPackages,
+  isIgnoredSystemApp,
+  computeInterestEvolution,
+  scoreIqs,
+  type InterestEvolutionResult,
+  type Score,
+  type ScoredSession,
+  type ScoreGap,
+} from '@mirror/core-analytics';
 
 type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -67,6 +76,13 @@ const LABELING_EXCLUDED_APPS = new Set<string>([
   'com.google.android.permissioncontroller',
   'com.android.packageinstaller',
   'com.google.android.packageinstaller',
+  'com.miui.packageinstaller',
+  'com.miui.global.packageinstaller',
+  'com.samsung.android.packageinstaller',
+  'com.coloros.packageinstaller',
+  'com.oplus.packageinstaller',
+  'com.oplus.appdetail',
+  'com.vivo.packageinstaller',
   'com.android.intentresolver',
   'com.google.android.intentresolver',
   'com.android.settings',
@@ -148,6 +164,7 @@ export default function App(): React.ReactElement {
   const [buildTapCount, setBuildTapCount] = React.useState(0);
   const [scaledSessions, setScaledSessions] = React.useState<{ id: string; app: string; label: string; start_ms: number; end_ms: number; duration_ms: number; scaled_duration_ms: number; isScaled: boolean }[]>([]);
   const [iqs, setIqs] = React.useState<Score | null>(null);
+  const [evolution, setEvolution] = React.useState<InterestEvolutionResult | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
   const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
@@ -162,7 +179,11 @@ export default function App(): React.ReactElement {
       setError(null);
       const runtime = await createRuntime();
       runtimeRef.current = runtime;
-      provideRuntime({ store: runtime.store });
+      provideRuntime({
+        store: runtime.store,
+        collectNow: runtime.collectNow,
+        ingestRecent: runtime.ingestRecent,
+      });
       defineUsageTask();
 
       const usage = runtime.usage();
@@ -185,9 +206,9 @@ export default function App(): React.ReactElement {
           let launcherPkgs: string[] = [];
           try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
           const launcherSet = new Set(launcherPkgs);
-          const systemIgnoreSet = new Set(DEFAULT_IGNORED_PACKAGES);
-          const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName) && !systemIgnoreSet.has(r.packageName));
-          const resolved = await resolveAppLabels(filteredOs.map((r) => r.packageName));
+          const candidateOs = osRows.filter((r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName) && r.totalMs > 0);
+          const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
+          const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
           const totals: DailyTotal[] = filteredOs.map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs })).sort((a, b) => b.totalMs - a.totalMs);
           setDailyTotals(totals);
           setLabels(resolved);
@@ -206,7 +227,10 @@ export default function App(): React.ReactElement {
           acc[g.reason] = (acc[g.reason] ?? 0) + g.count;
           return acc;
         }, {});
-        setLastCollect(`collect: collected ${collectResult.events} events, ${collectResult.inserted} inserted, ${collectResult.gaps.length} gaps (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})`);
+        const gapTotal = collectResult.gaps.reduce((sum: number, g: any) => sum + g.count, 0);
+        setLastCollect(
+          `collect: ${collectResult.events} events (${collectResult.inserted} new, ${collectResult.duplicate} skipped), ${gapTotal} gap${gapTotal === 1 ? '' : 's'}${gapTotal > 0 ? ` (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})` : ''}`,
+        );
         try {
           const top = getTopInvalidPackages(collectResult.dropped as any);
           setInvalidTop(top);
@@ -225,18 +249,39 @@ export default function App(): React.ReactElement {
         let launcherPkgs: string[] = [];
         try { launcherPkgs = await usage.getLauncherPackages(); } catch {}
         const launcherSet = new Set(launcherPkgs);
-        const systemIgnoreSet = new Set(DEFAULT_IGNORED_PACKAGES);
-        // Settings rule: exclude Settings and other system UI everywhere (same rule for totals and timeline)
-        // This matches DEFAULT_IGNORED – Settings does not close previous and is not counted, unlike launchers which close previous but are also excluded from totals
-        const filteredOs = osRows.filter((r) => r.packageName !== 'dev.mirror.app' && !launcherSet.has(r.packageName) && !systemIgnoreSet.has(r.packageName) && r.totalMs > 0);
-        const resolved = await resolveAppLabels(filteredOs.map((r) => r.packageName));
+        // Exclude launchers, Mirror, Settings, Play Store/Services, and all Package installers (by pkg and label)
+        const candidateOs = osRows.filter((r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName) && r.totalMs > 0);
+        const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
+        const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
         setLabels((prev) => ({ ...prev, ...resolved }));
         const totals: DailyTotal[] = filteredOs.map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs })).sort((a, b) => b.totalMs - a.totalMs);
         setDailyTotals(totals);
 
         const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
-        const sessFiltered = sessDay.filter((s) => s.app !== 'dev.mirror.app' && !launcherSet.has(s.app) && !systemIgnoreSet.has(s.app));
+        const sessResolved = await resolveAppLabels(sessDay.map((s) => s.app));
+        const allLabelsForDay = { ...resolved, ...sessResolved };
+        setLabels((prev) => ({ ...prev, ...allLabelsForDay }));
+        const sessFiltered = sessDay.filter((s) => !launcherSet.has(s.app) && !isIgnoredSystemApp(s.app, allLabelsForDay[s.app]));
         setSessions(sessFiltered.slice(-50).reverse());
+
+        // Multi-day history for J4 Interest Evolution (last 30 days; requires 3+ distinct local days)
+        try {
+          const histFrom = dayTo - 30 * 86_400_000;
+          const histSessions = await runtime.store.sessions({ fromMs: histFrom, toMs: dayTo });
+          const histApps = [...new Set(histSessions.map((s) => s.app))].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
+          const histResolved = await resolveAppLabels(histApps);
+          const mergedLabels = { ...allLabelsForDay, ...histResolved };
+          setLabels((prev) => ({ ...prev, ...mergedLabels }));
+          const evo = computeInterestEvolution({
+            sessions: histSessions.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms })),
+            utcOffsetMinutes: -new Date().getTimezoneOffset(),
+            labels: mergedLabels,
+            ignorePackages: launcherPkgs,
+          });
+          setEvolution(evo);
+        } catch {
+          setEvolution(null);
+        }
 
         const osMap = new Map<string, number>();
         for (const r of filteredOs) osMap.set(r.packageName, r.totalMs);
@@ -297,8 +342,9 @@ export default function App(): React.ReactElement {
           const mirrorMap = new Map<string, number>();
           for (const s of sessFiltered) mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
           const allApps = new Set<string>([...mirrorMap.keys(), ...osMap.keys()]);
-          const filteredApps = [...allApps].filter((app) => app !== 'dev.mirror.app' && !launcherSet.has(app) && !systemIgnoreSet.has(app));
-          const resolvedDay = await resolveAppLabels(filteredApps);
+          const candidateApps = [...allApps].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
+          const resolvedDay = await resolveAppLabels(candidateApps);
+          const filteredApps = candidateApps.filter((app) => !isIgnoredSystemApp(app, resolvedDay[app]));
           const rows: SingleDayRow[] = filteredApps.map((app) => {
             const mirrorMs = mirrorMap.get(app) ?? 0;
             const osMs = osMap.get(app) ?? 0;
@@ -645,24 +691,26 @@ export default function App(): React.ReactElement {
                     <Text key={idx} role="micro" tone="muted" theme={theme}>{`• ${r}`}</Text>
                   ))}
                 </View>
-                <Callout theme={theme} tone="neutral" style={{ marginTop: theme.space(2) }}>
-                  Tier-D only: session_length (25), deliberate_share (20, needs 5 labels), switching (15), late_night (15). Topic_depth (25, tier A) not measured without vectors – so max is 75 when only usage patterns available. This matches “Based on usage patterns only” chip.
-                </Callout>
+                <View style={{ marginTop: theme.space(2) }}>
+                  <Callout theme={theme} tone="neutral">
+                    {`Current max is /${iqs.max}: only measured factors enter the denominator — session length (25)${iqs.factors.find((f) => f.id === 'switching')?.measurable ? ', switching (15)' : ''}${iqs.factors.find((f) => f.id === 'late_night')?.measurable ? ', late-night (15)' : ''}${iqs.factors.find((f) => f.id === 'deliberate_share')?.measurable ? ', deliberate share (20)' : ''}. Unmeasured factors reduce the max rather than counting as zero (reaches /75 with 5+ decisive labels and 3+ sittings; /100 adds Tier A/B/C topic depth).`}
+                  </Callout>
+                </View>
               </View>
             ) : null}
           </View>
         ) : (
           <View style={{ gap: theme.space(2) }}>
-            <Text role="label" tone="muted" theme={theme}>No usage data for {selectedDay} – IQS not measured. Grant usage access and use apps, then Refresh.</Text>
+            <Text role="label" tone="muted" theme={theme}>{`No usage data for ${selectedDay} – IQS not measured. Grant usage access and use apps, then Refresh.`}</Text>
             <Text role="micro" tone="muted" theme={theme}>Mirror will not fill the gap with estimates.</Text>
           </View>
         )}
       </Card>
 
       <Card theme={theme} elevated>
-        <SectionHeader theme={theme} title={`Per-app totals – ${selectedDay}`} caption="from OS aggregate (Digital Wellbeing source), matches by construction, excludes launchers and Mirror" />
+        <SectionHeader theme={theme} title={`Per-app totals – ${selectedDay}`} caption="from OS aggregate (Digital Wellbeing source), excludes launchers, Mirror, and system installers" />
         {dailyTotals.length === 0 ? (
-          <Text role="micro" tone="muted" theme={theme}>No totals for {selectedDay} – use apps that day, then Refresh. Totals come from OS queryUsageStats, not event rebuild, so they match Settings.</Text>
+          <Text role="micro" tone="muted" theme={theme}>{`No totals for ${selectedDay} – use apps that day, then Refresh. Totals come from OS queryUsageStats, not event rebuild, so they match Settings.`}</Text>
         ) : (
           dailyTotals.map((t) => (
             <View key={t.app} style={{ paddingVertical: theme.space(2), flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -676,73 +724,56 @@ export default function App(): React.ReactElement {
         )}
       </Card>
 
-      {/* J4 Interest Evolution – P3 start, hard gate orphans <50 */}
-      <Card theme={theme} elevated>
-        <SectionHeader theme={theme} title="J4 Interest Evolution" caption="first seen, depth over time, trend – P3 start, hard gate orphans ≤50" />
-        {(() => {
-          const orphanCount = quality?.byReason?.orphan_background ?? 0;
-          const totalGaps = quality?.count ?? 0;
-          const reliable = orphanCount <= 50 && totalGaps <= 100;
-          if (!reliable) {
-            return (
-              <View style={{ gap: theme.space(2) }}>
-                <Text role="label" theme={theme}>Needs more reliable sessions – orphans {orphanCount} (hard gate 50), gaps {totalGaps}</Text>
-                <Text role="micro" tone="muted" theme={theme}>{J4_SHORT(orphanCount)}</Text>
-                <Callout theme={theme} tone="limit">Hard gate: P3 features (J4, J9, J11, J18, J20) blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative and match Digital Wellbeing.</Callout>
-              </View>
-            );
-          }
-          // Reliable – show interest evolution from real data
-          // Compute first seen per app from sessions, depth bands, and trend from OS totals last 7 vs prev 7 (if available)
-          // For now use scaledSessions for first seen, dailyTotals for today, and quality for gaps
-          const firstSeenMap = new Map<string, number>();
-          for (const s of scaledSessions) {
-            const existing = firstSeenMap.get(s.app);
-            if (existing == null || s.start_ms < existing) firstSeenMap.set(s.app, s.start_ms);
-          }
-          // Sort apps by totalMs descending (from dailyTotals) for display
-          const evolutionRows = dailyTotals.slice(0, 10).map((t) => {
-            const firstSeen = firstSeenMap.get(t.app);
-            return {
-              app: t.app,
-              label: t.label,
-              totalMs: t.totalMs,
-              firstSeen: firstSeen ? new Date(firstSeen).toLocaleDateString() : 'unknown (no session in window)',
-              // Depth bands would need session durations – we have duration_ms but open-times-only mode has no durations for many, so show note
-              depthNote: 'Depth bands from session lengths (needs reliable sessions with durations) – currently open times only, no durations',
-            };
-          });
-          return (
+      {/* J4 Interest Evolution – shown only when session gate is open AND 3+ days of history exist */}
+      {(() => {
+        const orphanCount = quality?.byReason?.orphan_background ?? 0;
+        const totalGaps = quality?.count ?? 0;
+        const reliable = orphanCount <= 50 && totalGaps <= 100;
+        if (!reliable || !evolution || !evolution.hasHistory || evolution.rows.length === 0) {
+          return null;
+        }
+        return (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title="Interest Evolution"
+              caption={`across ${evolution.distinctDays} days (${evolution.firstDay} to ${evolution.lastDay})`}
+            />
             <View style={{ gap: theme.space(3) }}>
-              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Chip label="Based on usage patterns only" theme={theme} />
                 <TierBadge tier="D" theme={theme} />
-                <Text role="micro" tone="muted" theme={theme}>Tier D only – OS usage, no topic vectors yet. Interest evolution degrades gracefully: shows first seen + depth bands, not topic depth.</Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {'App-level evolution across days; topic evolution requires Tier A/B/C.'}
+                </Text>
               </View>
-              <Text role="label" theme={theme}>First seen & depth (last 7 days from OS totals, authoritative)</Text>
-              {evolutionRows.length === 0 ? (
-                <Text role="micro" tone="muted" theme={theme}>No apps for {selectedDay} – use apps, then Refresh. First seen computed from sessions when reliable.</Text>
-              ) : (
-                evolutionRows.map((r) => (
-                  <View key={r.app} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
-                    <Text role="label" theme={theme}>{r.label} – first seen {r.firstSeen}</Text>
-                    <Text role="micro" tone="muted" theme={theme}>{`${r.app} • ${formatDuration(r.totalMs)} today (OS total)`}</Text>
-                    <Text role="micro" tone="muted" theme={theme}>{r.depthNote}</Text>
-                    <Divider theme={theme} />
+              <Text role="micro" tone="muted" theme={theme}>
+                {`New after ${evolution.firstDay}: ${evolution.newlySeenCount} · Fading: ${evolution.fadedCount} · History: ${evolution.distinctDays} days`}
+              </Text>
+              {evolution.rows.map((r) => (
+                <View key={r.app} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <Text role="label" theme={theme}>{r.label}</Text>
+                    <Text role="micro" tone="muted" theme={theme}>{r.trend}</Text>
                   </View>
-                ))
-              )}
-              <Callout theme={theme} tone="neutral">Only explicit labels feed Deliberate share – hint “Duration doesn’t indicate intent” never counts. J4 shows first seen from sessions, depth over time from OS totals, trend requires topic vectors (tier A/B/C) – currently degraded to usage patterns only.</Callout>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`First seen ${r.firstSeenDay} · active ${r.activeDays} of ${evolution.distinctDays} days · ${r.sessionCount} sitting${r.sessionCount === 1 ? '' : 's'} (typical: ${r.dominantBand})`}
+                  </Text>
+                  <Divider theme={theme} />
+                </View>
+              ))}
             </View>
-          );
-        })()}
-      </Card>
+          </Card>
+        );
+      })()}
 
       <Card theme={theme}>
         <SectionHeader theme={theme} title={`App opens – ${selectedDay}, ${scaledSessions.length}`} caption="open times only, tap a session to label (optional)" />
-        <View style={{ backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
+        <View style={{ backgroundColor: theme.color.card, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2) }}>
           <Text role="label" theme={theme}>Open times only – durations not shown. Daily totals above are authoritative from OS.</Text>
-          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>Orphans 319→64 (hard gate 50 for P3). Labeling is optional feedback – only your explicit labels feed Deliberate share (needs 5, never guess). Duration doesn’t indicate intent, so hint is shown as “Hint (not counted)”. System/utility apps skipped. Tap a session to label.</Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+            {'Labeling is optional feedback – only your explicit labels feed Deliberate share (needs 5, never guessed). Duration alone does not indicate intent, so hints never count. System and utility apps are skipped. Tap an open to label.'}
+          </Text>
         </View>
         {/* Optional opt-in prompt after longer sessions */}
         {(() => {
@@ -750,9 +781,9 @@ export default function App(): React.ReactElement {
           const hasLabels = Object.keys(intentLabels).length > 0;
           if (longSessions.length >= 2 && !hasLabels && !labelOptIn) {
             return (
-              <View style={{ backgroundColor: theme.color.surface, padding: theme.space(3), borderRadius: theme.radius.sm, marginBottom: theme.space(3), gap: theme.space(2) }}>
+              <View style={{ backgroundColor: theme.color.card, padding: theme.space(3), borderRadius: theme.radius.sm, marginBottom: theme.space(3), gap: theme.space(2) }}>
                 <Text role="label" theme={theme}>Help improve Deliberate share? (optional)</Text>
-                <Text role="micro" tone="muted" theme={theme}>You had {longSessions.length} longer sessions today. Labeling a few as intentional/mindless helps measure Deliberate share (needs 5). Stays on device, optional – tap a session below to label, or dismiss.</Text>
+                <Text role="micro" tone="muted" theme={theme}>{`You had ${longSessions.length} longer sessions today. Labeling a few as intentional or mindless helps measure Deliberate share (needs 5). Stays on device, optional – tap an open below to label, or dismiss.`}</Text>
                 <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
                   <Pill theme={theme} onPress={() => setLabelOptIn(true)}>Show labeling</Pill>
                   <LinkButton theme={theme} onPress={() => setLabelOptIn(true)}>Dismiss</LinkButton>
@@ -764,12 +795,12 @@ export default function App(): React.ReactElement {
         })()}
         {scaledSessions.length === 0 ? (
           <View style={{ paddingVertical: theme.space(4), alignItems: 'center' }}>
-            <Text role="label" theme={theme}>No opens for {selectedDay} – totals above are authoritative (OS).</Text>
+            <Text role="label" theme={theme}>{`No opens for ${selectedDay} – totals above are authoritative (OS).`}</Text>
           </View>
         ) : (
           scaledSessions.map((s) => {
             const currentLabel = intentLabels[s.id];
-            const isExcluded = LABELING_EXCLUDED_APPS.has(s.app);
+            const isExcluded = LABELING_EXCLUDED_APPS.has(s.app) || isIgnoredSystemApp(s.app, s.label);
             const isExpanded = expandedSessionId === s.id;
             const hintInfo = guessIntent(s.duration_ms, s.app);
             // Hint is UI only, never counts toward Deliberate share – only explicit labels feed score
@@ -784,15 +815,17 @@ export default function App(): React.ReactElement {
                   }}
                 >
                   <View style={{ gap: theme.space(1) }}>
-                    <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}${s.duration_ms > 0 ? ` • ${formatDuration(s.duration_ms)}` : ''}`}</Text>
+                    <Text role="label" theme={theme}>{`${s.label} opened at ${formatTime(s.start_ms)}`}</Text>
                     <Text role="micro" tone="muted" theme={theme}>{`${s.app}${currentLabel ? ` • you: ${currentLabel} (explicit, counts)` : ''}${isExcluded ? ' • labeling skipped (system/utility)' : ''}`}</Text>
                     {showHint ? <Text role="micro" tone="muted" theme={theme}>{`Hint (not counted, duration doesn't indicate intent): ${hintInfo.hint}`}</Text> : null}
                     {currentLabel ? <Text role="micro" tone="muted" theme={theme}>{`You labeled: ${currentLabel} – only explicit labels feed Deliberate share. Tap to change.`}</Text> : null}
                   </View>
                 </Pressable>
                 {isExpanded && !isExcluded ? (
-                  <View style={{ gap: theme.space(2), marginTop: theme.space(2), backgroundColor: theme.color.surface, padding: theme.space(2), borderRadius: theme.radius.sm }}>
-                    <Text role="micro" tone="muted" theme={theme}>Optional feedback – stays on device. Only your explicit labels feed Deliberate share (needs 5). Duration alone doesn't indicate intent – this hint never counts.</Text>
+                  <View style={{ gap: theme.space(2), marginTop: theme.space(2), backgroundColor: theme.color.card, padding: theme.space(2), borderRadius: theme.radius.sm }}>
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {'Optional feedback – stays on device. Only your explicit labels feed Deliberate share (needs 5). Duration alone does not indicate intent – this hint never counts.'}
+                    </Text>
                     <Text role="micro" tone="muted" theme={theme}>{`Hint (not counted): ${hintInfo.hint}`}</Text>
                     <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
                       {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
@@ -806,18 +839,22 @@ export default function App(): React.ReactElement {
                               const runtime = runtimeRef.current;
                               if (runtime) {
                                 await runtime.saveIntentLabel(s.id, lbl);
-                                setIntentLabels((prev) => ({ ...prev, [s.id]: lbl }));
+                                const updatedLabels = { ...intentLabels, [s.id]: lbl };
+                                setIntentLabels(updatedLabels);
                                 try {
                                   const dayFrom = dayStartMs(selectedDay);
                                   const dayTo = dayEndMs(selectedDay);
+                                  let launcherPkgs: string[] = [];
+                                  try { launcherPkgs = await runtime.usage().getLauncherPackages(); } catch {}
+                                  const launcherSet = new Set(launcherPkgs);
                                   const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
                                   const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
                                   const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
-                                  const updatedLabels = { ...intentLabels, [s.id]: lbl };
                                   const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
-                                  const scored: ScoredSession[] = sessDay.filter((x: any) => x.app !== 'dev.mirror.app').map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
-                                  const { scoreIqs: scoreFn } = await import('@mirror/core-analytics');
-                                  const iqsResult = scoreFn({
+                                  const scored: ScoredSession[] = sessDay
+                                    .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
+                                    .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+                                  const iqsResult = scoreIqs({
                                     window: { fromMs: dayFrom, toMs: dayTo },
                                     sessions: scored,
                                     labels: labelArray,
@@ -839,7 +876,45 @@ export default function App(): React.ReactElement {
                     </View>
                     <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
                       <LinkButton theme={theme} onPress={() => setExpandedSessionId(null)}>Collapse</LinkButton>
-                      {currentLabel ? <LinkButton theme={theme} onPress={async () => { const rt = runtimeRef.current; if (rt) { await rt.saveIntentLabel(s.id, 'unsure'); setIntentLabels((p) => ({ ...p, [s.id]: 'unsure' })); } }}>Clear to unsure</LinkButton> : null}
+                      {currentLabel ? (
+                        <LinkButton
+                          theme={theme}
+                          onPress={async () => {
+                            const rt = runtimeRef.current;
+                            if (rt) {
+                              await rt.saveIntentLabel(s.id, 'unsure');
+                              const updatedLabels = { ...intentLabels, [s.id]: 'unsure' as const };
+                              setIntentLabels(updatedLabels);
+                              try {
+                                const dayFrom = dayStartMs(selectedDay);
+                                const dayTo = dayEndMs(selectedDay);
+                                let launcherPkgs: string[] = [];
+                                try { launcherPkgs = await rt.usage().getLauncherPackages(); } catch {}
+                                const launcherSet = new Set(launcherPkgs);
+                                const sessDay = await rt.store.sessions({ fromMs: dayFrom, toMs: dayTo });
+                                const gapsRaw = await rt.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+                                const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
+                                const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
+                                const scored: ScoredSession[] = sessDay
+                                  .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
+                                  .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+                                setIqs(
+                                  scoreIqs({
+                                    window: { fromMs: dayFrom, toMs: dayTo },
+                                    sessions: scored,
+                                    labels: labelArray,
+                                    gaps: scoreGaps,
+                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
+                                    approximate: true,
+                                  }),
+                                );
+                              } catch {}
+                            }
+                          }}
+                        >
+                          Clear to unsure
+                        </LinkButton>
+                      ) : null}
                     </View>
                   </View>
                 ) : null}
@@ -852,14 +927,14 @@ export default function App(): React.ReactElement {
 
       <Card theme={theme}>
         <SectionHeader theme={theme} title="Data quality" caption="one-line note" />
-        <Text role="body" theme={theme}>{quality?.sentence ?? 'No gaps recorded in this window.'}</Text>
+        <Text role="body" theme={theme}>{quality?.sentence ?? 'No collection gaps recorded.'}</Text>
         <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(2) }}>
           <Pill theme={theme} onPress={checkPermissionAndCollect}>Refresh</Pill>
           <LinkButton theme={theme} onPress={openSettings}>Open usage settings</LinkButton>
         </View>
       </Card>
 
-      {/* P3 guard: features that need session boundaries – hard gate orphans <50 */}
+      {/* P3 guard: features that need session boundaries – hard gate orphans ≤50 */}
       <Card theme={theme}>
         <SectionHeader theme={theme} title="P3 features – session boundaries" caption="hard gate orphans ≤50, gaps ≤100" />
         {(() => {
@@ -869,18 +944,25 @@ export default function App(): React.ReactElement {
           if (!reliable) {
             return (
               <View style={{ gap: theme.space(2) }}>
-                <Text role="label" theme={theme}>Hard gate: needs more reliable sessions – orphans {orphanCount} (must be ≤50), gaps {totalGaps} (must be ≤100)</Text>
+                <Text role="label" theme={theme}>{`Hard gate: needs more reliable sessions – orphans ${orphanCount} (must be ≤50), gaps ${totalGaps} (must be ≤100)`}</Text>
                 <Text role="micro" tone="muted" theme={theme}>{P3_GUARD_SHORT(orphanCount, totalGaps)}</Text>
                 <Callout theme={theme} tone="limit">
-                  Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint “Duration doesn’t indicate intent” never counts.
+                  {'Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint never counts.'}
                 </Callout>
               </View>
             );
           }
+          const hasEvoHistory = Boolean(evolution && evolution.hasHistory && evolution.rows.length > 0);
+          const daysCollected = evolution?.distinctDays ?? 0;
+          const minDays = evolution?.minDays ?? 3;
           return (
             <View style={{ gap: theme.space(2) }}>
-              <Text role="label" theme={theme}>Sessions reliable – orphans {orphanCount}, gaps {totalGaps} – P3 features can use boundaries</Text>
-              <Text role="micro" tone="muted" theme={theme}>Interest evolution (J4), discovery (J9), rabbit-hole (J11), what-if (J18), focus windows (J20) can now use session start/end with low confidence. Only explicit labels feed Deliberate share.</Text>
+              <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, gaps ${totalGaps}`}</Text>
+              <Text role="micro" tone="muted" theme={theme}>
+                {hasEvoHistory
+                  ? `Interest Evolution (J4) is shown above across ${daysCollected} days of history. Discovery Journey (J9) awaits review.`
+                  : `Interest Evolution (J4) stays hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
+              </Text>
             </View>
           );
         })()}

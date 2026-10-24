@@ -134,7 +134,13 @@ export class MirrorStore {
         permitted.push(event);
       }
 
+      const seenInBatch = new Set<string>();
       for (const event of permitted) {
+        if (seenInBatch.has(event.id)) {
+          result.duplicate += 1;
+          continue;
+        }
+        seenInBatch.add(event.id);
         const existing = await this.driver.all<{ id: string }>(`SELECT id FROM events WHERE id = ?`, [event.id]);
         if (existing.length > 0) {
           result.duplicate += 1;
@@ -142,7 +148,7 @@ export class MirrorStore {
         }
         const envelope = seal(event, this.derived(), this.keyId, this.random);
         await this.driver.run(
-          `INSERT INTO events (id, at, kind, tier, origin, content, session_id, item_hash, consent_id, payload)
+          `INSERT OR IGNORE INTO events (id, at, kind, tier, origin, content, session_id, item_hash, consent_id, payload)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             event.id,
@@ -157,7 +163,12 @@ export class MirrorStore {
             envelope,
           ],
         );
-        result.inserted += 1;
+        const changed = await this.driver.all<{ n: number }>(`SELECT changes() AS n`);
+        if (changed.length === 0 || Number(changed[0]?.n ?? 0) > 0) {
+          result.inserted += 1;
+        } else {
+          result.duplicate += 1;
+        }
       }
     });
 

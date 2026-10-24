@@ -19,7 +19,7 @@
     "test": "npm run test:tokens && npm run test:prototype && npm run test:ui && npm run test:mockups && npm run test:packages && npm run test:config && npm run test:android && npm run test:release && npm run test:privacy && npm run test:security",
     "test:tokens": "node --test tests/tokens.test.mjs",
     "test:prototype": "node --test tests/prototype.test.mjs",
-    "test:ui": "node --test packages/ui/tests/ui.test.mjs && node --test packages/ui/tests/import.test.mjs",
+    "test:ui": "node --test packages/ui/tests/ui.test.mjs && node --test packages/ui/tests/import.test.mjs && node --test tests/jsx-no-unescaped.test.mjs",
     "test:mockups": "npm run mockups && node --test packages/ui/tests/mockups.test.mjs",
     "check:prototype": "node scripts/check-prototype.mjs",
     "check:lockfile": "npm ci --dry-run",
