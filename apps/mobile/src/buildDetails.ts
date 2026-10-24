@@ -9,16 +9,17 @@ export const BUILD_SHORT = [
   'App opens only – no durations, no scaling',
   'IQS out of measured factors (/55 before labels, /75 with 5+ labels; never rescaled)',
   'Labeling optional, only explicit labels count',
-  'J4 Interest Evolution & J9 Discovery Journey shown when 3+ days & orphans ≤50',
+  'J4, J9 & J11 shown when 3+ days & orphans ≤50',
 ].join('\n');
 
 export const BUILD_FULL = [
   'Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role), Mirror, Play Store/Services, Settings, and all Package installers',
-  'App opens from raw events, open times only, no durations, no scaling (60s recent-close honest + 1h overlap + per-class persisted map; 1h overlap does NOT pair unrelated – idempotent ids, single-fg, max 6h, merge gap 2s only)',
+  'App opens from raw events, open times only, no durations, no scaling (60s recent-close honest + 1h overlap + per-class persisted map; ACTIVITY_DESTROYED cleanup on closed apps ignored so cached process reclaim never inflates orphans)',
   'IQS: Tier-D usage-pattern score out of measured parts (/55 without 5 labels, /75 with 5+ labels, /100 with topic vectors; never rescaled), 0.49 confidence cap on reconstructed boundaries, only explicit labels feed Deliberate share',
-  'Labeling: collapsed on tap, skip system/utility, optional opt-in after longer sessions, neutral hint (never counted) “Duration doesn’t indicate intent”',
-  'P3 J4 Interest Evolution: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; labels “Seen since YYYY-MM-DD (history starts ...)” (never implies first-ever use), omits misleading “New after” counts, and marks growing/fading with “(limited history)” below 14 days',
-  'P3 J9 Discovery Journey: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; repeated cross-app handoff routes (sustained ≥8s sittings within 5 min), repeat vs single-day app visits (with limited-history caveat), OS top app by time, explicit unavailable flags for Tier A/B/C topics & Tier C searches, and explicit user labels only',
+  'Labeling: collapsed on tap, skip system/utility everywhere via shared countExplicitLabels, optional opt-in after longer sessions, one-tap Clear stored labels if accidental scroll labels exist',
+  'P3 J4 Interest Evolution: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; labels “Seen since YYYY-MM-DD (history starts ...)” and marks growing/fading with “(limited history)” below 14 days',
+  'P3 J9 Discovery Journey: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; cross-app handoffs, repeat vs single-day visits, OS top app, unavailable flags for Tier A/B/C topics & Tier C searches, and selected-day explicit labels reconciled 1-for-1 with Why sheet',
+  'P3 J11 Rabbit Hole: hard gate orphans ≤50 & gaps ≤100 plus 3+ distinct local days; neutral Tier-D clusters of 3+ consecutive short sittings (8s to under 5m within 60m) on the same non-utility app with no cross-app visit in between, plus explicit Tier-D can/cannot capability disclosures',
   'Build: tap 7 times for hidden debug (validation same period, OS vs Mirror, raw UsageEvents, Share JSON, P3 guard details)',
 ].join('\n');
 
@@ -51,5 +52,13 @@ export const J9_FULL = [
   'Step-by-step topic discovery (search → page → follow-up) requires Tier A/B/C; on Tier D OS usage alone, New topics opened and Searches started explicitly show unavailable rather than guessing from app names.',
   'Repeated cross-app handoffs track sustained sittings (≥8s) where App A transitions to App B within 5 minutes across days, excluding launchers, Mirror, Settings, Play Store/Services, and all Package installers.',
   'Repeat vs single-day visits carry a limited-history caveat below 14 days so single-day visits are never misread as newly installed apps.',
-  'Top app by time comes from authoritative OS queryUsageStats totals, and intent summaries count only explicit user intent_label events (never duration hints).',
+  'Explicit label counts use countExplicitLabels scoped to selectedDay so J9 and the IQS Why sheet always match 1-for-1.',
+].join('\n');
+
+export const J11_FULL = [
+  'J11 Rabbit Hole requires both reliable session boundaries (orphans ≤50, gaps ≤100) and multi-day history (3+ distinct local days).',
+  'Tier D CAN detect: 3+ consecutive short sittings (8 s to under 5 min each, separated by at most 60 min) on the same non-utility app with no other app opened in between, late-night share (23:00–05:00 local), and any explicit intentional/mindless labels attached to those sittings.',
+  'Tier D CANNOT detect: whether a visit began with a search or ended in a save, whether short returns were algorithmic feed scrolling vs purposeful quick checks (messages, transit, docs), or intent when unlabelled — those require Tier A/B/C content and search signals.',
+  'System, launcher, installer, and utility packages (dialer, camera, clock, calculator, contacts, SMS, files) are excluded.',
+  'Neutrality: clusters never penalise IQS, never trigger unprompted nudges or app blocks, and never appear on any public profile.',
 ].join('\n');

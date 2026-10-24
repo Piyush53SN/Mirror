@@ -15,12 +15,19 @@
  *     caveat (`< 14` days) so single-day visits are never misread as newly
  *     installed apps.
  *   - `topAppByTime` comes from authoritative OS `queryUsageStats` totals.
- *   - `explicitLabels` counts only user-supplied `intent_label` events (duration
- *     hints never count, and familiar repeat use is never framed negatively).
+ *   - `explicitLabels` uses `countExplicitLabels` from `scoring.ts` (single
+ *     source of truth shared with `scoreIqs`/Why sheet, scoped to `labelWindow`
+ *     when supplied so day-level Why sheet and J9 never disagree).
  */
 import type { DataTier } from '@mirror/shared-types';
 import { localDay } from './ingest';
-import { SWITCH_GAP_MS, type IntentLabel, type ScoredSession } from './scoring';
+import {
+  SWITCH_GAP_MS,
+  countExplicitLabels,
+  type ExplicitLabelCounts,
+  type IntentLabel,
+  type ScoredSession,
+} from './scoring';
 import { SHORT_SESSION_MS } from './sessionize';
 import { isIgnoredSystemApp } from './usage';
 
@@ -52,13 +59,6 @@ export type TopAppByTimeFact = {
   tier: 'D';
 };
 
-export type ExplicitLabelCounts = {
-  intentional: number;
-  mindless: number;
-  unsure: number;
-  total: number;
-};
-
 export type DiscoveryOsTotalInput = {
   app: string;
   label?: string;
@@ -69,6 +69,11 @@ export type DiscoveryJourneyInput = {
   sessions: readonly ScoredSession[];
   osTotals?: readonly DiscoveryOsTotalInput[];
   intentLabels?: Readonly<Record<string, IntentLabel['label']>>;
+  /**
+   * Optional window (e.g. `selectedDay` `[fromMs, toMs)`) to scope `explicitLabels`
+   * so it reconciles 1-for-1 with the IQS Why sheet for the viewed day.
+   */
+  labelWindow?: { fromMs: number; toMs: number };
   labels?: Readonly<Record<string, string>>;
   ignorePackages?: readonly string[];
   utcOffsetMinutes?: number;
@@ -100,7 +105,7 @@ export type DiscoveryJourneyResult = {
   /** Honest Tier-D capability flags: never faked from package names. */
   newTopicsOpened: UnavailableDiscoveryFact;
   searchesStarted: UnavailableDiscoveryFact;
-  /** Explicit user intent_label counts only (never guessed from duration). */
+  /** Explicit user intent_label counts only (shared with scoreIqs / Why sheet). */
   explicitLabels: ExplicitLabelCounts;
 };
 
@@ -124,7 +129,6 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
   const routeLimit = Math.max(1, input.routeLimit ?? 5);
   const launcherSet = new Set<string>(input.ignorePackages ?? []);
   const labels = input.labels ?? {};
-  const intentLabels = input.intentLabels ?? {};
 
   const valid = input.sessions.filter((s) => {
     const dur = s.endMs - s.startMs;
@@ -163,6 +167,12 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
   }
   const orderedDays = [...daySet].sort();
 
+  const explicitLabels = countExplicitLabels(valid, input.intentLabels, {
+    window: input.labelWindow,
+    ignorePackages: input.ignorePackages,
+    appLabels: labels,
+  });
+
   if (orderedDays.length < minDays) {
     return {
       hasHistory: false,
@@ -183,30 +193,13 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
       topAppByTime,
       newTopicsOpened: UNAVAILABLE_TOPICS,
       searchesStarted: UNAVAILABLE_SEARCHES,
-      explicitLabels: { intentional: 0, mindless: 0, unsure: 0, total: 0 },
+      explicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
     };
   }
 
   const historyStartDay = orderedDays[0]!;
   const lastDay = orderedDays[orderedDays.length - 1]!;
   const limitedHistory = orderedDays.length < FULL_DISCOVERY_DAYS;
-
-  // Count explicit user labels on valid sessions in the window (never duration guesses)
-  let intentional = 0;
-  let mindless = 0;
-  let unsure = 0;
-  for (const s of valid) {
-    const lbl = intentLabels[s.id];
-    if (lbl === 'intentional') intentional += 1;
-    else if (lbl === 'mindless') mindless += 1;
-    else if (lbl === 'unsure') unsure += 1;
-  }
-  const explicitLabels: ExplicitLabelCounts = {
-    intentional,
-    mindless,
-    unsure,
-    total: intentional + mindless + unsure,
-  };
 
   // App-level active days across all valid sessions
   const appDaysMap = new Map<string, Set<string>>();

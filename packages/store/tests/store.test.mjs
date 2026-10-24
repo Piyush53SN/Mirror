@@ -345,6 +345,39 @@ test('deleteAll leaves nothing readable, and nothing recognisable in the file', 
   }
 });
 
+test('clearIntentLabels deletes only intent_label events and preserves usage events and sessions', async () => {
+  const { s, close } = await makeStore();
+  try {
+    const appendRes = await s.appendEvents([
+      foreground({ id: 'evt_fore_0099', app: 'org.wikipedia', at: iso(0) }),
+      background({ id: 'evt_back_0099', app: 'org.wikipedia', at: iso(60_000), duration_ms: 60_000 }),
+      { schema_version: 1, id: 'label_0000001', kind: 'intent_label', at: iso(65_000), tier: 'D', origin: 'user', content: 'metadata', session_id: 'ses_00000001', label: 'intentional' },
+      { schema_version: 1, id: 'label_0000002', kind: 'intent_label', at: iso(70_000), tier: 'D', origin: 'user', content: 'metadata', session_id: 'ses_00000002', label: 'mindless' },
+    ]);
+    assert.deepEqual(appendRes.rejected, []);
+    assert.equal(appendRes.inserted, 4);
+
+    await s.applySessions({
+      window: { fromMs: 0, toMs: Date.parse(iso(120_000)) },
+      sessions: [
+        { id: 'ses_00000001', app: 'org.wikipedia', start_ms: Date.parse(iso(0)), end_ms: Date.parse(iso(60_000)), duration_ms: 60_000 },
+      ],
+      assignments: [
+        { eventId: 'evt_fore_0099', sessionId: 'ses_00000001' },
+        { eventId: 'evt_back_0099', sessionId: 'ses_00000001' },
+      ],
+    });
+
+    const removed = await s.clearIntentLabels();
+    assert.equal(removed, 2);
+    assert.deepEqual(await s.events({ kind: 'intent_label' }), []);
+    assert.equal((await s.events()).length, 2, 'app_foreground and app_background events remain intact');
+    assert.equal((await s.sessions()).length, 1, 'sessions remain intact');
+  } finally {
+    close();
+  }
+});
+
 /* ------------------------------------------------------------ connections --- */
 
 test('a connection stores a keystore reference, and refuses a credential field', async () => {

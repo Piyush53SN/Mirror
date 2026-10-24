@@ -26,7 +26,7 @@
  */
 import type { DataTier } from '@mirror/shared-types';
 import { SHORT_SESSION_MS } from './sessionize';
-import { isIgnoredSystemApp } from './usage';
+import { isIgnoredSystemApp, isLabelingExcludedApp } from './usage';
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -238,6 +238,80 @@ export function sessionBands(sessions: readonly ScoredSession[]): DepthBand[] {
   });
 }
 
+export type ExplicitLabelCounts = {
+  intentional: number;
+  mindless: number;
+  unsure: number;
+  /** intentional + mindless — the exact count used by Deliberate share and the Why sheet. */
+  decisive: number;
+  /** intentional + mindless + unsure. */
+  total: number;
+};
+
+/**
+ * Single source of truth for explicit user `intent_label` counts across IQS,
+ * Why sheet, J9 Discovery Journey, and J11 Rabbit Hole.
+ *
+ * Counts only labels attached to valid, non-system, non-utility sittings inside
+ * `options.window` (when provided), deduplicated by session id. Duration hints
+ * never enter here.
+ */
+export function countExplicitLabels(
+  sessions: readonly ScoredSession[],
+  labels: readonly IntentLabel[] | Readonly<Record<string, IntentLabel['label']>> | undefined,
+  options: {
+    window?: { fromMs: number; toMs: number };
+    ignorePackages?: readonly string[];
+    appLabels?: Readonly<Record<string, string>>;
+  } = {},
+): ExplicitLabelCounts {
+  if (!labels) return { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 };
+
+  const labelMap = new Map<string, IntentLabel['label']>();
+  if (Array.isArray(labels)) {
+    for (const entry of labels as readonly IntentLabel[]) {
+      if (entry && typeof entry.sessionId === 'string') {
+        labelMap.set(entry.sessionId, entry.label);
+      }
+    }
+  } else {
+    for (const [sid, lbl] of Object.entries(labels as Readonly<Record<string, IntentLabel['label']>>)) {
+      if (lbl === 'intentional' || lbl === 'mindless' || lbl === 'unsure') {
+        labelMap.set(sid, lbl);
+      }
+    }
+  }
+  if (labelMap.size === 0) return { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 };
+
+  const scoped = options.window ? sessionsInWindow(sessions, options.window) : sessions.filter((s) => ms(s) > 0);
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const appLabels = options.appLabels ?? {};
+  const seenIds = new Set<string>();
+
+  let intentional = 0;
+  let mindless = 0;
+  let unsure = 0;
+  for (const session of scoped) {
+    if (seenIds.has(session.id)) continue;
+    seenIds.add(session.id);
+    if (launcherSet.has(session.app)) continue;
+    if (isLabelingExcludedApp(session.app, appLabels[session.app])) continue;
+    const lbl = labelMap.get(session.id);
+    if (lbl === 'intentional') intentional += 1;
+    else if (lbl === 'mindless') mindless += 1;
+    else if (lbl === 'unsure') unsure += 1;
+  }
+
+  const decisive = intentional + mindless;
+  return {
+    intentional,
+    mindless,
+    unsure,
+    decisive,
+    total: decisive + unsure,
+  };
+}
+
 export function curiositySplit(input: ScoreInput): CuriositySplit | null {
   const sessions = sessionsInWindow(input.sessions, input.window);
   if (sessions.length === 0) return null;
@@ -248,6 +322,10 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
   let unlabeledMs = 0;
   let decisive = 0;
   for (const session of sessions) {
+    if (isLabelingExcludedApp(session.app)) {
+      unlabeledMs += ms(session);
+      continue;
+    }
     const label = labels.get(session.id);
     if (label === 'intentional') {
       deepMs += ms(session);
@@ -302,16 +380,8 @@ export function scoreIqs(input: ScoreInput): Score {
     measurable: sessions.length > 0,
   };
 
-  const labels = new Map<string, IntentLabel['label']>();
-  for (const label of input.labels ?? []) labels.set(label.sessionId, label.label);
-  let intentional = 0;
-  let mindless = 0;
-  for (const session of sessions) {
-    const label = labels.get(session.id);
-    if (label === 'intentional') intentional += 1;
-    else if (label === 'mindless') mindless += 1;
-  }
-  const decisive = intentional + mindless;
+  const labelCounts = countExplicitLabels(sessions, input.labels);
+  const { intentional, decisive } = labelCounts;
   const labelled = decisive >= MIN_LABELS;
   const deliberateShare = decisive > 0 ? intentional / decisive : 0;
   const deliberateFactor: Factor = {

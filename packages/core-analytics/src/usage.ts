@@ -221,6 +221,46 @@ export function isIgnoredSystemApp(packageName: string, label?: string): boolean
   return false;
 }
 
+/**
+ * Utility & launcher packages skipped from manual intent labeling and from
+ * J11 same-app short-return cluster detection (dialer, camera, clock, calculator,
+ * contacts, SMS, documents/downloads, launchers), in addition to `DEFAULT_IGNORED_PACKAGES`.
+ */
+export const LABELING_EXCLUDED_PACKAGES = [
+  ...DEFAULT_IGNORED_PACKAGES,
+  'com.android.dialer',
+  'com.google.android.dialer',
+  'com.android.camera',
+  'com.google.android.camera',
+  'com.android.camera2',
+  'com.android.contacts',
+  'com.google.android.contacts',
+  'com.android.mms',
+  'com.google.android.apps.messaging',
+  'com.android.calendar',
+  'com.google.android.calendar',
+  'com.android.deskclock',
+  'com.google.android.deskclock',
+  'com.android.calculator2',
+  'com.google.android.calculator',
+  'com.android.documentsui',
+  'com.google.android.documentsui',
+  'com.android.providers.downloads',
+  'com.android.providers.downloads.ui',
+  'com.android.keyguard',
+  'com.android.launcher',
+  'com.android.launcher3',
+  'com.mi.android.globallauncher',
+  'com.sec.android.app.launcher',
+] as const;
+
+const LABELING_EXCLUDED_SET = new Set<string>(LABELING_EXCLUDED_PACKAGES);
+
+export function isLabelingExcludedApp(packageName: string, label?: string): boolean {
+  if (isIgnoredSystemApp(packageName, label)) return true;
+  return LABELING_EXCLUDED_SET.has(packageName);
+}
+
 // Resolver / installer / permission controller / systemui that should close
 // previous app but never be counted. Includes DEFAULT_IGNORED_PACKAGES plus
 // generic resolver names.
@@ -408,20 +448,16 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
-    // ACTIVITY_DESTROYED (24) removes a class but does not close app unless last activity
+    // ACTIVITY_DESTROYED (24) removes a class when an app is still open, but on
+    // Android `onDestroy()` routinely fires minutes or hours after an activity
+    // already closed at `onPause`/`onStop` when cached background processes are
+    // reclaimed. An `ACTIVITY_DESTROYED` for an already-closed package is normal
+    // OS cleanup, never a missed foreground sitting (`orphan_background`).
     if (DESTROY_TYPES.has(row.eventType)) {
       const className = row.className && row.className.length > 0 ? row.className : '__default__';
       const entry = open.get(row.packageName);
       if (!entry) {
-        const recentClose = recentlyClosed.get(row.packageName);
-        if (recentClose !== undefined && row.timeStamp - recentClose <= RECENT_CLOSE_SUPPRESS_MS) {
-          drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
-          continue;
-        }
-        drops.push({ reason: 'orphan_background', app: row.packageName, at: row.timeStamp });
-        if (options.gapFloorMs === undefined || row.timeStamp >= options.gapFloorMs) {
-          addGap(gaps, { reason: 'orphan_background', count: 1 });
-        }
+        drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp });
         continue;
       }
       entry.activities.delete(className);

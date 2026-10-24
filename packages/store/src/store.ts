@@ -487,6 +487,19 @@ export class MirrorStore {
    * `VACUUM` is what makes this a promise about the file rather than about the
    * index: without it, deleted pages stay on disk until reused.
    */
+  /** Delete all user `intent_label` events while keeping usage history, sessions, and rollups intact. */
+  async clearIntentLabels(): Promise<number> {
+    let deleted = 0;
+    await this.driver.transaction(async () => {
+      const existing = await this.driver.all<{ n: number }>(`SELECT COUNT(*) AS n FROM events WHERE kind = ?`, ['intent_label']);
+      deleted = Number(existing[0]?.n ?? 0);
+      if (deleted > 0) {
+        await this.driver.run(`DELETE FROM events WHERE kind = ?`, ['intent_label']);
+      }
+    });
+    return deleted;
+  }
+
   async deleteAll(): Promise<void> {
     await this.driver.transaction(async () => {
       const tables = ['events', 'event_vectors', 'sessions', 'data_gaps', 'daily_rollups', 'imports', 'connections', 'consent_log', 'meta'];

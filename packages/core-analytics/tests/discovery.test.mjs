@@ -172,11 +172,12 @@ test('4-day window: detects repeated A -> B handoffs within 5 min, skips <8s bou
     tier: 'D',
   });
 
-  // Explicit labels count only valid user sessions (2 intentional, 1 mindless)
+  // Explicit labels count only valid user sessions (2 intentional, 1 mindless = 3 decisive)
   assert.deepEqual(res.explicitLabels, {
     intentional: 2,
     mindless: 1,
     unsure: 0,
+    decisive: 3,
     total: 3,
   });
 

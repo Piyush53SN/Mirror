@@ -46,6 +46,8 @@ export type MirrorRuntime = {
   saveIntentLabel(sessionId: string, label: 'intentional' | 'mindless' | 'unsure'): Promise<void>;
   /** Load all intent labels */
   loadIntentLabels(): Promise<Record<string, 'intentional' | 'mindless' | 'unsure'>>;
+  /** Delete all stored `intent_label` events while keeping usage history intact */
+  clearAllIntentLabels(): Promise<number>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -176,6 +178,13 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           return map;
         } catch {
           return {};
+        }
+      },
+      clearAllIntentLabels: async () => {
+        try {
+          return await store.clearIntentLabels();
+        } catch {
+          return 0;
         }
       },
     };

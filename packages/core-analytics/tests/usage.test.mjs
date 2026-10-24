@@ -453,3 +453,18 @@ test('do not merge when gap >2s', () => {
   const result = buildUsageEvents(rows, { sinceMs: at(0) - 1000, untilMs: at(10) });
   assert.equal(result.stats.intervals, 2, 'should not merge gap >2s');
 });
+
+test('ACTIVITY_DESTROYED (24) on an already-closed app >60s later does not inflate orphan_background, while unmatched STOPPED still counts honestly', () => {
+  const rows = [
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_FOREGROUND, timeStamp: at(0) },
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.MOVE_TO_BACKGROUND, timeStamp: at(1) },
+    // 5 minutes (> 60s) later, Android reclaims cached process and fires ACTIVITY_DESTROYED (24)
+    { packageName: 'com.a', eventType: USAGE_EVENT_TYPE.ACTIVITY_DESTROYED, timeStamp: at(6) },
+    // Unmatched ACTIVITY_STOPPED (23) for an app never seen in foreground STILL honestly counts as orphan_background
+    { packageName: 'com.b', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: at(7) },
+  ];
+  const result = buildUsageEvents(rows, { sinceMs: at(0) - 1000, untilMs: at(10) });
+  const orphans = result.gaps.find((g) => g.reason === 'orphan_background')?.count ?? 0;
+  assert.equal(orphans, 1, 'only unmatched ACTIVITY_STOPPED counts as orphan_background; ACTIVITY_DESTROYED cleanup does not');
+});
+

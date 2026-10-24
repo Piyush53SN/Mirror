@@ -1,6 +1,7 @@
 export * from './discovery';
 export * from './evolution';
 export * from './ingest';
+export * from './rabbithole';
 export * from './scoring';
 export * from './sessionize';
 export * from './synthetic';

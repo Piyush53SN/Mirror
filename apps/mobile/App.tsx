@@ -8,17 +8,20 @@ import { PermissionPrimer } from '@mirror/ui';
 import { createRuntime, type DataQuality } from './src/runtime';
 import { defineUsageTask, provideRuntime, registerUsageTask } from './src/collector/background';
 import { resolveAppLabels, getCachedLabel } from './src/collector/appLabels';
-import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL } from './src/buildDetails';
+import { BUILD_SHORT, BUILD_FULL, P3_GUARD_SHORT, P3_GUARD_FULL, J4_FULL, J9_FULL, J11_FULL } from './src/buildDetails';
 import type { SessionRow } from '@mirror/store';
 import type { ValidationResult } from '@mirror/core-analytics';
 import {
   getTopInvalidPackages,
   isIgnoredSystemApp,
+  isLabelingExcludedApp,
   computeInterestEvolution,
   computeDiscoveryJourney,
+  computeRabbitHoles,
   scoreIqs,
   type InterestEvolutionResult,
   type DiscoveryJourneyResult,
+  type RabbitHoleResult,
   type Score,
   type ScoredSession,
   type ScoreGap,
@@ -70,55 +73,6 @@ function lastNDays(n: number): string[] {
   return out;
 }
 
-// System and utility apps to skip from labeling – no manual data entry for dialer, camera, etc.
-// Includes DEFAULT_IGNORED plus common utilities that are not meaningful to label intentional/mindless
-const LABELING_EXCLUDED_APPS = new Set<string>([
-  'dev.mirror.app',
-  'com.android.systemui',
-  'com.google.android.permissioncontroller',
-  'com.android.packageinstaller',
-  'com.google.android.packageinstaller',
-  'com.miui.packageinstaller',
-  'com.miui.global.packageinstaller',
-  'com.samsung.android.packageinstaller',
-  'com.coloros.packageinstaller',
-  'com.oplus.packageinstaller',
-  'com.oplus.appdetail',
-  'com.vivo.packageinstaller',
-  'com.android.intentresolver',
-  'com.google.android.intentresolver',
-  'com.android.settings',
-  'com.android.vending',
-  'com.google.android.gms',
-  'com.google.android.gsf',
-  'android',
-  // Utility apps – skip labeling per “no manual data entry” feedback
-  'com.android.dialer',
-  'com.google.android.dialer',
-  'com.android.camera',
-  'com.google.android.camera',
-  'com.android.camera2',
-  'com.android.contacts',
-  'com.google.android.contacts',
-  'com.android.mms',
-  'com.google.android.apps.messaging',
-  'com.android.calendar',
-  'com.google.android.calendar',
-  'com.android.deskclock',
-  'com.google.android.deskclock',
-  'com.android.calculator2',
-  'com.google.android.calculator',
-  'com.android.documentsui',
-  'com.google.android.documentsui',
-  'com.android.providers.downloads',
-  'com.android.providers.downloads.ui',
-  'com.android.keyguard',
-  'com.android.launcher',
-  'com.android.launcher3',
-  'com.mi.android.globallauncher',
-  'com.sec.android.app.launcher',
-]);
-
 // Rule-based hint – duration does NOT indicate intent, so we do NOT guess intentional/mindless from duration
 // Per user request: remove duration-based guess, or show only as clearly labeled hint that never counts toward Deliberate share
 // Only explicit labels feed the score – this hint is UI only, never used in scoring
@@ -168,6 +122,7 @@ export default function App(): React.ReactElement {
   const [iqs, setIqs] = React.useState<Score | null>(null);
   const [evolution, setEvolution] = React.useState<InterestEvolutionResult | null>(null);
   const [discovery, setDiscovery] = React.useState<DiscoveryJourneyResult | null>(null);
+  const [rabbitHole, setRabbitHole] = React.useState<RabbitHoleResult | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
   const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
@@ -274,7 +229,7 @@ export default function App(): React.ReactElement {
           setIntentLabels(loadedLabels);
         } catch {}
 
-        // Multi-day history for J4 Interest Evolution & J9 Discovery Journey (last 30 days; requires 3+ distinct local days)
+        // Multi-day history for J4 Interest Evolution, J9 Discovery Journey & J11 Rabbit Hole (last 30 days; requires 3+ distinct local days)
         try {
           const histFrom = dayTo - 30 * 86_400_000;
           const histSessions = await runtime.store.sessions({ fromMs: histFrom, toMs: dayTo });
@@ -295,14 +250,24 @@ export default function App(): React.ReactElement {
             sessions: histScored,
             osTotals: totals,
             intentLabels: loadedLabels,
+            labelWindow: { fromMs: dayFrom, toMs: dayTo },
             labels: mergedLabels,
             ignorePackages: launcherPkgs,
             utcOffsetMinutes,
           });
           setDiscovery(disc);
+          const rh = computeRabbitHoles({
+            sessions: histScored,
+            intentLabels: loadedLabels,
+            labels: mergedLabels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          });
+          setRabbitHole(rh);
         } catch {
           setEvolution(null);
           setDiscovery(null);
+          setRabbitHole(null);
         }
 
         const osMap = new Map<string, number>();
@@ -427,6 +392,73 @@ export default function App(): React.ReactElement {
       runtimeRef.current?.usage().openSettings();
     } catch {}
   }, []);
+
+  const recomputeFromLabels = React.useCallback(
+    async (updatedLabels: Record<string, 'intentional' | 'mindless' | 'unsure'>) => {
+      const rt = runtimeRef.current;
+      if (!rt) return;
+      try {
+        const dayFrom = dayStartMs(selectedDay);
+        const dayTo = dayEndMs(selectedDay);
+        let launcherPkgs: string[] = [];
+        try {
+          launcherPkgs = await rt.usage().getLauncherPackages();
+        } catch {}
+        const launcherSet = new Set(launcherPkgs);
+        const sessDay = await rt.store.sessions({ fromMs: dayFrom, toMs: dayTo });
+        const gapsRaw = await rt.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+        const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({
+          reason: g.reason,
+          count: g.count,
+          fromMs: g.from_ms ?? undefined,
+          toMs: g.to_ms ?? undefined,
+        }));
+        const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
+        const scored: ScoredSession[] = sessDay
+          .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
+          .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+        const utcOffsetMinutes = -new Date().getTimezoneOffset();
+        setIqs(
+          scoreIqs({
+            window: { fromMs: dayFrom, toMs: dayTo },
+            sessions: scored,
+            labels: labelArray,
+            gaps: scoreGaps,
+            utcOffsetMinutes,
+            approximate: true,
+          }),
+        );
+        const histSessions = await rt.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
+        const histScored: ScoredSession[] = histSessions.map((x: any) => ({
+          id: x.id,
+          app: x.app,
+          startMs: x.start_ms,
+          endMs: x.end_ms,
+        }));
+        setDiscovery(
+          computeDiscoveryJourney({
+            sessions: histScored,
+            osTotals: dailyTotals,
+            intentLabels: updatedLabels,
+            labelWindow: { fromMs: dayFrom, toMs: dayTo },
+            labels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          }),
+        );
+        setRabbitHole(
+          computeRabbitHoles({
+            sessions: histScored,
+            intentLabels: updatedLabels,
+            labels,
+            ignorePackages: launcherPkgs,
+            utcOffsetMinutes,
+          }),
+        );
+      } catch {}
+    },
+    [selectedDay, labels, dailyTotals],
+  );
 
   const copyRawEvents = React.useCallback(async () => {
     try {
@@ -633,6 +665,11 @@ export default function App(): React.ReactElement {
         <Card theme={theme}>
           <SectionHeader theme={theme} title="J9 Discovery Journey – full details" caption="cross-app routes, repeat rhythm, Tier-D bounds" />
           <Text role="micro" tone="muted" theme={theme}>{J9_FULL}</Text>
+        </Card>
+
+        <Card theme={theme}>
+          <SectionHeader theme={theme} title="J11 Rabbit Hole – full details" caption="short-return clusters, Tier-D can/cannot, neutral rules" />
+          <Text role="micro" tone="muted" theme={theme}>{J11_FULL}</Text>
         </Card>
 
         <Card theme={theme}>
@@ -856,8 +893,94 @@ export default function App(): React.ReactElement {
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {discovery.explicitLabels.total > 0
-                    ? `Explicit labels in window: ${discovery.explicitLabels.intentional} intentional, ${discovery.explicitLabels.mindless} mindless${discovery.explicitLabels.unsure > 0 ? `, ${discovery.explicitLabels.unsure} unsure` : ''} (user-labelled only)`
-                    : 'Explicit labels in window: 0 (optional — intent is never guessed from duration)'}
+                    ? `Explicit labels (${selectedDay}): ${discovery.explicitLabels.decisive} decisive (${discovery.explicitLabels.intentional} intentional, ${discovery.explicitLabels.mindless} mindless${discovery.explicitLabels.unsure > 0 ? `, ${discovery.explicitLabels.unsure} unsure` : ''})`
+                    : `Explicit labels (${selectedDay}): 0 decisive (optional — matches Why sheet; intent is never guessed)`}
+                </Text>
+              </View>
+            </View>
+          </Card>
+        );
+      })()}
+
+      {/* J11 Rabbit Hole – shown only when session gate is open AND 3+ days of history exist */}
+      {(() => {
+        const orphanCount = quality?.byReason?.orphan_background ?? 0;
+        const totalGaps = quality?.count ?? 0;
+        const reliable = orphanCount <= 50 && totalGaps <= 100;
+        if (!reliable || !rabbitHole || !rabbitHole.hasHistory) {
+          return null;
+        }
+        return (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title="Rabbit Hole — short-return clusters"
+              caption={`history starts ${rabbitHole.historyStartDay} · ${rabbitHole.distinctDays} days · neutral Tier-D cluster check`}
+            />
+            <View style={{ gap: theme.space(3) }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Chip label="Based on usage patterns only" theme={theme} />
+                <TierBadge tier="D" theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>
+                  {'Never penalises IQS; content and search drift require Tier A/B/C.'}
+                </Text>
+              </View>
+
+              <View style={{ gap: theme.space(1) }}>
+                <Text role="label" theme={theme}>Printed definition</Text>
+                <Text role="micro" tone="muted" theme={theme}>{rabbitHole.definitionText}</Text>
+                {rabbitHole.limitedHistory ? (
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Limited history (${rabbitHole.distinctDays} days recorded): cluster counts reflect this short window only.`}
+                  </Text>
+                ) : null}
+              </View>
+
+              <Divider theme={theme} />
+
+              {rabbitHole.clusterCount === 0 ? (
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`0 clusters matched this definition across ${rabbitHole.distinctDays} days. That is a real result, not a missing signal.`}
+                </Text>
+              ) : (
+                <View style={{ gap: theme.space(2) }}>
+                  <Text role="label" theme={theme}>
+                    {`${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · ${Math.round(rabbitHole.lateNightShare * 100)}% in 23:00–05:00)`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {rabbitHole.clusterExplicitLabels.total > 0
+                      ? `Your explicit labels inside these clusters: ${rabbitHole.clusterExplicitLabels.intentional} intentional, ${rabbitHole.clusterExplicitLabels.mindless} mindless${rabbitHole.clusterExplicitLabels.unsure > 0 ? `, ${rabbitHole.clusterExplicitLabels.unsure} unsure` : ''}.`
+                      : 'No explicit labels on sittings in these clusters (unlabelled sittings are not assumed mindless).'}
+                  </Text>
+                  {rabbitHole.clusters.map((c) => (
+                    <View
+                      key={c.id}
+                      style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: theme.space(2), paddingVertical: theme.space(1) }}
+                    >
+                      <Text role="label" theme={theme} style={{ flex: 1 }}>
+                        {`${c.label} · ${c.sittingCount} short returns`}
+                      </Text>
+                      <Text role="micro" tone="muted" theme={theme}>
+                        {`${c.day} · ${formatDuration(c.totalSittingMs)}`}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Divider theme={theme} />
+
+              <View style={{ gap: theme.space(1) }}>
+                <Text role="label" theme={theme}>What Tier D can detect</Text>
+                {rabbitHole.capabilities.tierDCanDetect.map((line, idx) => (
+                  <Text key={`can-${idx}`} role="micro" tone="muted" theme={theme}>{`• ${line}`}</Text>
+                ))}
+                <Text role="label" theme={theme} style={{ marginTop: theme.space(1) }}>What Tier D cannot detect</Text>
+                {rabbitHole.capabilities.tierDCannotDetect.map((line, idx) => (
+                  <Text key={`cannot-${idx}`} role="micro" tone="muted" theme={theme}>{`• ${line}`}</Text>
+                ))}
+                <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+                  {rabbitHole.capabilities.whatMirrorWillNotDo}
                 </Text>
               </View>
             </View>
@@ -873,6 +996,26 @@ export default function App(): React.ReactElement {
             {'Labeling is optional feedback – only your explicit labels feed Deliberate share (needs 5, never guessed). Duration alone does not indicate intent, so hints never count. System and utility apps are skipped. Tap an open to label.'}
           </Text>
         </View>
+        {/* Stored manual labels summary + one-tap clear (if earlier scroll-taps created historical labels) */}
+        {Object.keys(intentLabels).length > 0 ? (
+          <View style={{ backgroundColor: theme.color.card, padding: theme.space(2), borderRadius: theme.radius.sm, marginBottom: theme.space(2), flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: theme.space(2) }}>
+            <Text role="micro" tone="muted" theme={theme} style={{ flex: 1 }}>
+              {`Stored manual labels across all days: ${Object.keys(intentLabels).length}. Clearing removes only manual labels, never usage history.`}
+            </Text>
+            <LinkButton
+              theme={theme}
+              onPress={async () => {
+                const rt = runtimeRef.current;
+                if (!rt) return;
+                await rt.clearAllIntentLabels();
+                setIntentLabels({});
+                await recomputeFromLabels({});
+              }}
+            >
+              Clear stored labels
+            </LinkButton>
+          </View>
+        ) : null}
         {/* Optional opt-in prompt after longer sessions */}
         {(() => {
           const longSessions = scaledSessions.filter((s) => s.duration_ms >= 5 * 60_000);
@@ -897,8 +1040,8 @@ export default function App(): React.ReactElement {
           </View>
         ) : (
           scaledSessions.map((s) => {
-            const currentLabel = intentLabels[s.id];
-            const isExcluded = LABELING_EXCLUDED_APPS.has(s.app) || isIgnoredSystemApp(s.app, s.label);
+            const isExcluded = isLabelingExcludedApp(s.app, s.label);
+            const currentLabel = isExcluded ? undefined : intentLabels[s.id];
             const isExpanded = expandedSessionId === s.id;
             const hintInfo = guessIntent(s.duration_ms, s.app);
             // Hint is UI only, never counts toward Deliberate share – only explicit labels feed score
@@ -939,40 +1082,7 @@ export default function App(): React.ReactElement {
                                 await runtime.saveIntentLabel(s.id, lbl);
                                 const updatedLabels = { ...intentLabels, [s.id]: lbl };
                                 setIntentLabels(updatedLabels);
-                                try {
-                                  const dayFrom = dayStartMs(selectedDay);
-                                  const dayTo = dayEndMs(selectedDay);
-                                  let launcherPkgs: string[] = [];
-                                  try { launcherPkgs = await runtime.usage().getLauncherPackages(); } catch {}
-                                  const launcherSet = new Set(launcherPkgs);
-                                  const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
-                                  const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
-                                  const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
-                                  const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
-                                  const scored: ScoredSession[] = sessDay
-                                    .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
-                                    .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
-                                  const iqsResult = scoreIqs({
-                                    window: { fromMs: dayFrom, toMs: dayTo },
-                                    sessions: scored,
-                                    labels: labelArray,
-                                    gaps: scoreGaps,
-                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
-                                    approximate: true,
-                                  });
-                                  setIqs(iqsResult);
-                                  const histSessions = await runtime.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
-                                  setDiscovery(
-                                    computeDiscoveryJourney({
-                                      sessions: histSessions.map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms })),
-                                      osTotals: dailyTotals,
-                                      intentLabels: updatedLabels,
-                                      labels,
-                                      ignorePackages: launcherPkgs,
-                                      utcOffsetMinutes: -new Date().getTimezoneOffset(),
-                                    }),
-                                  );
-                                } catch {}
+                                await recomputeFromLabels(updatedLabels);
                               }
                             } finally {
                               setLabelSaving(null);
@@ -994,41 +1104,7 @@ export default function App(): React.ReactElement {
                               await rt.saveIntentLabel(s.id, 'unsure');
                               const updatedLabels = { ...intentLabels, [s.id]: 'unsure' as const };
                               setIntentLabels(updatedLabels);
-                              try {
-                                const dayFrom = dayStartMs(selectedDay);
-                                const dayTo = dayEndMs(selectedDay);
-                                let launcherPkgs: string[] = [];
-                                try { launcherPkgs = await rt.usage().getLauncherPackages(); } catch {}
-                                const launcherSet = new Set(launcherPkgs);
-                                const sessDay = await rt.store.sessions({ fromMs: dayFrom, toMs: dayTo });
-                                const gapsRaw = await rt.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
-                                const scoreGaps: ScoreGap[] = gapsRaw.map((g: any) => ({ reason: g.reason, count: g.count, fromMs: g.from_ms ?? undefined, toMs: g.to_ms ?? undefined }));
-                                const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
-                                const scored: ScoredSession[] = sessDay
-                                  .filter((x: any) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
-                                  .map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
-                                setIqs(
-                                  scoreIqs({
-                                    window: { fromMs: dayFrom, toMs: dayTo },
-                                    sessions: scored,
-                                    labels: labelArray,
-                                    gaps: scoreGaps,
-                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
-                                    approximate: true,
-                                  }),
-                                );
-                                const histSessions = await rt.store.sessions({ fromMs: dayTo - 30 * 86_400_000, toMs: dayTo });
-                                setDiscovery(
-                                  computeDiscoveryJourney({
-                                    sessions: histSessions.map((x: any) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms })),
-                                    osTotals: dailyTotals,
-                                    intentLabels: updatedLabels,
-                                    labels,
-                                    ignorePackages: launcherPkgs,
-                                    utcOffsetMinutes: -new Date().getTimezoneOffset(),
-                                  }),
-                                );
-                              } catch {}
+                              await recomputeFromLabels(updatedLabels);
                             }
                           }}
                         >
@@ -1080,8 +1156,8 @@ export default function App(): React.ReactElement {
               <Text role="label" theme={theme}>{`Gate open – orphans ${orphanCount}, gaps ${totalGaps}`}</Text>
               <Text role="micro" tone="muted" theme={theme}>
                 {hasEvoHistory
-                  ? `Interest Evolution (J4) and Discovery Journey (J9) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 items await review.`
-                  : `Interest Evolution (J4) and Discovery Journey (J9) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
+                  ? `Interest Evolution (J4), Discovery Journey (J9), and Rabbit Hole (J11) are shown above across ${daysCollected} days (history starts ${evolution?.historyStartDay}). Next P3 items await review.`
+                  : `Interest Evolution (J4), Discovery Journey (J9), and Rabbit Hole (J11) stay hidden until ${minDays}+ days of session history are collected (${daysCollected} of ${minDays} day${daysCollected === 1 ? '' : 's'} so far) rather than duplicating today's totals.`}
               </Text>
             </View>
           );
