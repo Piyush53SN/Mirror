@@ -651,6 +651,14 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     if (activeTab === 'insights') {
       assert.match(rawTree, /COUNTERFACTUAL ARITHMETIC/i, 'InsightsTab must render Frosted Horizon What-if hero');
       assert.match(rawTree, /Sitting-length bands \(2 sittings\)/i, 'InsightsTab sitting-length bands must sum to canonical sitting count');
+      const remainingSpanMeters = renderer.root.findAll(
+        (el) =>
+          el.props?.role === 'progressbar' &&
+          String(el.props?.['aria-label'] ?? '').startsWith('Remaining span,'),
+      );
+      assert.equal(remainingSpanMeters.length, 1, 'J18 scenario must use concise Remaining span Meter label');
+      const meterHeaderRow = remainingSpanMeters[0].children?.[0];
+      assert.equal(meterHeaderRow?.props?.style?.flexWrap, 'wrap', 'Meter header row must wrap instead of colliding text');
       const bandMeters = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
@@ -658,6 +666,26 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
             String(el.props?.['aria-label'] ?? '').startsWith('5 – 20 min,')),
       );
       assert.equal(bandMeters.length, 2, 'InsightsTab must render Frosted Horizon Meter bars for sitting-length bands');
+    }
+
+    if (activeTab === 'journey') {
+      assert.match(rawTree, /MULTI-DAY RHYTHM/i, 'JourneyTab must render Frosted Horizon Interest Evolution hero');
+      const routeMeters = renderer.root.findAll(
+        (el) =>
+          el.props?.role === 'progressbar' &&
+          String(el.props?.['aria-label'] ?? '').startsWith('Firefox → Wikipedia,'),
+      );
+      assert.equal(routeMeters.length, 1, 'JourneyTab must render Frosted Horizon Meter for cross-app routes');
+    }
+
+    if (activeTab === 'sessions') {
+      assert.match(rawTree, /CHRONOLOGICAL LOG/i, 'SessionsTab must render Frosted Horizon hero');
+      const thresholdMeters = renderer.root.findAll(
+        (el) =>
+          el.props?.role === 'progressbar' &&
+          String(el.props?.['aria-label'] ?? '').startsWith('Deliberate share threshold,'),
+      );
+      assert.equal(thresholdMeters.length, 1, 'SessionsTab must render Frosted Horizon Deliberate share threshold Meter');
     }
 
     for (const { label, isArray, nodeType } of collectA11yLabels(json)) {

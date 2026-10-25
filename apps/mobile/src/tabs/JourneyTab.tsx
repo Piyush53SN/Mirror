@@ -1,13 +1,18 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import {
+  Callout,
   Card,
   Chip,
+  ConfidenceChip,
   DegradedNotice,
   Divider,
   EmptyState,
+  Meter,
   Pill,
   SectionHeader,
+  Stat,
+  Surface,
   Text,
   TierBadge,
   useTheme,
@@ -45,6 +50,11 @@ export function JourneyTab(): React.ReactElement {
   const showRabbitHole = filter === 'all' || filter === 'rabbithole';
   const showArcs = filter === 'all' || filter === 'arcs';
 
+  const maxRouteCount = React.useMemo(
+    () => (discovery && discovery.routes.length > 0 ? Math.max(1, ...discovery.routes.map((r) => r.count)) : 1),
+    [discovery],
+  );
+
   return (
     <AppShell
       title="Journey"
@@ -55,6 +65,7 @@ export function JourneyTab(): React.ReactElement {
         </Pill>
       }
     >
+      {/* Frosted glass section filter strip */}
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1.5) }}>
         {FILTER_OPTIONS.map((opt) => (
           <Pill
@@ -68,18 +79,41 @@ export function JourneyTab(): React.ReactElement {
         ))}
       </View>
 
-      {/* J4 Interest Evolution – shows clear empty state on <3 days instead of disappearing */}
+      {/* J4 Frosted Horizon Hero — Interest Evolution (explicit empty state below 3 local days) */}
       {showEvolution ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="Interest Evolution"
-            caption={
-              evolution && evolution.hasHistory
-                ? `history starts ${evolution.historyStartDay} · ${evolution.distinctDays} days (${evolution.historyStartDay} to ${evolution.lastDay})`
-                : `${evolution?.distinctDays ?? 0} of ${evolution?.minDays ?? 3} local days recorded (needs 3+ distinct days)`
-            }
-          />
+        <Surface
+          radius="hero"
+          theme={theme}
+          style={{
+            padding: theme.space(4),
+            borderWidth: 1,
+            borderColor: theme.color.borderHairline,
+            gap: theme.space(3),
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
+            <View style={{ flex: 1, gap: theme.space(0.5) }}>
+              <Text role="micro" tone="muted" theme={theme}>
+                MULTI-DAY RHYTHM · TIER D
+              </Text>
+              <Text role="title-lg" theme={theme}>
+                Interest Evolution
+              </Text>
+              <Text role="label" tone="muted" theme={theme}>
+                {evolution && evolution.hasHistory
+                  ? `history starts ${evolution.historyStartDay} · ${evolution.distinctDays} days (${evolution.historyStartDay} to ${evolution.lastDay})`
+                  : `${evolution?.distinctDays ?? 0} of ${evolution?.minDays ?? 3} local days recorded (needs 3+ distinct days)`}
+              </Text>
+            </View>
+            <TierBadge tier="D" theme={theme} />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+            <Chip static label="Based on usage patterns only" theme={theme} />
+            {evolution?.limitedHistory ? <Chip static label="Limited history" theme={theme} /> : null}
+            <ConfidenceChip tiers={['D']} label="Tier D · App-level across days" theme={theme} />
+          </View>
+
           {!p3Reliable ? (
             <EmptyState
               title="Needs reliable session boundaries"
@@ -94,61 +128,90 @@ export function JourneyTab(): React.ReactElement {
             />
           ) : (
             <View style={{ gap: theme.space(3) }}>
-              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-                <Chip static label="Based on usage patterns only" theme={theme} />
-                <TierBadge tier="D" theme={theme} />
-                <Text role="micro" tone="muted" theme={theme}>
-                  {'App-level across days; topic evolution requires Tier A/B/C.'}
-                </Text>
-              </View>
               <Text role="micro" tone="muted" theme={theme}>
-                {evolution.summaryLine}
+                {`${evolution.summaryLine} · topic evolution requires Tier A/B/C`}
               </Text>
+
               {evolution.limitedHistory ? (
-                <Text role="micro" tone="muted" theme={theme}>
+                <Callout theme={theme} tone="neutral">
                   {`Limited history (${evolution.distinctDays} days recorded): growing and fading compare recent vs earlier days in this short window, not long-term change.`}
-                </Text>
+                </Callout>
               ) : null}
-              {evolution.rows.map((r) => (
-                <View key={r.app} style={{ paddingVertical: theme.space(2), gap: theme.space(1) }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'baseline',
-                      gap: theme.space(2),
-                    }}
-                  >
-                    <Text role="label" theme={theme}>
-                      {r.label}
-                    </Text>
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {r.trendLabel}
-                    </Text>
-                  </View>
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {`${r.seenSinceText} · active ${r.activeDays} of ${evolution.distinctDays} days · ${r.sessionCount} sitting${r.sessionCount === 1 ? '' : 's'} (typical: ${r.dominantBand})`}
-                  </Text>
-                  <Divider theme={theme} />
-                </View>
-              ))}
+
+              <View style={{ gap: theme.space(2) }}>
+                {evolution.rows.map((r) => {
+                  const dayRatio =
+                    evolution.distinctDays > 0
+                      ? Math.min(1, Math.max(0, r.activeDays / evolution.distinctDays))
+                      : 0;
+                  return (
+                    <View
+                      key={r.app}
+                      style={{
+                        borderRadius: theme.radius.md,
+                        backgroundColor: theme.glass.card.fill,
+                        borderWidth: 1,
+                        borderColor: theme.color.borderCard,
+                        padding: theme.space(3),
+                        gap: theme.space(1.5),
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'flex-start',
+                          flexWrap: 'wrap',
+                          gap: theme.space(2),
+                        }}
+                      >
+                        <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 140 }}>
+                          {r.label}
+                        </Text>
+                        <Chip static label={r.trendLabel} theme={theme} />
+                      </View>
+
+                      <Meter
+                        theme={theme}
+                        value={dayRatio}
+                        label={`${r.activeDays} of ${evolution.distinctDays} active days`}
+                        caption={`${r.sessionCount} sitting${r.sessionCount === 1 ? '' : 's'} · ${r.dominantBand}`}
+                        tone={dayRatio >= 0.5 ? 'anchor' : 'muted'}
+                      />
+
+                      <Text role="micro" tone="muted" theme={theme}>
+                        {r.seenSinceText}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
           )}
-        </Card>
+        </Surface>
       ) : null}
 
-      {/* J9 Discovery Journey – shows clear empty state on <3 days instead of disappearing */}
+      {/* J9 Frosted Glass Card — Discovery Journey (explicit empty state below 3 local days) */}
       {showDiscovery ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="Discovery Journey"
-            caption={
-              discovery && discovery.hasHistory
-                ? `history starts ${discovery.historyStartDay} · ${discovery.distinctDays} days · cross-app routes and repeat rhythm`
-                : `${discovery?.distinctDays ?? 0} of ${discovery?.minDays ?? 3} local days recorded (needs 3+ distinct days)`
-            }
-          />
+        <Card theme={theme} style={{ marginBottom: 0 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2), marginBottom: theme.space(2) }}>
+            <View style={{ flex: 1, gap: theme.space(0.5) }}>
+              <Text role="micro" tone="muted" theme={theme}>
+                CROSS-APP HANDOFFS · TIER D
+              </Text>
+              <SectionHeader
+                theme={theme}
+                title="Discovery Journey"
+                caption={
+                  discovery && discovery.hasHistory
+                    ? `history starts ${discovery.historyStartDay} · ${discovery.distinctDays} days · cross-app routes and repeat rhythm`
+                    : `${discovery?.distinctDays ?? 0} of ${discovery?.minDays ?? 3} local days recorded (needs 3+ distinct days)`
+                }
+              />
+            </View>
+            <TierBadge tier="D" theme={theme} />
+          </View>
+
           {!p3Reliable ? (
             <EmptyState
               title="Needs reliable session boundaries"
@@ -165,15 +228,73 @@ export function JourneyTab(): React.ReactElement {
             <View style={{ gap: theme.space(3) }}>
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Chip static label="Based on usage patterns only" theme={theme} />
-                <TierBadge tier="D" theme={theme} />
+                {discovery.limitedHistory ? <Chip static label="Limited history" theme={theme} /> : null}
                 <Text role="micro" tone="muted" theme={theme}>
                   {'Sustained app handoffs within 5 min; step-by-step topic routes require Tier A/B/C.'}
                 </Text>
               </View>
 
-              <View style={{ gap: theme.space(2) }}>
+              {/* Multi-day handoff & repeat summary inset glass panel */}
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
+                <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+                  <View style={{ flex: 1, minWidth: 120 }}>
+                    <Stat
+                      value={String(discovery.totalHandoffs)}
+                      label={discovery.totalHandoffs === 1 ? 'Cross-app handoff' : 'Cross-app handoffs'}
+                      hint={`Within 5 min · ${discovery.distinctDays} days`}
+                      theme={theme}
+                    />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 120 }}>
+                    <Stat
+                      value={`${discovery.repeatAppsCount} / ${discovery.totalAppsVisited}`}
+                      label="Repeat apps (2+ days)"
+                      hint={`${discovery.singleDayAppsCount} single-day${discovery.limitedHistory ? ' (limited history)' : ''}`}
+                      theme={theme}
+                    />
+                  </View>
+                </View>
+
+                {discovery.repeatShareMeasurable ? (
+                  <>
+                    <Divider theme={theme} />
+                    <Meter
+                      theme={theme}
+                      value={discovery.repeatSessionShare}
+                      label="Sustained sittings in repeat apps"
+                      caption={`${Math.round(discovery.repeatSessionShare * 100)}%`}
+                      tone="anchor"
+                    />
+                  </>
+                ) : (
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Repeat share hidden: ${discovery.sustainedSessionCount} sustained sitting${discovery.sustainedSessionCount === 1 ? '' : 's'} recorded (needs 5+).`}
+                  </Text>
+                )}
+              </View>
+
+              {/* Repeated cross-app routes inset glass panel */}
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
                 <Text role="label" theme={theme}>
-                  {`Repeated cross-app routes (${discovery.totalHandoffs} handoff${discovery.totalHandoffs === 1 ? '' : 's'} across ${discovery.distinctDays} days)`}
+                  {`Repeated cross-app routes (${discovery.routes.length})`}
                 </Text>
                 {discovery.sustainedSessionCount === 0 ? (
                   <Text role="micro" tone="muted" theme={theme}>
@@ -185,35 +306,20 @@ export function JourneyTab(): React.ReactElement {
                   </Text>
                 ) : (
                   discovery.routes.map((rt) => (
-                    <View
+                    <Meter
                       key={`${rt.fromApp}->${rt.toApp}`}
-                      style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                        gap: theme.space(2),
-                        paddingVertical: theme.space(1),
-                      }}
-                    >
-                      <Text role="label" theme={theme} style={{ flex: 1 }}>
-                        {`${rt.fromLabel} → ${rt.toLabel}`}
-                      </Text>
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {`${rt.count}x · ${rt.activeDays} of ${discovery.distinctDays} days`}
-                      </Text>
-                    </View>
+                      theme={theme}
+                      value={rt.count / maxRouteCount}
+                      label={`${rt.fromLabel} → ${rt.toLabel}`}
+                      caption={`${rt.count}x · ${rt.activeDays}/${discovery.distinctDays}d`}
+                      tone="anchor"
+                    />
                   ))
                 )}
               </View>
 
-              <Divider theme={theme} />
-
+              {/* Honest Tier-D standing & label reconciliation */}
               <View style={{ gap: theme.space(1) }}>
-                <Text role="micro" tone="muted" theme={theme}>
-                  {discovery.repeatShareMeasurable
-                    ? `Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (${Math.round(discovery.repeatSessionShare * 100)}% of sustained sittings) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`
-                    : `Repeat apps (2+ days): ${discovery.repeatAppsCount} of ${discovery.totalAppsVisited} (repeat share hidden: ${discovery.sustainedSessionCount} sustained sitting${discovery.sustainedSessionCount === 1 ? '' : 's'}, needs 5+) · Single-day visits: ${discovery.singleDayAppsCount}${discovery.limitedHistory ? ' (limited history — not necessarily new apps)' : ''}`}
-                </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {`Top app by time (${selectedDay}): ${discovery.topAppByTime ? `${discovery.topAppByTime.label} (${formatDuration(discovery.topAppByTime.totalMs)}, OS aggregate)` : 'none recorded'}`}
                 </Text>
@@ -234,18 +340,27 @@ export function JourneyTab(): React.ReactElement {
         </Card>
       ) : null}
 
-      {/* J11 Rabbit Hole – shows clear empty state on <3 days instead of disappearing */}
+      {/* J11 Frosted Glass Card — Rabbit Hole (neutral short-return clusters, never penalises IQS) */}
       {showRabbitHole ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="Rabbit Hole — short-return clusters"
-            caption={
-              rabbitHole && rabbitHole.hasHistory
-                ? `history starts ${rabbitHole.historyStartDay} · ${rabbitHole.distinctDays} days · neutral Tier-D cluster check`
-                : `${rabbitHole?.distinctDays ?? 0} of ${rabbitHole?.minDays ?? 3} local days recorded (needs 3+ distinct days)`
-            }
-          />
+        <Card theme={theme} style={{ marginBottom: 0 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2), marginBottom: theme.space(2) }}>
+            <View style={{ flex: 1, gap: theme.space(0.5) }}>
+              <Text role="micro" tone="muted" theme={theme}>
+                NEUTRAL CLUSTER CHECK · TIER D
+              </Text>
+              <SectionHeader
+                theme={theme}
+                title="Rabbit Hole — short-return clusters"
+                caption={
+                  rabbitHole && rabbitHole.hasHistory
+                    ? `history starts ${rabbitHole.historyStartDay} · ${rabbitHole.distinctDays} days · neutral Tier-D cluster check`
+                    : `${rabbitHole?.distinctDays ?? 0} of ${rabbitHole?.minDays ?? 3} local days recorded (needs 3+ distinct days)`
+                }
+              />
+            </View>
+            <TierBadge tier="D" theme={theme} />
+          </View>
+
           {!p3Reliable ? (
             <EmptyState
               title="Needs reliable session boundaries"
@@ -262,69 +377,90 @@ export function JourneyTab(): React.ReactElement {
             <View style={{ gap: theme.space(3) }}>
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Chip static label="Based on usage patterns only" theme={theme} />
-                <TierBadge tier="D" theme={theme} />
-                <Text role="micro" tone="muted" theme={theme}>
-                  {'Never penalises IQS; content and search drift require Tier A/B/C.'}
-                </Text>
+                <Chip static label="Never penalises IQS" theme={theme} />
               </View>
 
-              <View style={{ gap: theme.space(1) }}>
-                <Text role="label" theme={theme}>
-                  Printed definition
-                </Text>
-                <Text role="micro" tone="muted" theme={theme}>
-                  {rabbitHole.definitionText}
-                </Text>
-                {rabbitHole.limitedHistory ? (
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {`Limited history (${rabbitHole.distinctDays} days recorded): cluster counts reflect this short window only.`}
-                  </Text>
-                ) : null}
-              </View>
+              <Callout theme={theme} tone="neutral">
+                {`Printed definition: ${rabbitHole.definitionText}${rabbitHole.limitedHistory ? ` Limited history (${rabbitHole.distinctDays} days recorded): cluster counts reflect this short window only.` : ''}`}
+              </Callout>
 
-              <Divider theme={theme} />
-
-              {rabbitHole.clusterCount === 0 ? (
-                <Text role="micro" tone="muted" theme={theme}>
-                  {`0 clusters matched this definition across ${rabbitHole.distinctDays} days. That is a real result, not a missing signal.`}
-                </Text>
-              ) : (
-                <View style={{ gap: theme.space(2) }}>
-                  <Text role="label" theme={theme}>
-                    {rabbitHole.lateNightShareMeasurable
-                      ? `${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · ${Math.round(rabbitHole.lateNightShare * 100)}% in 23:00–05:00)`
-                      : `${rabbitHole.clusterCount} cluster${rabbitHole.clusterCount === 1 ? '' : 's'} (${rabbitHole.totalClusterSittings} sittings · ${formatDuration(rabbitHole.totalClusterMs)} total · late-night % hidden below 5m cluster time)`}
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
+                {rabbitHole.clusterCount === 0 ? (
+                  <Text role="body" theme={theme}>
+                    {`0 clusters matched this definition across ${rabbitHole.distinctDays} days. That is a real result, not a missing signal.`}
                   </Text>
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {rabbitHole.clusterExplicitLabels.total > 0
-                      ? `Your explicit labels inside these clusters: ${rabbitHole.clusterExplicitLabels.intentional} intentional, ${rabbitHole.clusterExplicitLabels.mindless} mindless${rabbitHole.clusterExplicitLabels.unsure > 0 ? `, ${rabbitHole.clusterExplicitLabels.unsure} unsure` : ''}.`
-                      : 'No explicit labels on sittings in these clusters (unlabelled sittings are not assumed mindless).'}
-                  </Text>
-                  {rabbitHole.clusters.map((c) => (
-                    <View
-                      key={c.id}
-                      style={{
-                        flexDirection: 'row',
-                        justifyContent: 'space-between',
-                        alignItems: 'baseline',
-                        gap: theme.space(2),
-                        paddingVertical: theme.space(1),
-                      }}
-                    >
-                      <Text role="label" theme={theme} style={{ flex: 1 }}>
-                        {`${c.label} · ${c.sittingCount} short returns`}
-                      </Text>
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {`${c.day} · ${formatDuration(c.totalSittingMs)}`}
-                      </Text>
+                ) : (
+                  <View style={{ gap: theme.space(2) }}>
+                    <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+                      <View style={{ flex: 1, minWidth: 110 }}>
+                        <Stat
+                          value={String(rabbitHole.clusterCount)}
+                          label={rabbitHole.clusterCount === 1 ? 'Cluster matched' : 'Clusters matched'}
+                          hint={`${rabbitHole.totalClusterSittings} sittings`}
+                          theme={theme}
+                        />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 110 }}>
+                        <Stat
+                          value={formatDuration(rabbitHole.totalClusterMs)}
+                          label="Cluster sitting span"
+                          hint={
+                            rabbitHole.lateNightShareMeasurable
+                              ? `${Math.round(rabbitHole.lateNightShare * 100)}% in 23:00–05:00`
+                              : 'Late-night % hidden (<5m)'
+                          }
+                          theme={theme}
+                        />
+                      </View>
                     </View>
-                  ))}
-                </View>
-              )}
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {rabbitHole.clusterExplicitLabels.total > 0
+                        ? `Your explicit labels inside these clusters: ${rabbitHole.clusterExplicitLabels.intentional} intentional, ${rabbitHole.clusterExplicitLabels.mindless} mindless${rabbitHole.clusterExplicitLabels.unsure > 0 ? `, ${rabbitHole.clusterExplicitLabels.unsure} unsure` : ''}.`
+                        : 'No explicit labels on sittings in these clusters (unlabelled sittings are not assumed mindless).'}
+                    </Text>
+                    <Divider theme={theme} />
+                    {rabbitHole.clusters.map((c) => (
+                      <View
+                        key={c.id}
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'baseline',
+                          flexWrap: 'wrap',
+                          gap: theme.space(2),
+                        }}
+                      >
+                        <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1 }}>
+                          {`${c.label} · ${c.sittingCount} short returns`}
+                        </Text>
+                        <Text role="micro" tone="muted" theme={theme}>
+                          {`${c.day} · ${formatDuration(c.totalSittingMs)}`}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
 
-              <Divider theme={theme} />
-
-              <View style={{ gap: theme.space(1) }}>
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(1),
+                }}
+              >
                 <Text role="label" theme={theme}>
                   What Tier D can detect
                 </Text>
@@ -350,7 +486,7 @@ export function JourneyTab(): React.ReactElement {
         </Card>
       ) : null}
 
-      {/* J21 Learning Arcs – honest Tier A/B/C empty state */}
+      {/* J21 Learning Arcs — honest Tier A/B/C empty state */}
       {showArcs ? (
         <View style={{ gap: theme.space(2) }}>
           <DegradedNotice

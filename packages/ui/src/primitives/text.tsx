@@ -373,12 +373,20 @@ export function Meter({
       accessibilityValue={{ min: 0, max: 100, now: Math.round(clamped * 100) }}
       style={{ gap: t.space(1) }}
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text role="label" theme={t}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'baseline',
+          flexWrap: 'wrap',
+          gap: t.space(2),
+        }}
+      >
+        <Text role="label" theme={t} style={{ flexShrink: 1 }}>
           {label}
         </Text>
         {caption ? (
-          <Text role="label" tone="muted" theme={t}>
+          <Text role="label" tone="muted" theme={t} style={{ flexShrink: 1 }}>
             {caption}
           </Text>
         ) : null}

@@ -234,8 +234,8 @@ export function InsightsTab(): React.ReactElement {
                       : 0;
                   const deltaCaption =
                     deltaMs < 0
-                      ? `-${formatDuration(Math.abs(deltaMs))} Estimate`
-                      : '0s change (Estimate)';
+                      ? `-${formatDuration(Math.abs(deltaMs))} · Estimate`
+                      : '0s change · Estimate';
                   return (
                     <View
                       key={sc.id}
@@ -252,11 +252,12 @@ export function InsightsTab(): React.ReactElement {
                         style={{
                           flexDirection: 'row',
                           justifyContent: 'space-between',
-                          alignItems: 'center',
+                          alignItems: 'flex-start',
+                          flexWrap: 'wrap',
                           gap: theme.space(2),
                         }}
                       >
-                        <Text role="label" theme={theme} style={{ flex: 1 }}>
+                        <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 160 }}>
                           {sc.title}
                         </Text>
                         <Chip static label={sc.badge} theme={theme} />
@@ -269,7 +270,7 @@ export function InsightsTab(): React.ReactElement {
                       <Meter
                         theme={theme}
                         value={retainedRatio}
-                        label={`${sc.title} remaining span`}
+                        label="Remaining span"
                         caption={deltaCaption}
                         tone={deltaMs < 0 ? 'anchor' : 'muted'}
                       />

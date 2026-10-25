@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25459
+      "bytes": 25671
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25442
+      "bytes": 25654
     },
     {
       "id": "J3",
@@ -471,7 +471,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16223
+      "bytes": 16603
     },
     {
       "id": "J5",
@@ -494,7 +494,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16213
+      "bytes": 16593
     },
     {
       "id": "J5",
@@ -563,7 +563,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13563
+      "bytes": 13867
     },
     {
       "id": "J6",
@@ -586,7 +586,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13555
+      "bytes": 13859
     },
     {
       "id": "J6",
@@ -651,7 +651,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 23822
+      "bytes": 24182
     },
     {
       "id": "J7",
@@ -670,7 +670,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 23803
+      "bytes": 24163
     },
     {
       "id": "J7",
@@ -1055,7 +1055,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 14283
+      "bytes": 14435
     },
     {
       "id": "J12",
@@ -1074,7 +1074,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 14273
+      "bytes": 14425
     },
     {
       "id": "J12",
@@ -1093,7 +1093,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16547
+      "bytes": 16699
     },
     {
       "id": "J12",
@@ -1112,7 +1112,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16534
+      "bytes": 16686
     },
     {
       "id": "J13",
@@ -1401,7 +1401,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40038
+      "bytes": 40310
     },
     {
       "id": "J17",
@@ -1420,7 +1420,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40015
+      "bytes": 40287
     },
     {
       "id": "J18",
@@ -1439,7 +1439,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 11306
+      "bytes": 11534
     },
     {
       "id": "J18",
@@ -1458,7 +1458,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 11301
+      "bytes": 11529
     },
     {
       "id": "J18",
@@ -1477,7 +1477,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 13578
+      "bytes": 13806
     },
     {
       "id": "J18",
@@ -1496,7 +1496,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 13570
+      "bytes": 13798
     },
     {
       "id": "J19",
@@ -1515,7 +1515,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 10991
+      "bytes": 11143
     },
     {
       "id": "J19",
@@ -1534,7 +1534,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 10986
+      "bytes": 11138
     },
     {
       "id": "J19",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29996
+      "bytes": 30208
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29979
+      "bytes": 30191
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28344
+      "bytes": 28556
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28329
+      "bytes": 28541
     },
     {
       "id": "J23",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32626
+      "bytes": 32838
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32607
+      "bytes": 32819
     },
     {
       "id": "J25",
@@ -1983,7 +1983,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 20128
+      "bytes": 20280
     },
     {
       "id": "J26",
@@ -2002,7 +2002,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 20114
+      "bytes": 20266
     },
     {
       "id": "J27",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30276
+      "bytes": 30488
     },
     {
       "id": "J28",
@@ -2112,7 +2112,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30255
+      "bytes": 30467
     }
   ],
   "extraItems": 1,
