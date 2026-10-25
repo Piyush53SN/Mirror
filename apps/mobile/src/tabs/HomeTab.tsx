@@ -136,6 +136,7 @@ export function HomeTab(): React.ReactElement {
     resetStoredData,
     dismissKeyMismatch,
     iqs,
+    dayScoredSessions,
     setShowWhy,
     dailyTotals,
     orphanCount,
@@ -150,6 +151,11 @@ export function HomeTab(): React.ReactElement {
   const totalScreenMs = React.useMemo(
     () => dailyTotals.reduce((sum, item) => sum + item.totalMs, 0),
     [dailyTotals],
+  );
+  const sittingCount = dayScoredSessions.length;
+  const sittingSpanMs = React.useMemo(
+    () => dayScoredSessions.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0),
+    [dayScoredSessions],
   );
   const maxAppMs = dailyTotals[0]?.totalMs ?? 1;
   const measuredFactors = React.useMemo(
@@ -271,7 +277,7 @@ export function HomeTab(): React.ReactElement {
                   {iqs.band}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`${iqs.confidence.sample} sitting${iqs.confidence.sample === 1 ? '' : 's'} · ${formatDuration(iqs.confidence.activeMs)} sitting spans`}
+                  {`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} · ${formatDuration(sittingSpanMs)} merged sitting spans`}
                 </Text>
               </View>
             </View>
@@ -332,25 +338,31 @@ export function HomeTab(): React.ReactElement {
         )}
       </Surface>
 
-      {/* Frosted glass summary metrics */}
+      {/* Frosted glass summary metrics: OS foreground screen time vs merged sitting spans */}
       <View style={{ flexDirection: 'row', gap: theme.space(3) }}>
         <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
           <Stat
             value={dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}
             label="OS screen time"
-            hint={`${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} · ${selectedDay}`}
+            hint={`Active foreground only · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`}
             theme={theme}
           />
         </Card>
         <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
           <Stat
-            value={String(iqs?.confidence.sample ?? 0)}
-            label={iqs?.confidence.sample === 1 ? 'Sitting recorded' : 'Sittings recorded'}
-            hint={p3Reliable ? 'Boundaries verified' : 'Boundary gate active'}
+            value={`${sittingCount} ${sittingCount === 1 ? 'sitting' : 'sittings'}`}
+            label={`Sitting spans · ${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'}`}
+            hint={p3Reliable ? 'Merges ≤15m same-app reopens' : 'Boundary gate active'}
             theme={theme}
           />
         </Card>
       </View>
+
+      {totalScreenMs > 0 || sittingSpanMs > 0 ? (
+        <Callout theme={theme} tone="neutral">
+          {`OS screen time (${dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}) sums active foreground use only, matching Digital Wellbeing. Sitting spans (${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'} across ${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) merge reopens of the same app within 15 min into one sitting, so spans include brief pauses and switches between opens.`}
+        </Callout>
+      ) : null}
 
       {/* Frosted glass card — Per-app totals from OS aggregate */}
       <Card theme={theme} style={{ marginBottom: 0 }}>

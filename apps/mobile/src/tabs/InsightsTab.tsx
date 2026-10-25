@@ -1,14 +1,19 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import {
+  Callout,
   Card,
   Chip,
+  ConfidenceChip,
   DegradedNotice,
   Divider,
   EmptyState,
   LinkButton,
+  Meter,
   Pill,
   SectionHeader,
+  Stat,
+  Surface,
   Text,
   TierBadge,
   WhySheet,
@@ -19,12 +24,12 @@ import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
 
-type InsightsFilter = 'all' | 'whatif' | 'factors' | 'curiosity' | 'depth';
+type InsightsFilter = 'all' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
 
-const FILTER_OPTIONS: ReadonlyArray<{ id: InsightsFilter; label: string }> = [
+const FILTER_OPTIONS: { id: InsightsFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'whatif', label: 'What-if' },
-  { id: 'factors', label: 'IQS Factors' },
+  { id: 'iqs', label: 'IQS Factors' },
   { id: 'curiosity', label: 'Curiosity vs Habit' },
   { id: 'depth', label: 'Depth' },
 ];
@@ -34,31 +39,54 @@ export function InsightsTab(): React.ReactElement {
   const {
     selectedDay,
     iqs,
+    curiosity,
+    depthBands,
+    dayScoredSessions,
     whatIf,
     whatIfCapMin,
     setWhatIfCapMin,
     whatIfQuietPreset,
     setWhatIfQuietPreset,
-    curiosity,
-    depthBands,
-    dayScoredSessions,
+    intentLabels,
+    p3Reliable,
     orphanCount,
     totalGaps,
-    p3Reliable,
     checkPermissionAndCollect,
     setActiveTab,
   } = useMirrorApp();
   const [filter, setFilter] = React.useState<InsightsFilter>('all');
 
+  const explicitLabelCount = React.useMemo(
+    () =>
+      Object.values(intentLabels).filter(
+        (lbl) => lbl === 'intentional' || lbl === 'mindless',
+      ).length,
+    [intentLabels],
+  );
+
+  const sittingCount = dayScoredSessions.length;
+  const sittingSpanMs = React.useMemo(
+    () => dayScoredSessions.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0),
+    [dayScoredSessions],
+  );
+  const bandTotalCount = React.useMemo(
+    () => depthBands.reduce((sum, b) => sum + b.count, 0),
+    [depthBands],
+  );
+  const bandTotalMs = React.useMemo(
+    () => depthBands.reduce((sum, b) => sum + b.ms, 0),
+    [depthBands],
+  );
+
   const showWhatIf = filter === 'all' || filter === 'whatif';
-  const showFactors = filter === 'all' || filter === 'factors';
+  const showIqs = filter === 'all' || filter === 'iqs';
   const showCuriosity = filter === 'all' || filter === 'curiosity';
   const showDepth = filter === 'all' || filter === 'depth';
 
   return (
     <AppShell
       title="Insights"
-      subtitle={`Measured factors & local estimates · ${selectedDay}`}
+      subtitle={`What-if · Score factors · Curiosity · Depth (${selectedDay})`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
@@ -67,7 +95,8 @@ export function InsightsTab(): React.ReactElement {
     >
       <DayPickerStrip />
 
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1.5) }}>
+      {/* Frosted glass section filter strip */}
+      <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
         {FILTER_OPTIONS.map((opt) => (
           <Pill
             key={opt.id}
@@ -80,59 +109,89 @@ export function InsightsTab(): React.ReactElement {
         ))}
       </View>
 
-      {/* J18 What-if Simulator – every output labelled Estimate, never rescaled to 100, measured factors only */}
+      {/* J18 Frosted Horizon Hero — What-if Simulator (every output labelled Estimate, never rescaled to 100) */}
       {showWhatIf ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="What-if Simulator — Estimates"
-            caption={
-              whatIf && whatIf.hasBaseline
-                ? `${selectedDay} · ${whatIf.timeSource === 'os_aggregate' ? `OS total ${formatDuration(whatIf.baselineTimeMs)} · Sittings ${formatDuration(whatIf.sittingTimeMs)}` : `Sittings ${formatDuration(whatIf.sittingTimeMs)}`} · IQS ${whatIf.baselineIqs.value ?? '—'} / ${whatIf.baselineIqs.max} (never rescaled to 100)`
-                : `${selectedDay} · local counterfactual arithmetic over recorded sittings`
-            }
-          />
+        <Surface
+          radius="hero"
+          theme={theme}
+          style={{
+            padding: theme.space(4),
+            borderWidth: 1,
+            borderColor: theme.color.borderHairline,
+            gap: theme.space(3),
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
+            <View style={{ flex: 1, gap: theme.space(0.5) }}>
+              <Text role="micro" tone="muted" theme={theme}>
+                COUNTERFACTUAL ARITHMETIC · TIER D
+              </Text>
+              <Text role="title-lg" theme={theme}>
+                What-if Simulator
+              </Text>
+              <Text role="label" tone="muted" theme={theme}>
+                {`Estimates from ${selectedDay}'s usage — measured factors only, never rescaled to 100`}
+              </Text>
+            </View>
+            <TierBadge tier="D" theme={theme} />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+            <Chip static label="Estimate" theme={theme} />
+            <Chip static label="Measured factors only" theme={theme} />
+            {whatIf?.smallSampleBaseline ? <Chip static label="Small sample" theme={theme} /> : null}
+            <ConfidenceChip tiers={['D']} label="Tier D · OS usage, no content" theme={theme} />
+          </View>
+
           {!p3Reliable ? (
-            <EmptyState
-              title="Needs reliable session boundaries"
-              body={P3_GUARD_SHORT(orphanCount, totalGaps)}
-              theme={theme}
-            />
+            <Callout theme={theme} tone="limit">
+              {`Paused until session boundaries pass the orphan gate — ${P3_GUARD_SHORT(orphanCount, totalGaps)}.`}
+            </Callout>
           ) : !whatIf || !whatIf.hasBaseline ? (
             <EmptyState
-              title={`No sittings recorded for ${selectedDay}`}
-              body="What-if Simulator runs local arithmetic over real sittings on the selected day. Use apps and tap Refresh once sittings are recorded."
+              title={`No usage data yet on ${selectedDay}`}
+              body="Open a few apps today and tap Refresh to model counterfactual sitting caps, quiet hours, and short-bounce scenarios."
               theme={theme}
             />
           ) : (
             <View style={{ gap: theme.space(3) }}>
-              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-                <Chip static label="Estimate" theme={theme} />
-                <Chip static label="Measured factors only" theme={theme} />
-                {whatIf.smallSampleBaseline ? <Chip static label="Small sample today" theme={theme} /> : null}
-                <TierBadge tier="D" theme={theme} />
+              {/* Baseline summary inset glass panel */}
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
+                <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+                  <View style={{ flex: 1, minWidth: 120 }}>
+                    <Stat
+                      value={formatDuration(whatIf.baselineTimeMs)}
+                      label={whatIf.timeSource === 'os_aggregate' ? 'OS screen time' : 'Recorded time'}
+                      hint="Active foreground"
+                      theme={theme}
+                    />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 120 }}>
+                    <Stat
+                      value={`${sittingCount} ${sittingCount === 1 ? 'sitting' : 'sittings'}`}
+                      label={`Sitting spans · ${formatDuration(whatIf.sittingTimeMs)}`}
+                      hint="Merged ≤15m reopens"
+                      theme={theme}
+                    />
+                  </View>
+                </View>
+                <Divider theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Baseline IQS: ${whatIf.baselineIqs.value === null ? '—' : Math.round(whatIf.baselineIqs.value)} / ${whatIf.baselineIqs.max} (${whatIf.baselineIqs.band}, ${whatIf.baselineIqs.confidence.level} confidence — sum of measured parts, never rescaled to 100)`}
+                </Text>
               </View>
 
-              <View style={{ gap: theme.space(1) }}>
-                {whatIf.minimumActivityNote ? (
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {whatIf.minimumActivityNote}
-                  </Text>
-                ) : null}
-                <Text role="micro" tone="muted" theme={theme}>
-                  {`Measured in estimates (${whatIf.baselineIqs.max} max, never rescaled to 100): ${whatIf.measuredFactorSummary.join(' · ') || 'none (below minimum activity)'}`}
-                </Text>
-                {whatIf.unmeasuredFactorSummary.length > 0 ? (
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {`Excluded (not measured, never guessed): ${whatIf.unmeasuredFactorSummary.join(' · ')}`}
-                  </Text>
-                ) : null}
-              </View>
-
-              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-                <Text role="micro" tone="muted" theme={theme}>
-                  Adjust:
-                </Text>
+              {/* Scenario preset controls */}
+              <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
                 <Pill
                   theme={theme}
                   variant={whatIfCapMin === 10 ? 'primary' : 'secondary'}
@@ -163,192 +222,305 @@ export function InsightsTab(): React.ReactElement {
                 </Pill>
               </View>
 
-              <Divider theme={theme} />
+              {/* Individual counterfactual estimate glass sub-panels */}
+              <View style={{ gap: theme.space(2.5) }}>
+                {whatIf.scenarios.map((sc) => {
+                  const baseMs = typeof sc.baselineTimeMs === 'number' ? sc.baselineTimeMs : whatIf.baselineTimeMs;
+                  const estMs = typeof sc.estimatedTimeMs === 'number' ? sc.estimatedTimeMs : baseMs;
+                  const deltaMs = typeof sc.deltaTimeMs === 'number' ? sc.deltaTimeMs : 0;
+                  const retainedRatio =
+                    baseMs > 0
+                      ? Math.min(1, Math.max(0, estMs / baseMs))
+                      : 0;
+                  const deltaCaption =
+                    deltaMs < 0
+                      ? `-${formatDuration(Math.abs(deltaMs))} Estimate`
+                      : '0s change (Estimate)';
+                  return (
+                    <View
+                      key={sc.id}
+                      style={{
+                        borderRadius: theme.radius.md,
+                        backgroundColor: theme.glass.card.fill,
+                        borderWidth: 1,
+                        borderColor: theme.color.borderCard,
+                        padding: theme.space(3),
+                        gap: theme.space(1.5),
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: theme.space(2),
+                        }}
+                      >
+                        <Text role="label" theme={theme} style={{ flex: 1 }}>
+                          {sc.title}
+                        </Text>
+                        <Chip static label={sc.badge} theme={theme} />
+                      </View>
 
-              {whatIf.scenarios.map((sc) => (
-                <View key={sc.id} style={{ gap: theme.space(1), paddingVertical: theme.space(1) }}>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      gap: theme.space(2),
-                    }}
-                  >
-                    <Text role="label" theme={theme} style={{ flex: 1 }}>
-                      {sc.title}
-                    </Text>
-                    <Chip static label={sc.badge} theme={theme} />
-                  </View>
-                  <Text role="body" theme={theme}>
-                    {sc.timeEstimateLabel}
-                  </Text>
-                  <Text role="micro" theme={theme}>
-                    {sc.iqsEstimateLabel}
-                  </Text>
-                  {sc.noChangeReason ? (
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {sc.noChangeReason}
-                    </Text>
-                  ) : null}
-                  {sc.estimatedIqs.measuredFactors.length > 0 ? (
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {sc.estimatedIqs.measuredFactors.map((mf) => mf.estimateLabel).join(' · ')}
-                    </Text>
-                  ) : null}
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {`Assumption: ${sc.assumption}`}
-                  </Text>
-                  <Divider theme={theme} />
-                </View>
-              ))}
+                      <Text role="body" theme={theme}>
+                        {sc.timeEstimateLabel}
+                      </Text>
+
+                      <Meter
+                        theme={theme}
+                        value={retainedRatio}
+                        label={`${sc.title} remaining span`}
+                        caption={deltaCaption}
+                        tone={deltaMs < 0 ? 'anchor' : 'muted'}
+                      />
+
+                      <Text role="micro" theme={theme}>
+                        {sc.iqsEstimateLabel}
+                      </Text>
+
+                      {sc.noChangeReason ? (
+                        <Text role="micro" tone="muted" theme={theme}>
+                          {sc.noChangeReason}
+                        </Text>
+                      ) : null}
+
+                      {sc.estimatedIqs.measuredFactors.length > 0 ? (
+                        <Text role="micro" tone="muted" theme={theme}>
+                          {sc.estimatedIqs.measuredFactors.map((f) => f.estimateLabel).join(' · ')}
+                        </Text>
+                      ) : null}
+
+                      <Text role="micro" tone="muted" theme={theme}>
+                        {`Assumption: ${sc.assumption}`}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </View>
+
+              {whatIf.minimumActivityNote ? (
+                <Callout theme={theme} tone="neutral">
+                  {whatIf.minimumActivityNote}
+                </Callout>
+              ) : null}
+
+              {whatIf.unmeasuredFactorSummary.length > 0 ? (
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Not modeled (unmeasured on this tier): ${whatIf.unmeasuredFactorSummary.join(' · ')}`}
+                </Text>
+              ) : null}
 
               <Text role="micro" tone="muted" theme={theme}>
                 {whatIf.disclaimer}
               </Text>
             </View>
           )}
+        </Surface>
+      ) : null}
+
+      {/* J7 Frosted Glass Card — IQS Factor Breakdown */}
+      {showIqs ? (
+        <Card theme={theme} style={{ marginBottom: 0 }}>
+          <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
+            <Text role="micro" tone="muted" theme={theme}>
+              SCORE DECOMPOSITION · SUM OF PARTS
+            </Text>
+            <SectionHeader
+              theme={theme}
+              title="IQS Factor Breakdown"
+              caption={`every measured part on ${selectedDay} (${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) — unmeasured factors drop out of the max`}
+            />
+          </View>
+          {iqs ? (
+            <WhySheet
+              score={iqs.value ?? 0}
+              maxScore={iqs.max}
+              components={iqs.factors.map((f) => ({
+                label: f.label,
+                points: f.points,
+                note: f.detail,
+                tier: f.tier,
+              }))}
+              caveat={iqs.caveat}
+              theme={theme}
+            />
+          ) : (
+            <EmptyState
+              title={`No IQS breakdown yet on ${selectedDay}`}
+              body="Open a few apps and tap Refresh. Mirror will never fabricate missing score parts."
+              theme={theme}
+            />
+          )}
         </Card>
       ) : null}
 
-      {/* J7: IQS Factor Breakdown */}
-      {showFactors ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="IQS Factor Breakdown"
-            caption={`Every measured part of ${selectedDay} — missing parts stay unmeasured`}
-          />
-          {iqs ? (
-            <View style={{ gap: theme.space(2) }}>
-              <WhySheet
-                score={iqs.value ?? 0}
-                maxScore={iqs.max}
-                components={iqs.factors.map((f) => ({
-                  label: f.label,
-                  points: f.points,
-                  note: f.detail,
-                  tier: f.tier,
-                }))}
-                caveat={iqs.caveat}
+      {/* J6 Frosted Glass Card — Curiosity vs Habit */}
+      {showCuriosity ? (
+        <Card theme={theme} style={{ marginBottom: 0 }}>
+          <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
+            <Text role="micro" tone="muted" theme={theme}>
+              EXPLICIT INTENT · TIER D + USER LABELS
+            </Text>
+            <SectionHeader
+              theme={theme}
+              title="Curiosity vs Habit"
+              caption="only explicit user labels count — duration hints never count"
+            />
+          </View>
+          {curiosity ? (
+            <View style={{ gap: theme.space(2.5) }}>
+              {(() => {
+                const labelledMs = curiosity.deepMs + curiosity.habitMs;
+                const curiosityShare = labelledMs > 0 ? curiosity.deepMs / labelledMs : 0;
+                const habitShare = labelledMs > 0 ? curiosity.habitMs / labelledMs : 0;
+                const totalDaySittingMs = labelledMs + curiosity.unlabeledMs;
+                const unlabeledShare = totalDaySittingMs > 0 ? curiosity.unlabeledMs / totalDaySittingMs : 0;
+                return (
+                  <>
+                    <View
+                      style={{
+                        borderRadius: theme.radius.md,
+                        backgroundColor: theme.glass.card.fill,
+                        borderWidth: 1,
+                        borderColor: theme.color.borderCard,
+                        padding: theme.space(3),
+                        gap: theme.space(2),
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+                        <View style={{ flex: 1, minWidth: 120 }}>
+                          <Stat
+                            value={formatDuration(curiosity.deepMs)}
+                            label="Intentional"
+                            hint={`${Math.round(curiosityShare * 100)}% of labelled span`}
+                            theme={theme}
+                          />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 120 }}>
+                          <Stat
+                            value={formatDuration(curiosity.habitMs)}
+                            label="Mindless / routine"
+                            hint={`${Math.round(habitShare * 100)}% of labelled span`}
+                            theme={theme}
+                          />
+                        </View>
+                      </View>
+                      <Divider theme={theme} />
+                      <Meter
+                        theme={theme}
+                        value={curiosityShare}
+                        label="Intentional share of labelled sittings"
+                        caption={formatDuration(curiosity.deepMs)}
+                        tone="anchor"
+                      />
+                      <Meter
+                        theme={theme}
+                        value={habitShare}
+                        label="Mindless / routine share of labelled sittings"
+                        caption={formatDuration(curiosity.habitMs)}
+                        tone="muted"
+                      />
+                      {curiosity.unlabeledMs > 0 ? (
+                        <Meter
+                          theme={theme}
+                          value={unlabeledShare}
+                          label="Unlabelled sitting span"
+                          caption={formatDuration(curiosity.unlabeledMs)}
+                          tone="muted"
+                        />
+                      ) : null}
+                    </View>
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {`${Math.round(curiosity.labelShare * 100)}% of ${selectedDay}'s sitting span explicitly labelled · ${curiosity.switchesPerHour.toFixed(1)} switches / active hr`}
+                    </Text>
+                  </>
+                );
+              })()}
+            </View>
+          ) : (
+            <View style={{ gap: theme.space(2.5) }}>
+              <EmptyState
+                title={`Needs 5+ explicit labels (${explicitLabelCount} labelled so far)`}
+                body="Mirror will not infer whether an open was curiosity or habit from duration or app category. Label 5 or more sittings in the Sessions tab to unlock this split."
+                action={
+                  <LinkButton theme={theme} onPress={() => setActiveTab('sessions')}>
+                    Label sittings in Sessions
+                  </LinkButton>
+                }
+                theme={theme}
+              />
+              <DegradedNotice
+                needs={['D']}
+                anyOf={['A', 'B', 'C']}
+                available={['D']}
+                feature="Topic-assisted curiosity split"
                 theme={theme}
               />
             </View>
-          ) : (
-            <EmptyState
-              title={`No score breakdown for ${selectedDay}`}
-              body="Factor breakdown appears as soon as usage data is collected for this day."
-              theme={theme}
-            />
           )}
         </Card>
       ) : null}
 
-      {/* J6: Curiosity vs Habit */}
-      {showCuriosity ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="Curiosity vs Habit"
-            caption="Explicit labels only — routine habit is never framed as failure"
-          />
-          {curiosity ? (
-            <View style={{ gap: theme.space(2) }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text role="label" theme={theme}>
-                  Intentional sittings
-                </Text>
-                <Text role="label" theme={theme}>
-                  {formatDuration(curiosity.deepMs)}
-                </Text>
-              </View>
-              <Divider theme={theme} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text role="label" theme={theme}>
-                  Mindless / routine sittings
-                </Text>
-                <Text role="label" theme={theme}>
-                  {formatDuration(curiosity.habitMs)}
-                </Text>
-              </View>
-              <Divider theme={theme} />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text role="label" theme={theme}>
-                  Unlabelled sitting time
-                </Text>
-                <Text role="label" tone="muted" theme={theme}>
-                  {formatDuration(curiosity.unlabeledMs)}
-                </Text>
-              </View>
-              <Text role="micro" tone="muted" theme={theme}>
-                {`Explicit label coverage: ${Math.round(curiosity.labelShare * 100)}% of sitting time on ${selectedDay} (${iqs?.confidence.labels ?? 5}+ decisive labels).`}
-              </Text>
-            </View>
-          ) : (
-            <EmptyState
-              title="Needs at least 5 explicit labels on this day"
-              body={`${iqs?.confidence.labels ?? 0} of 5 decisive explicit labels (intentional or mindless) recorded for ${selectedDay}. Mirror never guesses intent from sitting duration — label opens in Sessions if you want this split.`}
-              action={
-                <LinkButton theme={theme} onPress={() => setActiveTab('sessions')}>
-                  Open Sessions tab
-                </LinkButton>
-              }
+      {/* J5 Frosted Glass Card — Depth & Sitting Length Mix */}
+      {showDepth ? (
+        <Card theme={theme} style={{ marginBottom: 0 }}>
+          <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
+            <Text role="micro" tone="muted" theme={theme}>
+              SITTING DURATION DISTRIBUTION · TIER D
+            </Text>
+            <SectionHeader
               theme={theme}
+              title="Depth & Sitting Length Mix"
+              caption={`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} on ${selectedDay} · ${formatDuration(sittingSpanMs)} merged spans`}
             />
-          )}
-          <View style={{ marginTop: theme.space(2) }}>
+          </View>
+          <View style={{ gap: theme.space(2.5) }}>
             <DegradedNotice
               needs={['D']}
               anyOf={['A', 'B', 'C']}
               available={['D']}
-              feature="Topic-assisted curiosity split"
+              feature="Content depth"
               theme={theme}
             />
-          </View>
-        </Card>
-      ) : null}
-
-      {/* J5: Depth & Sitting Length Mix */}
-      {showDepth ? (
-        <Card theme={theme} elevated>
-          <SectionHeader
-            theme={theme}
-            title="Depth & Sitting Length Mix"
-            caption="Content depth requires Tier A/B/C; Tier D reports sitting-length bands"
-          />
-          <DegradedNotice
-            needs={['D']}
-            anyOf={['A', 'B', 'C']}
-            available={['D']}
-            feature="Content depth"
-            theme={theme}
-          />
-          {dayScoredSessions.length === 0 ? (
-            <EmptyState
-              title={`No sittings recorded for ${selectedDay}`}
-              body="Sitting-length bands appear once at least one complete sitting is recorded on this day. Length is descriptive only — long sittings are never scored higher than short ones."
-              theme={theme}
-            />
-          ) : (
-            <View style={{ gap: theme.space(1.5), marginTop: theme.space(2) }}>
-              <Text role="micro" tone="muted" theme={theme}>
-                {`${dayScoredSessions.length} sitting${dayScoredSessions.length === 1 ? '' : 's'} on ${selectedDay} (descriptive only — only under-8s bounces enter IQS):`}
-              </Text>
-              {depthBands.map((band, idx) => (
-                <View key={band.id} style={{ gap: theme.space(1) }}>
-                  {idx > 0 ? <Divider theme={theme} /> : null}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Text role="label" theme={theme}>
-                      {band.label}
-                    </Text>
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {`${band.count} (${Math.round(band.share * 100)}%) · ${formatDuration(band.ms)}`}
-                    </Text>
-                  </View>
+            {sittingCount > 0 ? (
+              <View
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.glass.card.fill,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: theme.space(1) }}>
+                  <Text role="label" theme={theme}>
+                    {`Sitting-length bands (${bandTotalCount} sitting${bandTotalCount === 1 ? '' : 's'})`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`${formatDuration(bandTotalMs)} total sitting span`}
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
+                <Divider theme={theme} />
+                {depthBands.map((band) => (
+                  <Meter
+                    key={band.id}
+                    theme={theme}
+                    value={band.share}
+                    label={band.label}
+                    caption={`${band.count} (${Math.round(band.share * 100)}%) · ${formatDuration(band.ms)}`}
+                    tone={band.id === 'under-8s' ? 'muted' : 'anchor'}
+                  />
+                ))}
+              </View>
+            ) : (
+              <EmptyState
+                title={`No sittings recorded yet on ${selectedDay}`}
+                body="Open apps and tap Refresh to inspect sitting-length bands."
+                theme={theme}
+              />
+            )}
+          </View>
         </Card>
       ) : null}
     </AppShell>

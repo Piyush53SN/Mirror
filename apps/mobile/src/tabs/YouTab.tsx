@@ -171,7 +171,7 @@ export function YouTab(): React.ReactElement {
             ) : null}
             {raw24hOrphans && (quality?.byReason?.orphan_background ?? 0) > raw24hOrphans.total ? (
               <Text role="micro" tone="muted" theme={theme}>
-                {`Stored today count (${quality?.byReason?.orphan_background ?? 0}) includes syncs recorded earlier today before the PAUSED→STOPPED lifecycle fix and resets at midnight.`}
+                {`Stored pre-recompute count (${quality?.byReason?.orphan_background ?? 0}) came from earlier syncs; P3 gates on the live raw-stream count (${orphanCount}) and recomputes stored rows on sync.`}
               </Text>
             ) : null}
           </View>

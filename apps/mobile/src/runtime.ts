@@ -87,26 +87,56 @@ export async function createRuntime(options: { allowContent?: boolean; retention
             launcherPkgs = await usage.getLauncherPackages();
           } catch {}
           const res = await collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
-          // One-time repair of today's `data_gaps` from authoritative raw UsageEvents
-          // so stale false orphans recorded earlier today before the PAUSED->STOPPED
-          // lifecycle fix are replaced with the honest recomputed count for today.
+          // Keep stored `data_gaps` truthful to the authoritative raw UsageEvents stream:
+          //   1. One-time 7-day repair (`lifecycle_repair_v27`) replaces stale pre-fix
+          //      stored gap rows on recent days still held in Android's UsageEvents buffer.
+          //   2. Every sync reconciles today's `[fromDayMs, toDayMs)` gap rows from a
+          //      single full-day raw-stream pass so incremental foreground syncs never
+          //      accumulate or preserve stale earlier-day orphan counts.
           try {
-            const repairMarker = await store.getCursor('lifecycle_repair_v22');
-            const todayStart = new Date(now);
-            todayStart.setHours(0, 0, 0, 0);
-            const fromDayMs = todayStart.getTime();
-            const toDayMs = fromDayMs + 86_400_000;
-            if (repairMarker === null && await usage.hasPermission()) {
+            if (await usage.hasPermission()) {
+              const todayStart = new Date(now);
+              todayStart.setHours(0, 0, 0, 0);
+              const fromDayMs = todayStart.getTime();
+              const nextDay = new Date(todayStart);
+              nextDay.setDate(nextDay.getDate() + 1);
+              const toDayMs = nextDay.getTime();
+
+              const repairMarker = await store.getCursor('lifecycle_repair_v27');
+              if (repairMarker === null) {
+                for (let d = 1; d <= 6; d += 1) {
+                  const dStartDate = new Date(todayStart);
+                  dStartDate.setDate(dStartDate.getDate() - d);
+                  const dEndDate = new Date(dStartDate);
+                  dEndDate.setDate(dEndDate.getDate() + 1);
+                  const dStart = dStartDate.getTime();
+                  const dEnd = dEndDate.getTime();
+                  const rawDay = await usage.queryEvents(dStart - 3_600_000, dEnd);
+                  if (rawDay.length > 0) {
+                    const rebuiltDay = buildUsageEvents(rawDay, {
+                      sinceMs: dStart - 3_600_000,
+                      untilMs: dEnd,
+                      ignorePackages: launcherPkgs,
+                      gapFloorMs: dStart,
+                    });
+                    await store.appendEvents(rebuiltDay.events);
+                    await store.replaceGapsForWindow('usage_stats', { fromMs: dStart, toMs: dEnd }, rebuiltDay.gaps, dEnd - 1);
+                  }
+                }
+                await store.setCursor('lifecycle_repair_v27', now);
+              }
+
               const rawToday = await usage.queryEvents(fromDayMs - 3_600_000, now);
-              const rebuilt = buildUsageEvents(rawToday, {
-                sinceMs: fromDayMs - 3_600_000,
-                untilMs: now,
-                ignorePackages: launcherPkgs,
-                gapFloorMs: fromDayMs,
-              });
-              await store.appendEvents(rebuilt.events);
-              await store.replaceGapsForWindow('usage_stats', { fromMs: fromDayMs, toMs: toDayMs }, rebuilt.gaps, now);
-              await store.setCursor('lifecycle_repair_v22', now);
+              if (rawToday.length > 0) {
+                const rebuiltToday = buildUsageEvents(rawToday, {
+                  sinceMs: fromDayMs - 3_600_000,
+                  untilMs: now,
+                  ignorePackages: launcherPkgs,
+                  gapFloorMs: fromDayMs,
+                });
+                await store.appendEvents(rebuiltToday.events);
+                await store.replaceGapsForWindow('usage_stats', { fromMs: fromDayMs, toMs: toDayMs }, rebuiltToday.gaps, now);
+              }
             }
           } catch {}
           return res;

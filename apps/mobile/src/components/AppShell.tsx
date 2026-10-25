@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Platform, ScrollView, StatusBar, View } from 'react-native';
-import { Backdrop, TabBar, Toolbar, useLiveBlur, useTheme } from '@mirror/ui';
+import { Backdrop, TabBar, Toolbar, rgba, useLiveBlur, useTheme } from '@mirror/ui';
 import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
 import { WhyScoreSheet } from './WhyScoreSheet';
@@ -49,6 +49,28 @@ export function AppShell({
           style={{ height: bottomSpacerHeight }}
         />
       </ScrollView>
+      {/* Bottom backdrop scrim so scrolling text dims before reaching the floating TabBar */}
+      <View
+        pointerEvents="none"
+        testID="tab-bar-bottom-scrim"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: theme.size.tabBar + navBarReserve + theme.space(6),
+          justifyContent: 'flex-end',
+        }}
+      >
+        <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.35) }} />
+        <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.68) }} />
+        <View
+          style={{
+            height: theme.size.tabBar + navBarReserve + theme.space(2),
+            backgroundColor: rgba(theme.color.canvas, 0.92),
+          }}
+        />
+      </View>
       <View
         pointerEvents="box-none"
         style={{
@@ -59,6 +81,20 @@ export function AppShell({
           bottom: navBarReserve,
         }}
       >
+        {/* High-opacity Frosted Horizon shell backing directly behind TabBar pill */}
+        <View
+          pointerEvents="none"
+          testID="tab-bar-opaque-backing"
+          style={{
+            position: 'absolute',
+            left: theme.space(4),
+            right: theme.space(4),
+            bottom: theme.space(4),
+            height: theme.size.tabBar,
+            borderRadius: theme.radius.pill,
+            backgroundColor: rgba(theme.color.shell, theme.isDark ? 0.94 : 0.93),
+          }}
+        />
         <TabBar
           items={TAB_ITEMS}
           active={activeTab}

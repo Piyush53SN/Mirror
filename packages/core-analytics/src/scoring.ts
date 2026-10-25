@@ -140,6 +140,57 @@ export function sessionsInWindow(sessions: readonly ScoredSession[], window: Sco
   });
 }
 
+export type RawDaySessionInput = {
+  id: string;
+  app: string;
+  startMs: number;
+  endMs: number;
+};
+
+/**
+ * Single canonical definition of a local day's sittings shared across Home,
+ * Insights (IQS, What-if, Curiosity, Depth sitting-length bands), and Sessions:
+ *   1. Excludes launchers and ignored system/installer packages (`isIgnoredSystemApp`).
+ *   2. Clips `[startMs, endMs]` to `[window.fromMs, window.toMs]`.
+ *   3. Keeps finite intervals with `clippedEnd > clippedStart` (`duration > 0`).
+ *   4. Deduplicates by `id` and sorts `(startMs ASC, id ASC)`.
+ */
+export function buildCanonicalDaySittings(
+  rawSessions: readonly RawDaySessionInput[],
+  options: {
+    window: { fromMs: number; toMs: number };
+    ignorePackages?: readonly string[];
+    appLabels?: Readonly<Record<string, string>>;
+  },
+): ScoredSession[] {
+  const { window } = options;
+  if (!Number.isFinite(window.fromMs) || !Number.isFinite(window.toMs) || window.toMs <= window.fromMs) {
+    return [];
+  }
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const appLabels = options.appLabels ?? {};
+  const seenIds = new Set<string>();
+  const out: ScoredSession[] = [];
+  for (const s of rawSessions) {
+    if (!s || typeof s.id !== 'string' || seenIds.has(s.id)) continue;
+    if (!Number.isFinite(s.startMs) || !Number.isFinite(s.endMs)) continue;
+    if (launcherSet.has(s.app) || isIgnoredSystemApp(s.app, appLabels[s.app])) continue;
+    const clippedStart = Math.max(window.fromMs, s.startMs);
+    const clippedEnd = Math.min(window.toMs, s.endMs);
+    if (clippedEnd > clippedStart) {
+      seenIds.add(s.id);
+      out.push({
+        id: s.id,
+        app: s.app,
+        startMs: clippedStart,
+        endMs: clippedEnd,
+      });
+    }
+  }
+  out.sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+  return out;
+}
+
 /** Milliseconds of `[start, end)` inside `[from, to)`. */
 function overlap(start: number, end: number, from: number, to: number): number {
   return Math.max(0, Math.min(end, to) - Math.max(start, from));

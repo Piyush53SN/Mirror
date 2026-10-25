@@ -57,7 +57,7 @@ export function SessionsTab(): React.ReactElement {
   return (
     <AppShell
       title="Sessions"
-      subtitle={`${selectedDay} · ${scaledSessions.length} app open${scaledSessions.length === 1 ? '' : 's'}`}
+      subtitle={`${selectedDay} · ${scaledSessions.length} sitting${scaledSessions.length === 1 ? '' : 's'}`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh

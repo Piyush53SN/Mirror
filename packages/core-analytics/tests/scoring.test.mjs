@@ -16,7 +16,7 @@ import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const core = await bundleTs(join(HERE, '..', 'src/index.ts'), { outfile: join(HERE, '.build', 'core.mjs') });
-const { scoreIqs, sessionBands, switchingRate, lateNightMs, curiositySplit, sessionsInWindow, isScorableModel, MIN_LABELS } = core;
+const { scoreIqs, sessionBands, switchingRate, lateNightMs, curiositySplit, sessionsInWindow, buildCanonicalDaySittings, computeWhatIf, isScorableModel, MIN_LABELS } = core;
 
 const T0 = Date.parse('2026-10-16T08:00:00Z');
 // Wide enough for `base()`: 40 sittings at two-hour spacing = 80 h.
@@ -294,5 +294,110 @@ test('property: more abandoned opens never raise the session-length part', () =>
       assert.ok(low >= high);
     }),
     { numRuns: 30 },
+  );
+});
+
+test('canonical day sittings: sitting-length bands sum to exact sitting count (71 sittings, 12 under 8s) and match Home, Insights, IQS, and What-if', () => {
+  const dayStart = Date.parse('2026-10-25T00:00:00Z');
+  const dayWindow = { fromMs: dayStart, toMs: dayStart + 86_400_000 };
+  const raw = [];
+  // 12 short bounces (<8s)
+  for (let i = 0; i < 12; i += 1) {
+    const st = dayStart + (i + 1) * 60_000;
+    raw.push({ id: `s_short_${i}`, app: 'com.reddit.frontpage', startMs: st, endMs: st + 4_000 });
+  }
+  // 25 sittings in 8s-1m
+  for (let i = 0; i < 25; i += 1) {
+    const st = dayStart + 3_600_000 + i * 90_000;
+    raw.push({ id: `s_8s1m_${i}`, app: 'org.wikipedia', startMs: st, endMs: st + 30_000 });
+  }
+  // 20 sittings in 1-5m
+  for (let i = 0; i < 20; i += 1) {
+    const st = dayStart + 3 * 3_600_000 + i * 300_000;
+    raw.push({ id: `s_1_5m_${i}`, app: 'org.wikipedia', startMs: st, endMs: st + 150_000 });
+  }
+  // 10 sittings in 5-20m (including 1 crossing midnight from previous night)
+  raw.push({ id: 's_midnight', app: 'com.google.android.youtube', startMs: dayStart - 20 * MIN, endMs: dayStart + 12 * MIN });
+  for (let i = 0; i < 9; i += 1) {
+    const st = dayStart + 6 * 3_600_000 + i * 25 * MIN;
+    raw.push({ id: `s_5_20m_${i}`, app: 'com.google.android.youtube', startMs: st, endMs: st + 10 * MIN });
+  }
+  // 4 sittings over 20m -> total valid = 12 + 25 + 20 + 10 + 4 = 71 sittings!
+  for (let i = 0; i < 4; i += 1) {
+    const st = dayStart + 12 * 3_600_000 + i * 40 * MIN;
+    raw.push({ id: `s_over20_${i}`, app: 'com.google.android.youtube', startMs: st, endMs: st + 28 * MIN });
+  }
+  // Plus launcher, system installer, zero-length, and previous-day sittings that must be excluded everywhere
+  raw.push({ id: 's_launcher', app: 'com.sec.android.app.launcher', startMs: dayStart + 5_000, endMs: dayStart + 35_000 });
+  raw.push({ id: 's_installer', app: 'com.google.android.packageinstaller', startMs: dayStart + 50_000, endMs: dayStart + 80_000 });
+  raw.push({ id: 's_prev_day', app: 'org.wikipedia', startMs: dayStart - 2 * H, endMs: dayStart - H });
+
+  const canonical = buildCanonicalDaySittings(raw, {
+    window: dayWindow,
+    ignorePackages: ['com.sec.android.app.launcher'],
+  });
+  assert.equal(canonical.length, 71, 'canonical day sitting count must be 71');
+
+  const bands = sessionBands(canonical);
+  const sumBandCounts = bands.reduce((sum, b) => sum + b.count, 0);
+  const sumBandMs = bands.reduce((sum, b) => sum + b.ms, 0);
+  const expectedTotalMs = canonical.reduce((sum, s) => sum + (s.endMs - s.startMs), 0);
+
+  assert.equal(sumBandCounts, 71, 'sitting-length bands must sum to 71 (never 0)');
+  assert.equal(sumBandMs, expectedTotalMs, 'sitting-length bands ms must sum to exact canonical sitting span ms');
+  assert.equal(bands[0].count, 12, 'under-8s band must be 12');
+  assert.equal(bands[1].count, 25);
+  assert.equal(bands[2].count, 20);
+  assert.equal(bands[3].count, 10);
+  assert.equal(bands[4].count, 4);
+
+  const iqs = scoreIqs({ window: dayWindow, sessions: canonical, approximate: true });
+  assert.equal(iqs.confidence.sample, 71, 'Home / IQS confidence.sample must equal 71');
+  assert.equal(iqs.confidence.activeMs, expectedTotalMs);
+  assert.match(iqs.factors.find((f) => f.id === 'session_length').detail, /12 of 71 opens ended under 8 s/);
+
+  const wf = computeWhatIf({ window: dayWindow, sessions: canonical });
+  assert.equal(wf.baselineSessionCount, 71, 'What-if baselineSessionCount must equal 71');
+  assert.equal(wf.sittingTimeMs, expectedTotalMs);
+});
+
+test('property: sessionBands over buildCanonicalDaySittings always sums to sitting count and matches scoreIqs sample', () => {
+  const dayStart = Date.parse('2026-10-25T00:00:00Z');
+  const dayWindow = { fromMs: dayStart, toMs: dayStart + 86_400_000 };
+  fc.assert(
+    fc.property(
+      fc.array(
+        fc.record({
+          offsetMin: fc.integer({ min: -120, max: 1500 }),
+          durSec: fc.integer({ min: 0, max: 5400 }),
+          app: fc.constantFrom('org.wikipedia', 'com.reddit.frontpage', 'com.miui.packageinstaller', 'com.launcher.home'),
+        }),
+        { minLength: 0, maxLength: 90 },
+      ),
+      (items) => {
+        const raw = items.map((it, i) => ({
+          id: `can_${i}`,
+          app: it.app,
+          startMs: dayStart + it.offsetMin * MIN,
+          endMs: dayStart + it.offsetMin * MIN + it.durSec * 1000,
+        }));
+        const canonical = buildCanonicalDaySittings(raw, {
+          window: dayWindow,
+          ignorePackages: ['com.launcher.home'],
+        });
+        const bands = sessionBands(canonical);
+        const sumCounts = bands.reduce((acc, b) => acc + b.count, 0);
+        const sumMs = bands.reduce((acc, b) => acc + b.ms, 0);
+        const expectedMs = canonical.reduce((acc, s) => acc + (s.endMs - s.startMs), 0);
+
+        assert.equal(sumCounts, canonical.length);
+        assert.equal(sumMs, expectedMs);
+
+        const iqs = scoreIqs({ window: dayWindow, sessions: canonical, approximate: true });
+        assert.equal(iqs.confidence.sample, canonical.length);
+        assert.equal(iqs.confidence.activeMs, expectedMs);
+      },
+    ),
+    { numRuns: 100 },
   );
 });

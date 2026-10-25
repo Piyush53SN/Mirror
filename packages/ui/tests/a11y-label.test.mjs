@@ -480,9 +480,16 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       switchesPerHour: 3.2,
       labelShare: 0.75,
     },
-    dayScoredSessions: [{ id: 'sess-alpha-01', app: 'org.wikipedia', startMs: 1761364800000, endMs: 1761365520000 }],
+    dayScoredSessions: [
+      { id: 'sess-alpha-01', app: 'org.wikipedia', startMs: 1761364800000, endMs: 1761365520000 },
+      { id: 'sess-alpha-02', app: 'com.reddit.frontpage', startMs: 1761366000000, endMs: 1761366004000 },
+    ],
     depthBands: [
-      { id: '5-20m', label: '5 – 20 min', count: 1, share: 1, ms: 720_000 },
+      { id: 'under-8s', label: 'under 8 s', count: 1, share: 0.5, ms: 4_000 },
+      { id: '8s-1m', label: '8 s – 1 min', count: 0, share: 0, ms: 0 },
+      { id: '1-5m', label: '1 – 5 min', count: 0, share: 0, ms: 0 },
+      { id: '5-20m', label: '5 – 20 min', count: 1, share: 0.5, ms: 720_000 },
+      { id: 'over-20m', label: 'over 20 min', count: 0, share: 0, ms: 0 },
     ],
     evolution: {
       hasHistory: true,
@@ -624,6 +631,11 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     const spacerHeight = parseFloat(String(spacers[0].props?.style?.height ?? '0'));
     assert.ok(spacerHeight >= 128, `tab ${activeTab} bottom spacer must clear floating TabBar + nav bar (got ${spacerHeight}px)`);
 
+    const scrims = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-bar-bottom-scrim');
+    assert.equal(scrims.length, 1, `tab ${activeTab} must render bottom backdrop scrim behind floating TabBar`);
+    const backings = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-bar-opaque-backing');
+    assert.equal(backings.length, 1, `tab ${activeTab} must render high-opacity pill backing behind floating TabBar`);
+
     if (activeTab === 'home') {
       const gauges = renderer.root.findAll(
         (el) =>
@@ -631,6 +643,21 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
           String(el.props?.['aria-label'] ?? '').startsWith('Interaction quality score'),
       );
       assert.equal(gauges.length, 1, 'HomeTab must render the Frosted Horizon IQS hero gauge');
+      assert.match(rawTree, /OS screen time/i, 'HomeTab must label OS screen time');
+      assert.match(rawTree, /Sitting spans/i, 'HomeTab must label Sitting spans');
+      assert.match(rawTree, /merge reopens of the same app within 15 min/i, 'HomeTab must explain OS screen time vs sitting spans');
+    }
+
+    if (activeTab === 'insights') {
+      assert.match(rawTree, /COUNTERFACTUAL ARITHMETIC/i, 'InsightsTab must render Frosted Horizon What-if hero');
+      assert.match(rawTree, /Sitting-length bands \(2 sittings\)/i, 'InsightsTab sitting-length bands must sum to canonical sitting count');
+      const bandMeters = renderer.root.findAll(
+        (el) =>
+          el.props?.role === 'progressbar' &&
+          (String(el.props?.['aria-label'] ?? '').startsWith('under 8 s,') ||
+            String(el.props?.['aria-label'] ?? '').startsWith('5 – 20 min,')),
+      );
+      assert.equal(bandMeters.length, 2, 'InsightsTab must render Frosted Horizon Meter bars for sitting-length bands');
     }
 
     for (const { label, isArray, nodeType } of collectA11yLabels(json)) {
