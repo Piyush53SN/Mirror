@@ -3,14 +3,15 @@
 Mirror asks for one permission today. This page lists every permission that will
 ever appear, what triggers the request, and what is deliberately **not** asked
 for. It is the human-readable twin of the allow/deny test in
-`tests/config.test.mjs`.
+`tests/config.test.mjs` and the merged-manifest gate in
+`scripts/android/check-merged-manifest.mjs`.
 
 The rule behind the list: **a permission is declared in the manifest when the
 feature that needs it ships, and requested from the person at the moment they use
 that feature.** Declaring a permission early is not harmful, but *asking* early is
 a dark pattern, so the two dates are different.
 
-## 1. Declared now (P0/P1)
+## 1. Declared now (P0/P1 / v0.1)
 
 | Permission | Kind | Declared | Requested | Why |
 | --- | --- | --- | --- | --- |
@@ -21,25 +22,25 @@ opens the Settings page, the person flips the switch, and the app re-checks on
 resume. If it is not granted, every screen that needs tier D shows the degraded
 notice and says why — it never shows a made-up number.
 
-## 2. Declared with the feature that needs it
+## 2. Declared with the feature that needs it (and library-contributed permissions)
 
 | Permission | Kind | Phase | Requested | Why |
 | --- | --- | --- | --- | --- |
 | `android.permission.POST_NOTIFICATIONS` | Runtime (Android 13+) | P4 | On the nudge opt-in screen only — never at launch, never after onboarding | Local weekly report and the opt-in nudge. If the person never enables a notification, this is never requested. Refusal keeps every other feature working. |
-| `android.permission.INTERNET` | Normal | P5, with the first connector | n/a (install-time) | OAuth token exchange and (P6) optional encrypted sync. The app is fully functional offline; Private mode makes no requests at all. |
+| `android.permission.INTERNET` | Normal | **Stripped in v0.1 release** (`tools:node="remove"` in `src/release/AndroidManifest.xml`); restored in P5 when the first connector ships | n/a (install-time) | Kept in `debug` only so React Native can reach Metro (`localhost:8081`). In v0.1 release builds (Private mode, no connectors), `remove-forbidden-permissions.js` strips `INTERNET` merged from `react-android` and `expo-file-system`. Without `INTERNET`, Android's `PackageManagerService` omits Linux GID `3003` (`AID_INET`), so the kernel rejects `AF_INET`/`AF_INET6` sockets with `EACCES`. Enforced by `check-merged-manifest.mjs --variant release`. |
+| `android.permission.ACCESS_NETWORK_STATE` | Normal | contributed by **WorkManager** (`androidx.work:work-runtime:2.9.1` via `expo-background-task@58.0.11`) | n/a | `expo.modules.backgroundtask.BackgroundTaskScheduler.scheduleWorker()` (`BackgroundTaskScheduler.kt:103`) hardcodes `Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()` when registering the periodic collection worker. WorkManager's `NetworkStateTracker24` calls `ConnectivityManager.registerDefaultNetworkCallback(...)`, which is annotated `@RequiresPermission(ACCESS_NETWORK_STATE)` and throws `SecurityException` if removed. Grants read-only local connectivity state only — no `AID_INET` GID and zero socket capability. |
 | `android.permission.WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED`, `FOREGROUND_SERVICE` | Normal | contributed by **WorkManager** (`expo-background-task`), P1b-1 | n/a | Scheduled collection survives reboots. These merge in from the library's manifest; the merged-manifest gate lists them as reviewed library permissions and fails on anything else. |
-| `dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Normal, per-package | contributed by **AndroidX** (`androidx.work`, `androidx.core`), P1b-1 | n/a | AGP generates a per-package permission when a library declares a receiver with `RECEIVER_NOT_EXPORTED` (Android 13+). Required to protect dynamic receivers. No user prompt. Documented in `ALLOWED_FROM_LIBRARIES` with reason. |
+| `dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Signature, per-package | contributed by **AndroidX** (`androidx.work`, `androidx.core`), P1b-1 | n/a | AGP generates a per-package permission when a library declares a receiver with `RECEIVER_NOT_EXPORTED` (Android 13+). Required to protect dynamic receivers. No user prompt. Documented in `ALLOWED_FROM_LIBRARIES` with reason. |
 
-## 2a. Permissions that appear only in debug and are removed
+## 2a. Permissions removed by `remove-forbidden-permissions.js`
 
-React Native's own `ReactAndroid/src/debug/AndroidManifest.xml` adds two permissions for its dev overlay and debugger that are **not** in release:
+React Native, Expo's template, and `expo-file-system` contribute permissions that Mirror actively strips via `apps/mobile/plugins/remove-forbidden-permissions.js`:
 
-| Permission | Added by | Why blocked |
-| --- | --- | --- |
-| `android.permission.SYSTEM_ALERT_WINDOW` | `react-native` debug manifest (dev overlay) | Overlays are forbidden by product decision. Already in `blockedPermissions`; custom plugin `remove-forbidden-permissions` adds `tools:node="remove"` to `main`, `debug` and `debugOptimized` manifests so merged-manifest gate passes for both debug and release. |
-| `android.permission.ACCESS_LOCAL_NETWORK` | `react-native` debug manifest (Android 17+ local-network debugger) | Not needed for product; blocked via `blockedPermissions` and same plugin. Gate would otherwise flag it as unexpected. |
-
-Both are in `blockedPermissions` in `apps/mobile/app.json`. The first Kotlin compile (Gradle `assembleDebug` 5m 9s) succeeded before the gate failed, proving the plugin runs after prebuild and before merge.
+| Permission | Added by | Variant treatment | Why removed |
+| --- | --- | --- | --- |
+| `android.permission.INTERNET` | Expo base template, `com.facebook.react:react-android`, `expo-file-system` | Kept in `debug` / `debugOptimized`; **removed in `release`** (`app/src/release/AndroidManifest.xml` `tools:node="remove"`) | Debug needs Metro (`localhost:8081`). v0.1 release has zero connectors and zero network callers (`check-offline.mjs` + 0 JS `fetch`/`XMLHttpRequest`/`WebSocket` references); removing `INTERNET` strips `AID_INET` at the OS kernel boundary and fails `check-merged-manifest.mjs --variant release` if re-introduced. |
+| `android.permission.SYSTEM_ALERT_WINDOW` | `react-native` debug manifest (dev overlay) | Removed in **all** variants (`main`, `debug`, `debugOptimized`, `release`) | Overlays are forbidden by product decision (`blockedPermissions` + `tools:node="remove"`). |
+| `android.permission.ACCESS_LOCAL_NETWORK` | `react-native` debug manifest (Android 17+ local-network debugger) | Removed in **all** variants (`main`, `debug`, `debugOptimized`, `release`) | Local-network probing is forbidden (`blockedPermissions` + `tools:node="remove"`). |
 
 ## 3. Boot sync: no permission is needed, and none is requested
 
@@ -83,9 +84,9 @@ the config test in the same change. It is not added "just in case".
    read, what will not, and what happens if they decline.
 2. **At the moment of use** — usage access is opened from Settings with the reason
    on screen; notifications are requested only when a nudge is switched on.
-3. **Afterwards** — the Privacy Center shows what was granted and when, and one tap
-   revokes it. Revocation deletes the events that grant covered (see
-   `consent_log` in `packages/shared-types`).
+3. **Afterwards** — the Privacy Center (`You` tab → Local Data & Privacy) shows what
+   was granted and provides two-step local wipe controls (`Clear labels` and
+   `Delete all local data`).
 
 ## 6. Verification
 
@@ -94,8 +95,9 @@ the config test in the same change. It is not added "just in case".
 | The declared list is exactly the documented list | `tests/config.test.mjs` | AUTOMATED |
 | Forbidden permissions are blocked, not merely unused | `tests/config.test.mjs` | AUTOMATED |
 | Every declared permission appears on this page | `tests/config.test.mjs` | AUTOMATED |
-| The **merged** manifest matches this page (not just `app.json`) — debug | `npm run android:manifest` (`scripts/android/check-merged-manifest.mjs`), fixtures in `scripts/android/fixtures` | **AUTOMATED** (policy + parser); needs a Gradle build to run against a real artifact — **MANUAL precondition**, now green on GitHub Actions run #2 (BUILD SUCCESSFUL 5m 9s, then gate) |
-| The **merged** manifest matches this page — release | `npm run android:manifest -- --variant release` — same gate, same allowlist, but release does **not** contain `SYSTEM_ALERT_WINDOW` or `ACCESS_LOCAL_NETWORK` (those come from `react-native` debug manifests only). `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` is in both debug and release and is allowlisted. Release needs same checks; signing is MANUAL. | AUTOMATED (same gate); release build is `assembleRelease`/`bundleRelease` — MANUAL signing |
-| The first prebuild produced the expected `android/` project (17 `tools:node="remove"` lines, `PACKAGE_USAGE_STATS` kept) | `npx expo prebuild --platform android` — run 2026-10-18, exit 0, with custom plugin `remove-forbidden-permissions` adding remove for debug manifests | AUTOMATED (ran once); re-running is part of CI |
-| The Settings round-trip (grant → resume → detected) | emulator run, P1 | MANUAL until an emulator is wired into CI |
+| The **merged** manifest matches this page — debug (`INTERNET` allowed for Metro) | `npm run android:manifest -- --variant debug` (`scripts/android/check-merged-manifest.mjs`) | AUTOMATED |
+| The **merged** manifest matches this page — release (`INTERNET` **forbidden**; `ACCESS_NETWORK_STATE` documented for WorkManager) | `npm run android:manifest -- --variant release` (`scripts/android/check-merged-manifest.mjs`), unit tests in `tests/android-manifest.test.mjs` | AUTOMATED |
+| Prebuild generates `src/release/AndroidManifest.xml` stripping `INTERNET`, `SYSTEM_ALERT_WINDOW`, `ACCESS_LOCAL_NETWORK` while keeping `INTERNET` in `src/debug/AndroidManifest.xml` | `npx expo prebuild --platform android` (`apps/mobile/plugins/remove-forbidden-permissions.js`) | AUTOMATED |
+| Zero network calls in Private mode | `scripts/android/check-offline.mjs` + kernel `AID_INET` omission (`INTERNET` stripped in release) | AUTOMATED |
+| The Settings round-trip (grant → resume → detected) | real Android device | VERIFIED |
 | The notification prompt appears only on opt-in | P4 device test | MANUAL until then |

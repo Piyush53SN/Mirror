@@ -103,7 +103,7 @@ export function DebugView(): React.ReactElement {
           <SectionHeader
             theme={theme}
             title={`Single-day OS vs Mirror – ${selectedDay}`}
-            caption={`Mirror vs OS same day, collecting since ${collectingSince ?? 'unknown'}`}
+            caption={`Mirror vs OS same day, last sync cursor ${collectingSince ?? 'unknown'}`}
           />
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1), marginBottom: theme.space(2) }}>
             {lastNDays(7).map((day) => (
@@ -195,6 +195,9 @@ export function DebugView(): React.ReactElement {
                   <Text role="micro" tone="muted" theme={theme}>
                     {`By app: ${latestSyncOrphans.byApp.map((a) => `${a.label} × ${a.count} (${a.byType})`).join('; ')}`}
                   </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Newest: ${latestSyncOrphans.newest.map((n) => `${n.label} (${n.typeName} at ${new Date(n.at).toLocaleTimeString()})`).join(', ')}`}
+                  </Text>
                 </>
               ) : null}
             </View>
@@ -216,6 +219,11 @@ export function DebugView(): React.ReactElement {
                     {`Newest: ${raw24hOrphans.newest.map((n) => `${new Date(n.at).toLocaleTimeString()} ${n.label} (${n.typeName})`).join(' · ')}`}
                   </Text>
                 </>
+              ) : null}
+              {(quality?.byReason?.orphan_background ?? 0) > raw24hOrphans.total ? (
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`Stored pre-recompute count (${quality?.byReason?.orphan_background ?? 0}) came from earlier syncs; P3 gates on the live raw-stream count (${orphanCount}) and recomputes stored rows on sync.`}
+                </Text>
               ) : null}
             </View>
           ) : null}

@@ -26,13 +26,10 @@ export function YouTab(): React.ReactElement {
   const {
     focusWindows,
     quality,
-    latestSyncOrphans,
-    raw24hOrphans,
     evolution,
     orphanCount,
     totalGaps,
     p3Reliable,
-    collectingSince,
     intentLabels,
     resetStoredData,
     clearStoredLabels,
@@ -55,6 +52,7 @@ export function YouTab(): React.ReactElement {
     [intentLabels],
   );
   const recordedDays = focusWindows?.distinctDays ?? evolution?.distinctDays ?? 0;
+  const historyStartDay = focusWindows?.historyStartDay ?? evolution?.historyStartDay ?? null;
 
   const handleConfirmDeleteAll = React.useCallback(async () => {
     setBusyAction('delete-all');
@@ -263,7 +261,7 @@ export function YouTab(): React.ReactElement {
                 <Stat
                   value={recordedDays > 0 ? `${recordedDays} ${recordedDays === 1 ? 'day' : 'days'}` : 'Today'}
                   label="Local history"
-                  hint={collectingSince ? `Since ${collectingSince}` : 'Encrypted SQLite'}
+                  hint={historyStartDay ? `History starts ${historyStartDay}` : 'Encrypted SQLite'}
                   theme={theme}
                 />
               </View>
@@ -279,7 +277,7 @@ export function YouTab(): React.ReactElement {
             <Divider theme={theme} />
             <Text role="micro" tone="muted" theme={theme}>
               {
-                'Records are sealed locally with a device-bound SecureStore key (allowBackup: false, telemetry: false). Export file import (Tier B), browser extension (Tier C), and API connectors (Tier A) are disabled in v0.1.'
+                'Records are sealed locally with a device-bound SecureStore key (allowBackup: false, telemetry: false, INTERNET stripped in release). Export file import (Tier B), browser extension (Tier C), and API connectors (Tier A) are disabled in v0.1.'
               }
             </Text>
           </View>
@@ -437,25 +435,6 @@ export function YouTab(): React.ReactElement {
             <Text role="body" theme={theme}>
               {quality?.sentence ?? 'No collection gaps recorded.'}
             </Text>
-            {latestSyncOrphans ? (
-              <Text role="micro" tone="muted" theme={theme}>
-                {latestSyncOrphans.total === 0
-                  ? 'Latest sync: 0 new unmatched close events.'
-                  : `Latest sync: ${latestSyncOrphans.total} unmatched close${latestSyncOrphans.total === 1 ? '' : 's'} — ${latestSyncOrphans.newest.map((n) => `${n.label} (${n.typeName} at ${new Date(n.at).toLocaleTimeString()})`).join(', ')}`}
-              </Text>
-            ) : null}
-            {raw24hOrphans ? (
-              <Text role="micro" tone="muted" theme={theme}>
-                {raw24hOrphans.total === 0
-                  ? 'Last 24h raw OS stream (after lifecycle fix): 0 unmatched close events.'
-                  : `Last 24h raw OS stream (${raw24hOrphans.total}): by type [${raw24hOrphans.byEventType.map((t) => `${t.typeName}×${t.count}`).join(', ')}] · by app [${raw24hOrphans.byApp.slice(0, 4).map((a) => `${a.label}×${a.count}`).join(', ')}] · newest [${raw24hOrphans.newest.slice(0, 3).map((n) => `${new Date(n.at).toLocaleTimeString()} ${n.label} ${n.typeName}`).join(', ')}]`}
-              </Text>
-            ) : null}
-            {raw24hOrphans && (quality?.byReason?.orphan_background ?? 0) > raw24hOrphans.total ? (
-              <Text role="micro" tone="muted" theme={theme}>
-                {`Stored pre-recompute count (${quality?.byReason?.orphan_background ?? 0}) came from earlier syncs; P3 gates on the live raw-stream count (${orphanCount}) and recomputes stored rows on sync.`}
-              </Text>
-            ) : null}
           </View>
 
           <View

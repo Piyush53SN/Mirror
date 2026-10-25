@@ -13,7 +13,8 @@
  *   1. the permission Mirror needs is present (PACKAGE_USAGE_STATS);
  *   2. nothing on the forbidden list appears — accessibility, overlays, screen
  *      capture, notification listening, advertising ID, contacts, location,
- *      microphone, camera, SMS, call log, phone state, all-packages;
+ *      microphone, camera, SMS, call log, phone state, all-packages, and (in
+ *      `release` builds) `android.permission.INTERNET`;
  *   3. every other permission is on a documented allowlist, so a new one is a
  *      review decision rather than an accident.
  *
@@ -29,9 +30,14 @@ const ROOT = join(HERE, '..', '..');
 export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
 
 /**
- * Permissions a library may legitimately contribute. Each one is here because a
- * specific dependency needs it, not because it is common:
- *   INTERNET, ACCESS_NETWORK_STATE — expo-updates/fetch, OAuth in P5
+ * Permissions a library may legitimately contribute in BOTH debug and release.
+ * Each one is here because a specific dependency needs it, not because it is common:
+ *   ACCESS_NETWORK_STATE — contributed by `androidx.work:work-runtime:2.9.1` (pulled in by
+ *     `expo-background-task@58.0.11`). `BackgroundTaskScheduler.kt:103` hardcodes
+ *     `Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()`, causing
+ *     WorkManager's `NetworkStateTracker24` to call `ConnectivityManager.registerDefaultNetworkCallback(...)`
+ *     (`@RequiresPermission(ACCESS_NETWORK_STATE)` — throws `SecurityException` if removed).
+ *     Read-only local connectivity boolean; grants no `AID_INET` GID and zero socket capability.
  *   WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE — WorkManager
  *   VIBRATE, USE_BIOMETRIC, USE_FINGERPRINT — expo-haptics / local auth, P4
  *   POST_NOTIFICATIONS — local notifications, P4
@@ -42,7 +48,6 @@ export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
  *     with android:exported="false" and RECEIVER_NOT_EXPORTED flag.
  */
 export const ALLOWED_FROM_LIBRARIES = [
-  'android.permission.INTERNET',
   'android.permission.ACCESS_NETWORK_STATE',
   'android.permission.WAKE_LOCK',
   'android.permission.RECEIVE_BOOT_COMPLETED',
@@ -53,6 +58,20 @@ export const ALLOWED_FROM_LIBRARIES = [
   'android.permission.POST_NOTIFICATIONS',
   'com.android.vending.CHECK_LICENSE',
   'dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
+];
+
+/**
+ * Permissions allowed ONLY in debug / dev-client builds (`variant !== 'release'`).
+ *
+ * `android.permission.INTERNET` is required in debug so React Native can reach
+ * the Metro bundler (`localhost:8081`). In v0.1 release builds (Private mode,
+ * zero connectors), `apps/mobile/plugins/remove-forbidden-permissions.js`
+ * strips `INTERNET` via `tools:node="remove"` in `app/src/release/AndroidManifest.xml`,
+ * withholding Linux GID 3003 (`AID_INET`) from the signed APK/AAB. Any release
+ * manifest containing `INTERNET` fails this gate.
+ */
+export const DEBUG_ONLY_PERMISSIONS = [
+  'android.permission.INTERNET',
 ];
 
 /** Never, under any build variant. Each entry is a product decision. */
@@ -119,23 +138,46 @@ export function parseManifest(xml) {
 }
 
 /** The audit itself. Pure: manifest text in, findings out. */
-export function auditManifest(xml, { allowed = ALLOWED_FROM_LIBRARIES, required = REQUIRED_PERMISSIONS } = {}) {
+export function auditManifest(
+  xml,
+  { allowed = ALLOWED_FROM_LIBRARIES, required = REQUIRED_PERMISSIONS, variant = null } = {},
+) {
+  const normalizedVariant = variant ? String(variant).toLowerCase() : null;
+  const isRelease =
+    normalizedVariant === 'release' ||
+    (normalizedVariant !== null && normalizedVariant.endsWith('release'));
+
   const parsed = parseManifest(xml);
   const present = new Set(parsed.permissions);
-  const allowedSet = new Set([...allowed, ...required]);
+  const effectiveAllowed = isRelease ? allowed : [...allowed, ...DEBUG_ONLY_PERMISSIONS];
+  const allowedSet = new Set([...effectiveAllowed, ...required]);
+  const effectiveForbidden = isRelease
+    ? [...FORBIDDEN_PERMISSIONS, ...DEBUG_ONLY_PERMISSIONS]
+    : FORBIDDEN_PERMISSIONS;
 
   const missing = required.filter((permission) => !present.has(permission));
-  const forbidden = parsed.permissions.filter((permission) => FORBIDDEN_PERMISSIONS.includes(permission));
-  const unexpected = parsed.permissions.filter((permission) => !allowedSet.has(permission) && !FORBIDDEN_PERMISSIONS.includes(permission));
+  const forbidden = parsed.permissions.filter((permission) => effectiveForbidden.includes(permission));
+  const unexpected = parsed.permissions.filter(
+    (permission) => !allowedSet.has(permission) && !effectiveForbidden.includes(permission),
+  );
   const badServices = parsed.services.filter(
-    (service) => (service.permission && FORBIDDEN_SERVICE_PERMISSIONS.includes(service.permission)) || service.accessibility || service.notificationListener,
+    (service) =>
+      (service.permission && FORBIDDEN_SERVICE_PERMISSIONS.includes(service.permission)) ||
+      service.accessibility ||
+      service.notificationListener,
   );
 
   const problems = [
     ...missing.map((permission) => `${permission} is missing: the usage collector cannot work without it`),
-    ...forbidden.map((permission) => `${permission} is forbidden and must be blocked in app.json`),
+    ...forbidden.map((permission) =>
+      DEBUG_ONLY_PERMISSIONS.includes(permission)
+        ? `${permission} is forbidden in release builds (v0.1 Private mode has no connectors; strip via tools:node="remove" in app/src/release/AndroidManifest.xml)`
+        : `${permission} is forbidden and must be blocked in app.json`,
+    ),
     ...unexpected.map((permission) => `${permission} is not on the review allowlist; decide on it and document it`),
-    ...badServices.map((service) => `service ${service.name} exposes a forbidden capability (accessibility or notification listening)`),
+    ...badServices.map(
+      (service) => `service ${service.name} exposes a forbidden capability (accessibility or notification listening)`,
+    ),
   ];
 
   return { parsed, missing, forbidden, unexpected, badServices, problems, ok: problems.length === 0 };
@@ -212,7 +254,7 @@ if (isMain) {
   const args = process.argv.slice(2);
   const arg = (name) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : null);
   const explicit = arg('manifest');
-  const variant = arg('variant');
+  let variant = arg('variant');
   const jsonOut = arg('json');
 
   const manifestPath = explicit ? resolve(explicit) : findMergedManifest({ variant });
@@ -223,7 +265,12 @@ if (isMain) {
     process.exit(2);
   }
 
-  const result = auditManifest(readFileSync(manifestPath, 'utf8'));
+  if (!variant) {
+    if (/merged_manifests?[\\/]release\b/i.test(manifestPath)) variant = 'release';
+    else if (/merged_manifests?[\\/]debug\b/i.test(manifestPath)) variant = 'debug';
+  }
+
+  const result = auditManifest(readFileSync(manifestPath, 'utf8'), { variant });
   const payload = { manifest: manifestPath, variant: variant ?? null, ...result, parsed: result.parsed };
   const defaultReport = join(ROOT, '.reports/merged-manifest.json');
   // Always write default for backward compat and local `make android-build`

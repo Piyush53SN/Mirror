@@ -12,3 +12,38 @@
 -keep class com.facebook.react.turbomodule.** { *; }
 
 # Add any project specific keep options here:
+
+# @generated begin expo-build-properties - expo prebuild (DO NOT MODIFY)
+# Keep Room database implementations - WorkManager uses Room
+-keep class * extends androidx.room.RoomDatabase
+-keep @androidx.room.Entity class *
+-keep @androidx.room.Dao class *
+-keep class androidx.room.RoomDatabase { *; }
+-dontwarn androidx.room.paging.**
+
+# WorkManager - keep WorkDatabase and its Impl (R8 was stripping WorkDatabase_Impl causing Failed to create instance)
+-keep class * extends androidx.work.Worker
+-keep class * extends androidx.work.ListenableWorker
+-keep class * extends androidx.work.InputMerger
+-keep class androidx.work.impl.WorkDatabase_Impl { *; }
+-keep class androidx.work.impl.WorkDatabase { *; }
+-keep class androidx.work.impl.* { *; }
+-keep class androidx.work.** { *; }
+
+# Startup initializer (InitializationProvider)
+-keep class androidx.startup.** { *; }
+
+# Expo TaskManager and BackgroundTask - keep their WorkManager workers
+-keep class expo.modules.taskmanager.** { *; }
+-keep class expo.modules.backgroundtask.** { *; }
+-keep class expo.modules.taskManager.** { *; }
+-keep class expo.modules.backgroundTask.** { *; }
+-keep class expo.modules.backgroundtask.workmanager.** { *; }
+
+# Expo modules core
+-keep class expo.modules.** { *; }
+
+# Keep Mirror native module
+-keep class dev.mirror.usagestats.** { *; }
+
+# @generated end expo-build-properties

@@ -137,6 +137,8 @@ export function HomeTab(): React.ReactElement {
     dismissKeyMismatch,
     iqs,
     dayScoredSessions,
+    evolution,
+    focusWindows,
     setShowWhy,
     dailyTotals,
     orphanCount,
@@ -162,11 +164,17 @@ export function HomeTab(): React.ReactElement {
     () => (iqs ? iqs.factors.filter((f) => f.measurable && f.max > 0) : []),
     [iqs],
   );
+  const historyStartDay = focusWindows?.historyStartDay ?? evolution?.historyStartDay ?? null;
+  const headerSubtitle = historyStartDay
+    ? `History starts ${historyStartDay}${collectingSince ? ` · synced ${collectingSince}` : ''}`
+    : collectingSince
+      ? `Last sync ${collectingSince}`
+      : 'Syncing...';
 
   return (
     <AppShell
       title={`Mirror · ${selectedDay}`}
-      subtitle={collectingSince ? `Collecting since ${collectingSince}` : 'Collecting...'}
+      subtitle={headerSubtitle}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
