@@ -411,13 +411,17 @@ test('mobile 5-tab shell renders string accessibilityLabels, short-history empty
   debugRenderer.unmount();
 });
 
-test('mobile 5-tab shell populated cards, expanded session pills, TabBar switching, and 7-tap debug action keep string accessibilityLabels', () => {
+test('mobile 5-tab shell populated cards, expanded session pills, TabBar switching, and 7-tap debug action keep string accessibilityLabels', async () => {
   const switchedTabs = [];
   let buildTaps = 0;
+  let resetCalls = 0;
+  let clearLabelCalls = 0;
 
   const populatedCtx = makeMockMobileContext({
     setActiveTab: (t) => switchedTabs.push(t),
     handleBuildTap: () => { buildTaps += 1; },
+    resetStoredData: async () => { resetCalls += 1; },
+    clearStoredLabels: async () => { clearLabelCalls += 1; },
     dailyTotals: Array.from({ length: 8 }, (_, i) => ({
       app: `org.example.app${i}`,
       label: `App ${i + 1}`,
@@ -694,6 +698,58 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     }
 
     if (activeTab === 'you') {
+      assert.match(rawTree, /OBSERVED TIMING BLOCKS/i, 'YouTab must render Frosted Horizon Focus Windows hero');
+      assert.match(rawTree, /Local Data & Privacy/i, 'YouTab must render Local Data & Privacy card');
+      assert.match(rawTree, /Tiers A\/B\/C unavailable in v0\.1/i, 'YouTab must state Tier B is unavailable in v0.1');
+
+      // Two-step Delete all local data flow (must NOT delete on first tap, must cancel cleanly, must delete on confirm)
+      const deleteTrigger = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-trigger');
+      await TestRenderer.act(async () => {
+        deleteTrigger.props.onPress();
+      });
+      assert.equal(resetCalls, 0, 'first tap on Delete all local data must only open inline confirmation');
+      const deleteConfirmPanel = renderer.root.findAll((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-panel');
+      assert.equal(deleteConfirmPanel.length, 1, 'inline delete confirmation panel must be visible');
+
+      const cancelDeleteBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-cancel-btn');
+      await TestRenderer.act(async () => {
+        cancelDeleteBtn.props.onPress();
+      });
+      assert.equal(
+        renderer.root.findAll((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-panel').length,
+        0,
+        'Cancel must dismiss delete confirmation panel',
+      );
+      assert.equal(resetCalls, 0);
+
+      const deleteTriggerAgain = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-trigger');
+      await TestRenderer.act(async () => {
+        deleteTriggerAgain.props.onPress();
+      });
+      const confirmDeleteBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-btn');
+      await TestRenderer.act(async () => {
+        await confirmDeleteBtn.props.onPress();
+      });
+      assert.equal(resetCalls, 1, 'second-step Confirm delete everything must invoke resetStoredData once');
+
+      // Two-step Clear manual labels flow
+      const clearTrigger = renderer.root.find((el) => el.props?.['data-testid'] === 'clear-labels-trigger');
+      await TestRenderer.act(async () => {
+        clearTrigger.props.onPress();
+      });
+      assert.equal(clearLabelCalls, 0, 'first tap on Clear manual labels must only open inline confirmation');
+      const confirmClearBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'clear-labels-confirm-btn');
+      await TestRenderer.act(async () => {
+        await confirmClearBtn.props.onPress();
+      });
+      assert.equal(clearLabelCalls, 1, 'second-step Confirm clear labels must invoke clearStoredLabels once');
+
+      // Verify all dynamic confirmation accessibilityLabels are plain strings too
+      for (const { label, isArray, nodeType } of collectA11yLabels(renderer.toJSON())) {
+        assert.equal(isArray, false, `YouTab post-confirm: ${nodeType} array label`);
+        assert.equal(typeof label, 'string', `YouTab post-confirm: ${nodeType} non-string label`);
+      }
+
       // Trigger TabBar tabs + 7-tap debug button
       const buttons = renderer.root.findAll((el) => el.type === 'button');
       const homeTabBtn = buttons.find((b) => b.props['aria-label'] === 'Home');

@@ -414,6 +414,11 @@ test('degraded states are rendered by the pattern, never by ad-hoc copy', () => 
   assert.match(anyOfText, /none of which is on this device/);
   assert.doesNotMatch(anyOfText, /none of which is not/i);
   assert.doesNotMatch(anyOfText, /You sign in with OAuth/i);
+  assert.doesNotMatch(anyOfText, /download your own data export/i, 'Tier B must stay marked unavailable in v0.1');
+  assert.equal(ui.TIERS.A.connectorAvailable, false);
+  assert.equal(ui.TIERS.B.connectorAvailable, false);
+  assert.equal(ui.TIERS.C.connectorAvailable, false);
+  assert.equal(ui.TIERS.D.connectorAvailable, true);
   anyOfRenderer.unmount();
 
   const tierAOnly = create(

@@ -594,6 +594,14 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setDayScoredSessions([]);
         setDayScoreGaps([]);
         setDayReady(false);
+        setIntentLabels({});
+        setExpandedSessionId(null);
+        setQuality(null);
+        setValidation(null);
+        setSingleDayRows([]);
+        setLatestSyncOrphans(null);
+        setRaw24hOrphans(null);
+        setCollectingSince(null);
         setEvolution(null);
         setDiscovery(null);
         setRabbitHole(null);

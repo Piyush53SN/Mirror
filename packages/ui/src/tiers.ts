@@ -36,8 +36,8 @@ export const TIERS: Record<DataTier, TierInfo> = {
   B: {
     letter: 'B',
     name: 'Your export',
-    how: 'You download your own data export and import the file. Nothing is fetched for you.',
-    connectorAvailable: true,
+    how: 'Export file import is not shipped in this build yet.',
+    connectorAvailable: false,
     localOnly: true,
     examples: ['YouTube watch history from Google Takeout', 'Instagram saved content', 'Amazon order history'],
   },
