@@ -54,8 +54,9 @@ export function DebugView(): React.ReactElement {
       </View>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: theme.space(4), gap: theme.space(3), paddingBottom: theme.space(8) }}
+        contentContainerStyle={{ paddingHorizontal: theme.space(4), paddingTop: theme.space(2), paddingBottom: theme.space(8) }}
       >
+        <View style={{ gap: theme.space(3) }}>
         <Card theme={theme} elevated>
           <SectionHeader
             theme={theme}
@@ -308,6 +309,8 @@ export function DebugView(): React.ReactElement {
             {BUILD_FULL}
           </Text>
         </Card>
+        </View>
+        <View pointerEvents="none" style={{ height: theme.space(10) }} />
       </ScrollView>
     </View>
   );

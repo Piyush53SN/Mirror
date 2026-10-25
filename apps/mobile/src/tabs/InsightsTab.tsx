@@ -88,7 +88,7 @@ export function InsightsTab(): React.ReactElement {
             title="What-if Simulator — Estimates"
             caption={
               whatIf && whatIf.hasBaseline
-                ? `${selectedDay} · Baseline ${formatDuration(whatIf.baselineTimeMs)} (${whatIf.timeSource === 'os_aggregate' ? 'OS aggregate' : 'sittings'}) · IQS ${whatIf.baselineIqs.value ?? '—'} / ${whatIf.baselineIqs.max} (never rescaled to 100)`
+                ? `${selectedDay} · ${whatIf.timeSource === 'os_aggregate' ? `OS total ${formatDuration(whatIf.baselineTimeMs)} · Sittings ${formatDuration(whatIf.sittingTimeMs)}` : `Sittings ${formatDuration(whatIf.sittingTimeMs)}`} · IQS ${whatIf.baselineIqs.value ?? '—'} / ${whatIf.baselineIqs.max} (never rescaled to 100)`
                 : `${selectedDay} · local counterfactual arithmetic over recorded sittings`
             }
           />

@@ -311,12 +311,14 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setScaledSessions(openOnly);
 
         try {
-          const scored: ScoredSession[] = sessFiltered.map((s) => ({
-            id: s.id,
-            app: s.app,
-            startMs: s.start_ms,
-            endMs: s.end_ms,
-          }));
+          const scored: ScoredSession[] = sessFiltered
+            .map((s) => ({
+              id: s.id,
+              app: s.app,
+              startMs: Math.max(dayFrom, s.start_ms),
+              endMs: Math.min(dayTo, s.end_ms),
+            }))
+            .filter((s) => s.endMs > s.startMs);
           const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
           const scoreGaps: ScoreGap[] = gapsRaw.map((g) => ({
             reason: g.reason,
@@ -489,7 +491,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         const labelArray = Object.entries(updatedLabels).map(([sessionId, label]) => ({ sessionId, label }));
         const scored: ScoredSession[] = sessDay
           .filter((x) => !launcherSet.has(x.app) && !isIgnoredSystemApp(x.app, labels[x.app]))
-          .map((x) => ({ id: x.id, app: x.app, startMs: x.start_ms, endMs: x.end_ms }));
+          .map((x) => ({
+            id: x.id,
+            app: x.app,
+            startMs: Math.max(dayFrom, x.start_ms),
+            endMs: Math.min(dayTo, x.end_ms),
+          }))
+          .filter((x) => x.endMs > x.startMs);
         setDayScoredSessions(scored);
         setDayScoreGaps(scoreGaps);
         const utcOffsetMinutes = -new Date().getTimezoneOffset();

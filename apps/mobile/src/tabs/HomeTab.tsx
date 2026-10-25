@@ -8,16 +8,122 @@ import {
   Divider,
   EmptyState,
   LinkButton,
+  Meter,
   Pill,
   SectionHeader,
+  Stat,
+  Surface,
   Text,
   TierBadge,
+  announceValue,
   useTheme,
+  type MirrorTheme,
 } from '@mirror/ui';
+import type { Score } from '@mirror/core-analytics';
 import { P3_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
+
+const GAUGE_TICKS = 18;
+const GAUGE_START_DEG = -210;
+const GAUGE_SWEEP_DEG = 240;
+
+/**
+ * Frosted Horizon segmented 240-degree arc gauge for IQS.
+ * Uses only View primitives and @mirror/ui tokens (zero SVG dependency, zero extra live-blur slot),
+ * and reports the score against its honest dynamic max (/55 or /75 — never rescaled to 100).
+ */
+function IqsHeroGauge({
+  iqs,
+  theme,
+}: {
+  iqs: Score | null;
+  theme: MirrorTheme;
+}): React.ReactElement {
+  const hasScore = iqs !== null && iqs.value !== null && iqs.max > 0;
+  const ratio = hasScore ? Math.max(0, Math.min(1, (iqs.value ?? 0) / iqs.max)) : 0;
+  const activeTicks = hasScore ? Math.round(ratio * GAUGE_TICKS) : 0;
+
+  const size = theme.size.ring + theme.space(3); // 108dp
+  const center = size / 2;
+  const trackRadius = center - theme.space(2);
+  const tickWidth = 4;
+  const tickHeight = 12;
+  const innerSize = size - theme.space(7); // 68dp frosted center medallion
+
+  const a11yLabel =
+    hasScore && iqs.value !== null
+      ? announceValue(
+          'Interaction quality score',
+          Math.round(iqs.value),
+          `out of ${iqs.max}`,
+          `${iqs.band}, never rescaled to 100`,
+        )
+      : 'Interaction quality score not measured yet';
+
+  return (
+    <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={a11yLabel}
+      accessibilityValue={{
+        min: 0,
+        max: hasScore ? iqs.max : 55,
+        now: hasScore && iqs.value !== null ? Math.round(iqs.value) : 0,
+      }}
+      style={{
+        width: size,
+        height: size,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {Array.from({ length: GAUGE_TICKS }, (_, idx) => {
+        const deg = GAUGE_START_DEG + (idx / (GAUGE_TICKS - 1)) * GAUGE_SWEEP_DEG;
+        const rad = (deg * Math.PI) / 180;
+        const x = center + Math.cos(rad) * trackRadius - tickWidth / 2;
+        const y = center + Math.sin(rad) * trackRadius - tickHeight / 2;
+        const filled = idx < activeTicks;
+        return (
+          <View
+            key={idx}
+            style={{
+              position: 'absolute',
+              left: x,
+              top: y,
+              width: tickWidth,
+              height: tickHeight,
+              borderRadius: theme.radius.pill,
+              backgroundColor: filled ? theme.color.anchor : theme.color.borderCard,
+              opacity: filled ? 1 : 0.45,
+              transform: [{ rotate: `${deg + 90}deg` }],
+            }}
+          />
+        );
+      })}
+      <View
+        style={{
+          width: innerSize,
+          height: innerSize,
+          borderRadius: theme.radius.pill,
+          backgroundColor: theme.glass.card.fill,
+          borderWidth: 1,
+          borderColor: theme.color.borderHairline,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text role="title-lg" theme={theme}>
+          {hasScore && iqs.value !== null ? String(Math.round(iqs.value)) : '—'}
+        </Text>
+        <Text role="micro" tone="muted" theme={theme}>
+          {iqs && iqs.max > 0 ? `/ ${iqs.max}` : 'Tier D'}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export function HomeTab(): React.ReactElement {
   const theme = useTheme();
@@ -41,6 +147,15 @@ export function HomeTab(): React.ReactElement {
   const [showAllApps, setShowAllApps] = React.useState(false);
 
   const visibleApps = showAllApps ? dailyTotals : dailyTotals.slice(0, 6);
+  const totalScreenMs = React.useMemo(
+    () => dailyTotals.reduce((sum, item) => sum + item.totalMs, 0),
+    [dailyTotals],
+  );
+  const maxAppMs = dailyTotals[0]?.totalMs ?? 1;
+  const measuredFactors = React.useMemo(
+    () => (iqs ? iqs.factors.filter((f) => f.measurable && f.max > 0) : []),
+    [iqs],
+  );
 
   return (
     <AppShell
@@ -52,9 +167,15 @@ export function HomeTab(): React.ReactElement {
         </Pill>
       }
     >
-      <Text role="micro" tone="muted" theme={theme}>
-        {lastCollect ?? 'collector idle'}
-      </Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.space(2) }}>
+        <Text role="micro" tone="muted" theme={theme}>
+          {lastCollect ?? 'collector idle'}
+        </Text>
+        <Text role="micro" tone="muted" theme={theme}>
+          On-device · encrypted
+        </Text>
+      </View>
+
       {error ? (
         <Callout theme={theme} tone="limit">
           {error}
@@ -62,7 +183,7 @@ export function HomeTab(): React.ReactElement {
       ) : null}
 
       {keyMismatch ? (
-        <Card theme={theme} elevated>
+        <Card theme={theme} style={{ marginBottom: 0 }}>
           <SectionHeader
             theme={theme}
             title="Stored data can't be read"
@@ -84,50 +205,116 @@ export function HomeTab(): React.ReactElement {
 
       <DayPickerStrip />
 
-      {/* J3 Dashboard – Frosted Horizon, wired to real data */}
-      <Card theme={theme} elevated>
-        <SectionHeader theme={theme} title="Interaction quality" caption="out of what Mirror can actually measure" />
+      {/* J3 Frosted Horizon Hero — IQS card with 240-deg arc gauge, measured factor meters & glass shell */}
+      <Surface
+        radius="hero"
+        theme={theme}
+        style={{
+          padding: theme.space(4),
+          borderWidth: 1,
+          borderColor: theme.color.borderHairline,
+          gap: theme.space(3),
+        }}
+      >
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
+          <View style={{ flex: 1, gap: theme.space(0.5) }}>
+            <Text role="micro" tone="muted" theme={theme}>
+              INTERACTION QUALITY · TIER D
+            </Text>
+            <Text role="title-lg" theme={theme}>
+              Attention signal
+            </Text>
+            <Text role="label" tone="muted" theme={theme}>
+              Out of what Mirror can actually measure — never rescaled to 100
+            </Text>
+          </View>
+          <TierBadge tier="D" theme={theme} />
+        </View>
+
         <View
           style={{
             flexDirection: 'row',
             gap: theme.space(2),
             flexWrap: 'wrap',
             alignItems: 'center',
-            marginBottom: theme.space(2),
           }}
         >
           <Chip static label="Based on usage patterns only" theme={theme} />
           {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? (
             <Chip static label="Small sample" theme={theme} />
           ) : null}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(1) }}>
-            <TierBadge tier="D" theme={theme} />
-            <Text role="micro" tone="muted" theme={theme}>
-              Tier D only – OS usage, no content
-            </Text>
-          </View>
-          <ConfidenceChip tiers={['D']} theme={theme} />
+          <ConfidenceChip tiers={['D']} label="Tier D · OS usage, no content" theme={theme} />
         </View>
+
         {iqs ? (
-          <View style={{ gap: theme.space(2) }}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(2) }}>
-              <Text role="display" theme={theme}>
-                {iqs.value === null ? '—' : String(Math.round(iqs.value))}
-              </Text>
-              {iqs.value !== null ? (
-                <Text role="label" tone="muted" theme={theme}>{`/ ${iqs.max}`}</Text>
-              ) : null}
-              <Text role="micro" tone="muted" theme={theme}>
-                {iqs.band}
-              </Text>
+          <View style={{ gap: theme.space(3) }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: theme.space(4),
+              }}
+            >
+              <IqsHeroGauge iqs={iqs} theme={theme} />
+              <View style={{ flex: 1, gap: theme.space(1) }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+                  <Text role="display" theme={theme}>
+                    {iqs.value === null ? '—' : String(Math.round(iqs.value))}
+                  </Text>
+                  {iqs.value !== null ? (
+                    <Text role="label" tone="muted" theme={theme}>
+                      {`/ ${iqs.max}`}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text role="label" theme={theme}>
+                  {iqs.band}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`${iqs.confidence.sample} sitting${iqs.confidence.sample === 1 ? '' : 's'} · ${formatDuration(iqs.confidence.activeMs)} sitting spans`}
+                </Text>
+              </View>
             </View>
-            <Text role="micro" tone="muted" theme={theme}>
-              {`Confidence: ${iqs.confidence.level} (${Math.round(iqs.confidence.score * 100)}%) – ${iqs.confidence.sample} sitting${iqs.confidence.sample === 1 ? '' : 's'} (${formatDuration(iqs.confidence.activeMs)} sitting time)`}
-            </Text>
-            <Text role="micro" tone="muted" theme={theme}>
+
+            <View
+              style={{
+                borderRadius: theme.radius.md,
+                backgroundColor: theme.glass.card.fill,
+                borderWidth: 1,
+                borderColor: theme.color.borderCard,
+                padding: theme.space(3),
+                gap: theme.space(2),
+              }}
+            >
+              <Meter
+                theme={theme}
+                value={iqs.confidence.score}
+                label={`Confidence · ${iqs.confidence.level}`}
+                caption={`${Math.round(iqs.confidence.score * 100)}%`}
+                tone="muted"
+              />
+              {measuredFactors.length > 0 ? (
+                <>
+                  <Divider theme={theme} />
+                  {measuredFactors.map((factor) => (
+                    <Meter
+                      key={factor.id}
+                      theme={theme}
+                      value={factor.points / factor.max}
+                      label={factor.label}
+                      caption={`${factor.points} / ${factor.max}`}
+                      tone={factor.points > 0 ? 'anchor' : 'muted'}
+                    />
+                  ))}
+                </>
+              ) : null}
+            </View>
+
+            <Callout theme={theme} tone="neutral">
               {iqs.caveat}
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), marginTop: theme.space(1) }}>
+            </Callout>
+
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), alignItems: 'center' }}>
               <Pill theme={theme} onPress={() => setShowWhy(true)}>
                 Why this score
               </Pill>
@@ -143,14 +330,34 @@ export function HomeTab(): React.ReactElement {
             theme={theme}
           />
         )}
-      </Card>
+      </Surface>
 
-      {/* Per-app totals from OS aggregate */}
-      <Card theme={theme} elevated>
+      {/* Frosted glass summary metrics */}
+      <View style={{ flexDirection: 'row', gap: theme.space(3) }}>
+        <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
+          <Stat
+            value={dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}
+            label="OS screen time"
+            hint={`${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} · ${selectedDay}`}
+            theme={theme}
+          />
+        </Card>
+        <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
+          <Stat
+            value={String(iqs?.confidence.sample ?? 0)}
+            label={iqs?.confidence.sample === 1 ? 'Sitting recorded' : 'Sittings recorded'}
+            hint={p3Reliable ? 'Boundaries verified' : 'Boundary gate active'}
+            theme={theme}
+          />
+        </Card>
+      </View>
+
+      {/* Frosted glass card — Per-app totals from OS aggregate */}
+      <Card theme={theme} style={{ marginBottom: 0 }}>
         <SectionHeader
           theme={theme}
-          title={`Per-app totals – ${selectedDay}`}
-          caption="from OS aggregate (Digital Wellbeing source), excludes launchers, Mirror, and system installers"
+          title={`Per-app totals · ${selectedDay}`}
+          caption="OS aggregate (Digital Wellbeing source), excludes launchers, Mirror, and system installers"
         />
         {dailyTotals.length === 0 ? (
           <EmptyState
@@ -159,25 +366,35 @@ export function HomeTab(): React.ReactElement {
             theme={theme}
           />
         ) : (
-          <View style={{ gap: theme.space(1) }}>
-            {visibleApps.map((t, idx) => (
-              <View key={t.app}>
-                {idx > 0 ? <Divider theme={theme} /> : null}
-                <View style={{ paddingVertical: theme.space(2), flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, paddingRight: theme.space(2) }}>
-                    <Text role="label" theme={theme}>
-                      {t.label}
-                    </Text>
+          <View style={{ gap: theme.space(2) }}>
+            {visibleApps.map((t, idx) => {
+              const sharePct = totalScreenMs > 0 ? Math.round((t.totalMs / totalScreenMs) * 100) : 0;
+              return (
+                <View key={t.app} style={{ gap: theme.space(1.5) }}>
+                  {idx > 0 ? <Divider theme={theme} /> : null}
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                    <View style={{ flex: 1, paddingRight: theme.space(2) }}>
+                      <Text role="label" theme={theme}>
+                        {t.label}
+                      </Text>
+                      <Text role="micro" tone="muted" theme={theme}>
+                        {t.app}
+                      </Text>
+                    </View>
                     <Text role="micro" tone="muted" theme={theme}>
-                      {t.app}
+                      {`${sharePct}%`}
                     </Text>
                   </View>
-                  <Text role="label" theme={theme}>
-                    {formatDuration(t.totalMs)}
-                  </Text>
+                  <Meter
+                    theme={theme}
+                    value={maxAppMs > 0 ? t.totalMs / maxAppMs : 0}
+                    label={`${t.label} foreground share`}
+                    caption={formatDuration(t.totalMs)}
+                    tone={idx === 0 ? 'anchor' : 'muted'}
+                  />
                 </View>
-              </View>
-            ))}
+              );
+            })}
             {dailyTotals.length > 6 ? (
               <LinkButton theme={theme} onPress={() => setShowAllApps((prev) => !prev)}>
                 {showAllApps ? 'Show top 6 apps' : `Show all ${dailyTotals.length} apps`}
@@ -187,16 +404,21 @@ export function HomeTab(): React.ReactElement {
         )}
       </Card>
 
-      {/* Compact session boundary & navigation summary */}
-      <Card theme={theme}>
+      {/* Frosted glass card — Session boundary & quick navigation */}
+      <Card theme={theme} style={{ marginBottom: 0 }}>
         <SectionHeader
           theme={theme}
           title="Session boundary status"
           caption={p3Reliable ? 'Gate open (orphans ≤50, total ≤100)' : 'Hard gate active'}
         />
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), marginBottom: theme.space(2) }}>
+          <Chip static label={p3Reliable ? 'Boundaries reliable' : 'Gate active'} theme={theme} />
+          <Chip static label={`${orphanCount} unmatched`} theme={theme} />
+          <Chip static label={`${totalGaps} total boundary events`} theme={theme} />
+        </View>
         <Text role="micro" tone="muted" theme={theme}>
           {p3Reliable
-            ? `Unmatched closes ${orphanCount} · total boundary events ${totalGaps}. Multi-day views live in Journey, What-if Estimates in Insights, App opens in Sessions, and Focus Windows + Diagnostics & 7-tap debug in You.`
+            ? 'Multi-day views live in Journey, What-if Estimates in Insights, App opens in Sessions, and Focus Windows + Diagnostics & 7-tap debug in You.'
             : P3_GUARD_SHORT(orphanCount, totalGaps)}
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), marginTop: theme.space(2) }}>

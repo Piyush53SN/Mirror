@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25468
+      "bytes": 25459
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 25451
+      "bytes": 25442
     },
     {
       "id": "J3",
@@ -427,7 +427,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 11673
+      "bytes": 11664
     },
     {
       "id": "J4",
@@ -448,7 +448,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 11664
+      "bytes": 11655
     },
     {
       "id": "J5",
@@ -517,7 +517,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 9181
+      "bytes": 9168
     },
     {
       "id": "J5",
@@ -540,7 +540,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 9175
+      "bytes": 9162
     },
     {
       "id": "J6",
@@ -609,7 +609,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 9236
+      "bytes": 9223
     },
     {
       "id": "J6",
@@ -632,7 +632,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 9230
+      "bytes": 9217
     },
     {
       "id": "J7",
@@ -1013,7 +1013,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 12538
+      "bytes": 12525
     },
     {
       "id": "J11",
@@ -1036,7 +1036,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 12528
+      "bytes": 12515
     },
     {
       "id": "J12",
@@ -1277,7 +1277,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 14705
+      "bytes": 14696
     },
     {
       "id": "J15",
@@ -1298,7 +1298,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 14692
+      "bytes": 14683
     },
     {
       "id": "J16",
@@ -1361,7 +1361,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 13522
+      "bytes": 13513
     },
     {
       "id": "J16",
@@ -1382,7 +1382,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 13510
+      "bytes": 13501
     },
     {
       "id": "J17",
@@ -1401,7 +1401,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40047
+      "bytes": 40038
     },
     {
       "id": "J17",
@@ -1420,7 +1420,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 40024
+      "bytes": 40015
     },
     {
       "id": "J18",
@@ -1641,7 +1641,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 8793
+      "bytes": 8780
     },
     {
       "id": "J20",
@@ -1664,7 +1664,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 8788
+      "bytes": 8775
     },
     {
       "id": "J21",
@@ -1727,7 +1727,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 9163
+      "bytes": 9154
     },
     {
       "id": "J21",
@@ -1748,7 +1748,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 9157
+      "bytes": 9148
     },
     {
       "id": "J22",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 30005
+      "bytes": 29996
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29988
+      "bytes": 29979
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28353
+      "bytes": 28344
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 28338
+      "bytes": 28329
     },
     {
       "id": "J23",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32635
+      "bytes": 32626
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 32616
+      "bytes": 32607
     },
     {
       "id": "J25",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30285
+      "bytes": 30276
     },
     {
       "id": "J28",
@@ -2112,7 +2112,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 30264
+      "bytes": 30255
     }
   ],
   "extraItems": 1,

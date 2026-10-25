@@ -300,6 +300,8 @@ export function DegradedNotice({
   const t = withTheme(theme);
   const result = computeDegrade(available, needs, feature, anyOf ?? []);
   if (result.ok) return null;
+  const allMissing = [...result.missing, ...result.missingAny];
+  const actionableTier = allMissing.find((tier) => TIERS[tier].connectorAvailable);
   return (
     <Card theme={t}>
       <EmptyState
@@ -312,13 +314,15 @@ export function DegradedNotice({
           shown, because "one of A/B/C" is the actual condition — showing only the
           first would misstate what the user would have to connect. */}
       <View style={{ flexDirection: 'row', gap: t.space(1), justifyContent: 'center', flexWrap: 'wrap' }}>
-        {[...result.missing, ...result.missingAny].map((tier) => (
+        {allMissing.map((tier) => (
           <TierBadge key={tier} tier={tier} theme={t} />
         ))}
       </View>
-      <Text role="micro" tone="muted" theme={t} center style={{ marginTop: t.space(2) }}>
-        {(result.missing[0] ? TIERS[result.missing[0]] : TIERS[result.missingAny[0] as DataTier]).how}
-      </Text>
+      {actionableTier ? (
+        <Text role="micro" tone="muted" theme={t} center style={{ marginTop: t.space(2) }}>
+          {TIERS[actionableTier].how}
+        </Text>
+      ) : null}
     </Card>
   );
 }

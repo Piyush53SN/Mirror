@@ -570,6 +570,7 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     whatIf: {
       hasBaseline: true,
       baselineTimeMs: 2_400_000,
+      sittingTimeMs: 2_400_000,
       timeSource: 'os_aggregate',
       smallSampleBaseline: false,
       baselineIqs: {
@@ -614,6 +615,24 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       ),
     );
     const json = renderer.toJSON();
+    const rawTree = JSON.stringify(json);
+    assert.doesNotMatch(rawTree, /none of which is not/i, `tab ${activeTab} must never render double negative`);
+    assert.doesNotMatch(rawTree, /You sign in with OAuth/i, `tab ${activeTab} must hide OAuth copy until a connector exists`);
+
+    const spacers = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-scroll-bottom-spacer');
+    assert.equal(spacers.length, 1, `tab ${activeTab} must render tab-scroll-bottom-spacer inside AppShell ScrollView`);
+    const spacerHeight = parseFloat(String(spacers[0].props?.style?.height ?? '0'));
+    assert.ok(spacerHeight >= 128, `tab ${activeTab} bottom spacer must clear floating TabBar + nav bar (got ${spacerHeight}px)`);
+
+    if (activeTab === 'home') {
+      const gauges = renderer.root.findAll(
+        (el) =>
+          el.props?.role === 'progressbar' &&
+          String(el.props?.['aria-label'] ?? '').startsWith('Interaction quality score'),
+      );
+      assert.equal(gauges.length, 1, 'HomeTab must render the Frosted Horizon IQS hero gauge');
+    }
+
     for (const { label, isArray, nodeType } of collectA11yLabels(json)) {
       assert.equal(isArray, false, `populated ${activeTab}: ${nodeType} array label`);
       assert.equal(typeof label, 'string', `populated ${activeTab}: ${nodeType} non-string label`);

@@ -397,7 +397,36 @@ test('degraded states are rendered by the pattern, never by ad-hoc copy', () => 
   const text = JSON.stringify(renderer.toJSON());
   assert.match(text, /Interest evolution is unavailable/);
   assert.match(text, /not on this device/);
+  assert.doesNotMatch(text, /none of which is not/i, 'must never produce double negative');
+  assert.doesNotMatch(text, /You sign in with OAuth/i, 'must hide OAuth copy until a connector exists');
   renderer.unmount();
+
+  const anyOfRenderer = create(
+    React.createElement(ui.DegradedNotice, {
+      theme: ui.createTheme(),
+      needs: ['D'],
+      anyOf: ['A', 'B', 'C'],
+      available: ['D'],
+      feature: 'Content depth',
+    }),
+  );
+  const anyOfText = JSON.stringify(anyOfRenderer.toJSON());
+  assert.match(anyOfText, /none of which is on this device/);
+  assert.doesNotMatch(anyOfText, /none of which is not/i);
+  assert.doesNotMatch(anyOfText, /You sign in with OAuth/i);
+  anyOfRenderer.unmount();
+
+  const tierAOnly = create(
+    React.createElement(ui.DegradedNotice, {
+      theme: ui.createTheme(),
+      needs: ['A'],
+      available: ['D'],
+      feature: 'Official API sync',
+    }),
+  );
+  assert.doesNotMatch(JSON.stringify(tierAOnly.toJSON()), /You sign in with OAuth/i);
+  tierAOnly.unmount();
+
   const ok = create(React.createElement(ui.DegradedNotice, { theme: ui.createTheme(), needs: ['D'], available: ['D'], feature: 'Insights' }));
   assert.equal(ok.toJSON(), null, 'nothing renders when the data is there');
   ok.unmount();

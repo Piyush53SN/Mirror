@@ -69,6 +69,9 @@ export type WhatIfScenario = {
   badge: 'Estimate';
   remainingSessions: number;
   affectedSessions: number;
+  /** Scenario-specific baseline duration (sitting sum for sitting-level rules, OS total when pausing top OS app). */
+  baselineTimeMs: number;
+  timeSource: 'os_aggregate' | 'sessions';
   estimatedTimeMs: number;
   deltaTimeMs: number;
   /** Bounded in [-1, 0]. */
@@ -101,6 +104,8 @@ export type WhatIfInput = {
 export type WhatIfResult = {
   hasBaseline: boolean;
   baselineTimeMs: number;
+  /** Sum of recorded day-clipped sitting durations (matches sitting-length bands). */
+  sittingTimeMs: number;
   timeSource: 'os_aggregate' | 'sessions';
   baselineSessionCount: number;
   baselineIqs: Score;
@@ -319,6 +324,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     return {
       hasBaseline: false,
       baselineTimeMs,
+      sittingTimeMs: sessionSumMs,
       timeSource,
       baselineSessionCount: 0,
       baselineIqs,
@@ -346,7 +352,9 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     title: string;
     cfSessions: ScoredSession[];
     affectedSessions: number;
-    removedTimeMs: number;
+    scenarioBaselineMs: number;
+    scenarioTimeSource: 'os_aggregate' | 'sessions';
+    estimatedTimeMs: number;
     zeroAffectedReason: string;
     zeroIqsDeltaReason?: string;
     assumption: string;
@@ -360,16 +368,20 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       approximate,
     });
 
-    const clampedRemovedMs = Math.min(baselineTimeMs, Math.max(0, Math.round(params.removedTimeMs)));
-    const estimatedTimeMs = Math.max(0, baselineTimeMs - clampedRemovedMs);
-    const deltaTimeMs = estimatedTimeMs - baselineTimeMs;
+    const scenarioBaselineMs = Math.max(0, Math.round(params.scenarioBaselineMs));
+    const estimatedTimeMs = Math.min(scenarioBaselineMs, Math.max(0, Math.round(params.estimatedTimeMs)));
+    const deltaTimeMs = estimatedTimeMs - scenarioBaselineMs;
     const deltaTimePct =
-      baselineTimeMs > 0 ? Math.max(-1, Math.min(0, deltaTimeMs / baselineTimeMs)) : 0;
+      scenarioBaselineMs > 0 ? Math.max(-1, Math.min(0, deltaTimeMs / scenarioBaselineMs)) : 0;
+    const baselineLabel =
+      params.scenarioTimeSource === 'os_aggregate'
+        ? `${fmtDurationShort(scenarioBaselineMs)} OS total`
+        : `${fmtDurationShort(scenarioBaselineMs)} sitting time`;
 
     const timeEstimateLabel =
       deltaTimeMs === 0
-        ? `Estimate: ${fmtDurationShort(estimatedTimeMs)} (0m change vs baseline)`
-        : `Estimate: ${fmtDurationShort(estimatedTimeMs)} (−${fmtDurationShort(Math.abs(deltaTimeMs))}, ${Math.round(deltaTimePct * 100)}% vs baseline)`;
+        ? `Estimate: ${fmtDurationShort(estimatedTimeMs)} (0m change vs ${baselineLabel})`
+        : `Estimate: ${fmtDurationShort(estimatedTimeMs)} (−${fmtDurationShort(Math.abs(deltaTimeMs))}, ${Math.round(deltaTimePct * 100)}% vs ${baselineLabel})`;
 
     const sameDenominator =
       cfScore.value !== null && baselineIqs.value !== null && cfScore.max === baselineIqs.max;
@@ -436,6 +448,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       badge: 'Estimate',
       remainingSessions: params.cfSessions.length,
       affectedSessions: params.affectedSessions,
+      baselineTimeMs: scenarioBaselineMs,
+      timeSource: params.scenarioTimeSource,
       estimatedTimeMs,
       deltaTimeMs,
       deltaTimePct,
@@ -456,13 +470,14 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
   };
 
   // Resolve top app by OS aggregate total when present, else by session duration sum
-  let topApp: { app: string; label: string; removedMs: number } | null = null;
+  let topApp: { app: string; label: string; removedMs: number; source: 'os_aggregate' | 'sessions' } | null = null;
   if (validOsTotals.length > 0) {
     const first = validOsTotals[0]!;
     topApp = {
       app: first.app,
       label: first.label ?? appLabels[first.app] ?? first.app,
       removedMs: first.totalMs,
+      source: 'os_aggregate',
     };
   } else {
     const byAppMs = new Map<string, number>();
@@ -472,7 +487,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     const ranked = [...byAppMs.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
     if (ranked.length > 0) {
       const [app, msVal] = ranked[0]!;
-      topApp = { app, label: appLabels[app] ?? app, removedMs: msVal };
+      topApp = { app, label: appLabels[app] ?? app, removedMs: msVal, source: 'sessions' };
     }
   }
 
@@ -482,93 +497,108 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
   if (topApp) {
     const remaining = validSessions.filter((s) => s.app !== topApp!.app);
     const affected = validSessions.length - remaining.length;
+    const pauseBaselineMs = topApp.source === 'os_aggregate' ? osSumMs : sessionSumMs;
+    const pauseEstimatedMs =
+      topApp.source === 'os_aggregate'
+        ? Math.max(0, osSumMs - topApp.removedMs)
+        : remaining.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
     scenarios.push(
       buildScenario({
         id: 'pause_top_app',
         title: `Pause top app (${topApp.label})`,
         cfSessions: remaining,
         affectedSessions: affected,
-        removedTimeMs: topApp.removedMs,
+        scenarioBaselineMs: pauseBaselineMs,
+        scenarioTimeSource: topApp.source,
+        estimatedTimeMs: pauseEstimatedMs,
         zeroAffectedReason: `No change today: no recorded sittings for ${topApp.label} in this window.`,
         assumption: `Assumes time spent in ${topApp.label} is not replaced by another app (in practice, part of it usually shifts), and recomputes only measured factors on the remaining sittings.`,
       }),
     );
   }
 
-  // Scenario 2: Cap single sittings at N minutes
+  // Scenario 2: Cap single sittings at N minutes — recomputed directly from sitting durations
   {
-    let trimmedMs = 0;
+    let sumAboveCapMs = 0;
     let affected = 0;
     const capped: ScoredSession[] = validSessions.map((s) => {
-      const dur = s.endMs - s.startMs;
+      const dur = Math.max(0, s.endMs - s.startMs);
       if (dur > sittingCapMs) {
         affected += 1;
-        trimmedMs += dur - sittingCapMs;
+        sumAboveCapMs += dur - sittingCapMs;
         return { ...s, endMs: s.startMs + sittingCapMs };
       }
       return s;
     });
+    const rawCappedSumMs = capped.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
+    // Hard invariant: cap-reduction never exceeds sumAboveCapMs
+    const capReductionMs = Math.min(sumAboveCapMs, Math.max(0, sessionSumMs - rawCappedSumMs));
+    const cappedEstimatedMs = Math.max(0, sessionSumMs - capReductionMs);
     scenarios.push(
       buildScenario({
         id: 'cap_sittings',
         title: `Cap single sittings at ${sittingCapMinutes} min`,
         cfSessions: capped,
         affectedSessions: affected,
-        removedTimeMs: trimmedMs,
+        scenarioBaselineMs: sessionSumMs,
+        scenarioTimeSource: 'sessions',
+        estimatedTimeMs: cappedEstimatedMs,
         zeroAffectedReason: `No change today: no sitting longer than ${sittingCapMinutes} min today (longest sitting was ${fmtDurationShort(longestSittingMs)}).`,
-        zeroIqsDeltaReason: `Screen time drops by ${fmtDurationShort(trimmedMs)}, while IQS stays unchanged (0.0 pts): capping above ${sittingCapMinutes} min keeps opens at 8 s or longer (longer is not scored as better) and did not shift switching or late-night share enough to move rounded points today.`,
-        assumption: `Assumes sittings longer than ${sittingCapMinutes} min end at ${sittingCapMinutes} min without extra re-opens later. Time delta sums recorded sitting time above ${sittingCapMinutes} min${timeSource === 'os_aggregate' ? ' (subtracted from the OS total and clamped to ≥ 0)' : ''}.`,
+        zeroIqsDeltaReason: `Screen time drops by ${fmtDurationShort(capReductionMs)}, while IQS stays unchanged (0.0 pts): capping above ${sittingCapMinutes} min keeps opens at 8 s or longer (longer is not scored as better) and did not shift switching or late-night share enough to move rounded points today.`,
+        assumption: `Assumes sittings longer than ${sittingCapMinutes} min end at ${sittingCapMinutes} min without extra re-opens later. Recomputed directly from sitting durations (sum of time above ${sittingCapMinutes} min subtracted from ${fmtDurationShort(sessionSumMs)} sitting time, matching sitting-length bands).`,
       }),
     );
   }
 
-  // Scenario 3: Quiet hours (default 23:00–05:00 local)
+  // Scenario 3: Quiet hours (default 23:00–05:00 local) — recomputed from sitting durations
   {
-    let removedQuietMs = 0;
     let affected = 0;
     const quietFiltered: ScoredSession[] = [];
     for (const s of validSessions) {
       const { kept, removedMs } = trimSessionQuietHours(s, startHour, endHour, utcOffsetMinutes);
       if (removedMs > 0) {
         affected += 1;
-        removedQuietMs += removedMs;
       }
       quietFiltered.push(...kept);
     }
+    const quietEstimatedMs = quietFiltered.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
     scenarios.push(
       buildScenario({
         id: 'quiet_hours',
         title: `Quiet hours ${quietHoursLabel} local`,
         cfSessions: quietFiltered,
         affectedSessions: affected,
-        removedTimeMs: removedQuietMs,
+        scenarioBaselineMs: sessionSumMs,
+        scenarioTimeSource: 'sessions',
+        estimatedTimeMs: quietEstimatedMs,
         zeroAffectedReason: `No change today: no sitting activity fell inside ${quietHoursLabel} local today.`,
         assumption: `Assumes usage inside ${quietHoursLabel} local does not happen and is not shifted earlier into the evening, leaving daytime sittings unchanged.`,
       }),
     );
   }
 
-  // Scenario 4: Skip brief opens under 8 s
+  // Scenario 4: Skip brief opens under 8 s — recomputed from sitting durations
   {
-    let removedBounceMs = 0;
     let affected = 0;
     const sustainedOnly: ScoredSession[] = [];
     for (const s of validSessions) {
       const dur = s.endMs - s.startMs;
       if (dur < SHORT_SESSION_MS) {
         affected += 1;
-        removedBounceMs += dur;
       } else {
         sustainedOnly.push(s);
       }
     }
+    const bounceEstimatedMs = sustainedOnly.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
     scenarios.push(
       buildScenario({
         id: 'skip_short_bounces',
         title: 'Skip brief opens under 8 s',
         cfSessions: sustainedOnly,
         affectedSessions: affected,
-        removedTimeMs: removedBounceMs,
+        scenarioBaselineMs: sessionSumMs,
+        scenarioTimeSource: 'sessions',
+        estimatedTimeMs: bounceEstimatedMs,
         zeroAffectedReason: 'No change today: no brief open under 8 s recorded today.',
         assumption:
           'Assumes reflex or accidental opens under 8 s do not occur, leaving all sittings of 8 s or longer unchanged.',
@@ -579,6 +609,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
   return {
     hasBaseline: true,
     baselineTimeMs,
+    sittingTimeMs: sessionSumMs,
     timeSource,
     baselineSessionCount: validSessions.length,
     baselineIqs,

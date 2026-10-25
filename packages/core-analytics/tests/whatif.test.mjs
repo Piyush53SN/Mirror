@@ -17,7 +17,7 @@ import fc from 'fast-check';
 import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { computeWhatIf } = await bundleTs(join(HERE, '..', 'src/index.ts'), {
+const { computeWhatIf, sessionBands } = await bundleTs(join(HERE, '..', 'src/index.ts'), {
   outfile: join(HERE, '.build', 'core-whatif.mjs'),
 });
 
@@ -238,6 +238,82 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
   }
 });
 
+test('cap_sittings recomputes directly from sitting durations, reconciles with sitting-length bands, and never exceeds sum of time above the cap (even when OS aggregate differs)', () => {
+  // Known day with long sittings matching sitting-length bands:
+  //   - over 20 min: 45m + 35m = 80m (excess above 10m = 35m + 25m = 60m)
+  //   - 5–20 min: 16m + 12m + 8m = 36m (excess above 10m = 6m + 2m + 0m = 8m)
+  //   - 1–5 min: 4m + 3m + 2m = 9m (excess above 10m = 0m)
+  //   - cross-midnight sitting: 23:10 prev day -> 00:15 today = 15m inside window (excess above 10m = 5m)
+  // Total clipped sitting time = 80 + 36 + 9 + 15 = 140m (2h 20m).
+  // Total time above 10m cap = 60 + 8 + 5 = 73m (1h 13m).
+  // Remaining capped sitting time = (2*10) + (10+10+8) + 9 + 10 = 67m (1h 07m, -52% of 2h 20m sitting time).
+  // Even when OS aggregate is smaller (1h 32m = 92m because sessionize merges <=15m idle gaps),
+  // cap_sittings MUST NOT subtract 73m from 92m to produce 19m (-79%).
+  const sessions = [
+    { id: 'prev_midnight', app: 'org.wikipedia', startMs: DAY_START - 50 * MIN_MS, endMs: DAY_START + 15 * MIN_MS },
+    { id: 'long_45', app: 'com.google.android.youtube', startMs: DAY_START + 9 * 3_600_000, endMs: DAY_START + 9 * 3_600_000 + 45 * MIN_MS },
+    { id: 'long_35', app: 'com.google.android.youtube', startMs: DAY_START + 11 * 3_600_000, endMs: DAY_START + 11 * 3_600_000 + 35 * MIN_MS },
+    { id: 'mid_16', app: 'org.wikipedia', startMs: DAY_START + 13 * 3_600_000, endMs: DAY_START + 13 * 3_600_000 + 16 * MIN_MS },
+    { id: 'mid_12', app: 'org.wikipedia', startMs: DAY_START + 15 * 3_600_000, endMs: DAY_START + 15 * 3_600_000 + 12 * MIN_MS },
+    { id: 'mid_8', app: 'com.reddit.frontpage', startMs: DAY_START + 16 * 3_600_000, endMs: DAY_START + 16 * 3_600_000 + 8 * MIN_MS },
+    { id: 'short_4', app: 'com.reddit.frontpage', startMs: DAY_START + 17 * 3_600_000, endMs: DAY_START + 17 * 3_600_000 + 4 * MIN_MS },
+    { id: 'short_3', app: 'com.reddit.frontpage', startMs: DAY_START + 18 * 3_600_000, endMs: DAY_START + 18 * 3_600_000 + 3 * MIN_MS },
+    { id: 'short_2', app: 'com.reddit.frontpage', startMs: DAY_START + 19 * 3_600_000, endMs: DAY_START + 19 * 3_600_000 + 2 * MIN_MS },
+  ];
+  const osTotals = [
+    { app: 'com.google.android.youtube', label: 'YouTube', totalMs: 52 * MIN_MS },
+    { app: 'org.wikipedia', label: 'Wikipedia', totalMs: 26 * MIN_MS },
+    { app: 'com.reddit.frontpage', label: 'Reddit', totalMs: 14 * MIN_MS },
+  ]; // OS total = 92m (1h 32m)
+
+  const clippedForBands = sessions.map((s) => ({
+    ...s,
+    startMs: Math.max(DAY_START, s.startMs),
+    endMs: Math.min(DAY_END, s.endMs),
+  }));
+  const bands = sessionBands(clippedForBands);
+  const bandsTotalMs = bands.reduce((sum, b) => sum + b.ms, 0);
+  assert.equal(bandsTotalMs, 140 * MIN_MS);
+
+  const expectedAbove10m = (15 - 10 + 45 - 10 + 35 - 10 + 16 - 10 + 12 - 10) * MIN_MS; // 73m
+  const expectedRemaining10m = 140 * MIN_MS - expectedAbove10m; // 67m
+
+  const res10 = computeWhatIf({
+    window: WINDOW,
+    sessions,
+    osTotals,
+    sittingCapMinutes: 10,
+    utcOffsetMinutes: 0,
+  });
+  assert.equal(res10.baselineTimeMs, 92 * MIN_MS);
+  assert.equal(res10.sittingTimeMs, bandsTotalMs);
+
+  const cap10 = res10.scenarios.find((s) => s.id === 'cap_sittings');
+  assert.equal(cap10.timeSource, 'sessions');
+  assert.equal(cap10.baselineTimeMs, bandsTotalMs, 'cap_sittings baseline must equal sitting-length bands total');
+  assert.equal(cap10.affectedSessions, 5);
+  assert.ok(Math.abs(cap10.deltaTimeMs) <= expectedAbove10m, 'cap-reduction must never exceed sum of time above cap');
+  assert.equal(Math.abs(cap10.deltaTimeMs), expectedAbove10m);
+  assert.equal(cap10.estimatedTimeMs, expectedRemaining10m, 'capped sitting time must be 67m, never 19m');
+  assert.equal(Math.round(cap10.deltaTimePct * 100), -52, 'must be -52% vs 2h 20m sitting time, never -79%');
+  assert.match(cap10.timeEstimateLabel, /vs 2h 20m sitting time/);
+
+  // Cap at 20m: only 45m (25m above) and 35m (15m above) exceed 20m -> 40m reduction -> 100m remaining (-29%)
+  const res20 = computeWhatIf({
+    window: WINDOW,
+    sessions,
+    osTotals,
+    sittingCapMinutes: 20,
+    utcOffsetMinutes: 0,
+  });
+  const cap20 = res20.scenarios.find((s) => s.id === 'cap_sittings');
+  const expectedAbove20m = (45 - 20 + 35 - 20) * MIN_MS;
+  assert.equal(cap20.affectedSessions, 2);
+  assert.ok(Math.abs(cap20.deltaTimeMs) <= expectedAbove20m);
+  assert.equal(Math.abs(cap20.deltaTimeMs), expectedAbove20m);
+  assert.equal(cap20.estimatedTimeMs, 100 * MIN_MS);
+});
+
 test('property: What-if invariants hold across arbitrary sessions, OS totals, labels, caps, and quiet hours', () => {
   const VALID_TIER_D_MAXIMA = [0, 15, 25, 30, 40, 45, 55, 60, 75];
   const appArb = fc.constantFrom(
@@ -252,16 +328,26 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
     fc.property(
       fc.array(
         fc.record({
-          minute: fc.integer({ min: 0, max: 1420 }),
+          minute: fc.integer({ min: -45, max: 1450 }),
           durSec: fc.integer({ min: 0, max: 3600 }),
           app: appArb,
           lbl: fc.constantFrom('intentional', 'mindless', 'unsure', null),
         }),
         { minLength: 0, maxLength: 35 },
       ),
+      fc.option(
+        fc.array(
+          fc.record({
+            app: appArb,
+            totalMs: fc.integer({ min: 0, max: 120 * MIN_MS }),
+          }),
+          { minLength: 0, maxLength: 5 },
+        ),
+        { nil: undefined },
+      ),
       fc.constantFrom(10, 20),
       fc.constantFrom({ startHour: 23, endHour: 5 }, { startHour: 22, endHour: 7 }),
-      (items, capMin, qh) => {
+      (items, osTotals, capMin, qh) => {
         const sessions = [];
         const labelMap = {};
         items.forEach((it, idx) => {
@@ -275,6 +361,7 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
         const res = computeWhatIf({
           window: WINDOW,
           sessions,
+          osTotals,
           labels: labelMap,
           sittingCapMinutes: capMin,
           quietHours: qh,
@@ -284,15 +371,36 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
         assert.ok(res.baselineIqs.max !== 100, 'Tier-D without topic vectors can never have max 100');
         assert.ok(VALID_TIER_D_MAXIMA.includes(res.baselineIqs.max));
 
+        const capMs = capMin * MIN_MS;
+        const scorableSessions = sessions
+          .filter((s) => s.app !== 'com.miui.packageinstaller' && s.app !== 'dev.mirror.app')
+          .map((s) => ({
+            ...s,
+            startMs: Math.max(DAY_START, s.startMs),
+            endMs: Math.min(DAY_END, s.endMs),
+          }))
+          .filter((s) => s.endMs > s.startMs);
+        const sumAboveCapMs = scorableSessions.reduce(
+          (acc, s) => acc + Math.max(0, s.endMs - s.startMs - capMs),
+          0,
+        );
+
         for (const sc of res.scenarios) {
           assert.equal(sc.badge, 'Estimate');
           assert.ok(sc.timeEstimateLabel.startsWith('Estimate:'));
           assert.ok(sc.iqsEstimateLabel.startsWith('Estimate:'));
           assert.ok(sc.assumption.length > 10);
-          assert.ok(sc.estimatedTimeMs >= 0 && sc.estimatedTimeMs <= res.baselineTimeMs);
+          assert.ok(sc.estimatedTimeMs >= 0 && sc.estimatedTimeMs <= sc.baselineTimeMs);
           assert.ok(sc.deltaTimePct >= -1 && sc.deltaTimePct <= 0);
           assert.equal(Number.isNaN(sc.deltaTimePct), false);
           assert.ok(VALID_TIER_D_MAXIMA.includes(sc.estimatedIqs.max));
+          if (sc.id === 'cap_sittings') {
+            assert.equal(sc.baselineTimeMs, res.sittingTimeMs);
+            assert.ok(
+              Math.abs(sc.deltaTimeMs) <= Math.round(sumAboveCapMs),
+              `cap-reduction ${Math.abs(sc.deltaTimeMs)} exceeded sum above cap ${sumAboveCapMs}`,
+            );
+          }
           if (sc.affectedSessions === 0 && sc.deltaTimeMs === 0) {
             assert.ok(typeof sc.noChangeReason === 'string' && sc.noChangeReason.length > 10);
           }
@@ -303,6 +411,6 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
         }
       },
     ),
-    { numRuns: 150 },
+    { numRuns: 200 },
   );
 });

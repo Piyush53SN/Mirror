@@ -16,6 +16,8 @@ export type TierInfo = {
   letter: DataTier;
   name: string;
   how: string;
+  /** True when an on-device collector or importer exists in this build. */
+  connectorAvailable: boolean;
   /** True when data of this tier never leaves the device in Privacy Mode. */
   localOnly: boolean;
   /** What Mirror can actually do with it today (honest capability, not roadmap). */
@@ -26,7 +28,8 @@ export const TIERS: Record<DataTier, TierInfo> = {
   A: {
     letter: 'A',
     name: 'Official API',
-    how: 'You sign in with OAuth; Mirror calls the official API with the narrowest scopes that exist.',
+    how: 'Official API connectors are not shipped in this build yet.',
+    connectorAvailable: false,
     localOnly: false,
     examples: ['Reddit saved posts and subscribed communities', 'Twitch followed channels'],
   },
@@ -34,6 +37,7 @@ export const TIERS: Record<DataTier, TierInfo> = {
     letter: 'B',
     name: 'Your export',
     how: 'You download your own data export and import the file. Nothing is fetched for you.',
+    connectorAvailable: true,
     localOnly: true,
     examples: ['YouTube watch history from Google Takeout', 'Instagram saved content', 'Amazon order history'],
   },
@@ -41,6 +45,7 @@ export const TIERS: Record<DataTier, TierInfo> = {
     letter: 'C',
     name: 'Browser extension',
     how: 'Mirror\'s own extension reads allow-listed pages you have opted into, and sends the events to your own device.',
+    connectorAvailable: false,
     localOnly: true,
     examples: ['Watch completion and scroll depth', 'Search terms on allow-listed sites'],
   },
@@ -48,6 +53,7 @@ export const TIERS: Record<DataTier, TierInfo> = {
     letter: 'D',
     name: 'OS usage',
     how: 'Android Usage access (or iOS DeviceActivity). Foreground time, launches, timestamps — never content.',
+    connectorAvailable: true,
     localOnly: true,
     examples: ['Per-app foreground time', 'Session start/end and unlock counts'],
   },
@@ -102,14 +108,15 @@ export function degrade(available: DataTier[], needs: DataTier[], featureLabel: 
   const missing = needs.filter((t) => !available.includes(t));
   const missingAny = anyOf.length > 0 && !anyOf.some((t) => available.includes(t)) ? [...anyOf] : [];
   if (missing.length === 0 && missingAny.length === 0) return { ok: true };
-  const because = 'which is not on this device. Mirror will not estimate it.';
+  const becauseSingle = 'which is not on this device. Mirror will not estimate it.';
+  const becauseNone = 'none of which is on this device. Mirror will not estimate it.';
   let requirement: string;
   if (missing.length > 0 && missingAny.length > 0) {
-    requirement = `it needs tier ${missing.join(' and ')} data and at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), none of ${because}`;
+    requirement = `it needs tier ${missing.join(' and ')} data and at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), ${becauseNone}`;
   } else if (missingAny.length > 0) {
-    requirement = `it needs at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), none of ${because}`;
+    requirement = `it needs at least one of tier ${missingAny.join('/')} (topics, searches or scroll depth), ${becauseNone}`;
   } else {
-    requirement = `it needs tier ${missing.join(' and ')} data, ${because}`;
+    requirement = `it needs tier ${missing.join(' and ')} data, ${becauseSingle}`;
   }
   return { ok: false, missing, missingAny, message: `${featureLabel} is unavailable: ${requirement}` };
 }
