@@ -31,6 +31,7 @@ export function DebugView(): React.ReactElement {
     raw24hOrphans,
     invalidTop,
     orphanCount,
+    lastReset,
   } = useMirrorApp();
 
   const topInset =
@@ -181,6 +182,11 @@ export function DebugView(): React.ReactElement {
           </Text>
           <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
             {`${quality?.count ?? 0} recorded events, by reason: ${Object.entries(quality?.byReason ?? {}).map(([k, v]) => `${k}:${v}`).join(', ') || 'none'}`}
+          </Text>
+          <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
+            {lastReset
+              ? `Last store reset: ${lastReset.day} (${new Date(lastReset.at).toISOString()}) · reason=${lastReset.reason}${lastReset.previousHistoryStartDay ? ` · prevStart=${lastReset.previousHistoryStartDay}` : ''}${lastReset.detail ? ` · ${lastReset.detail}` : ''}`
+              : 'Last store reset: none recorded in current SQLite store'}
           </Text>
           {latestSyncOrphans ? (
             <View style={{ marginTop: theme.space(2), gap: theme.space(1) }}>

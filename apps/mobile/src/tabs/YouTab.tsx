@@ -31,6 +31,7 @@ export function YouTab(): React.ReactElement {
     totalGaps,
     p3Reliable,
     intentLabels,
+    lastReset,
     resetStoredData,
     clearStoredLabels,
     checkPermissionAndCollect,
@@ -57,7 +58,7 @@ export function YouTab(): React.ReactElement {
   const handleConfirmDeleteAll = React.useCallback(async () => {
     setBusyAction('delete-all');
     try {
-      await resetStoredData();
+      await resetStoredData('user_delete_all');
       setConfirmMode('none');
       setPrivacyNotice('Deleted all local Mirror data on this device.');
     } finally {
@@ -261,7 +262,13 @@ export function YouTab(): React.ReactElement {
                 <Stat
                   value={recordedDays > 0 ? `${recordedDays} ${recordedDays === 1 ? 'day' : 'days'}` : 'Today'}
                   label="Local history"
-                  hint={historyStartDay ? `History starts ${historyStartDay}` : 'Encrypted SQLite'}
+                  hint={
+                    lastReset
+                      ? `History reset on ${lastReset.day}`
+                      : historyStartDay
+                        ? `History starts ${historyStartDay}`
+                        : 'Encrypted SQLite'
+                  }
                   theme={theme}
                 />
               </View>
@@ -274,6 +281,21 @@ export function YouTab(): React.ReactElement {
                 />
               </View>
             </View>
+            {lastReset ? (
+              <Text role="micro" tone="muted" theme={theme}>
+                {`History reset on ${lastReset.day} (${
+                  lastReset.reason === 'key_mismatch_reset'
+                    ? 'key mismatch after reinstall'
+                    : lastReset.reason === 'reinstall_or_storage_cleared'
+                      ? 'reinstall or cleared storage'
+                      : 'manual delete-all'
+                }${
+                  lastReset.previousHistoryStartDay
+                    ? `, previous history began ${lastReset.previousHistoryStartDay}`
+                    : ''
+                }).`}
+              </Text>
+            ) : null}
             <Divider theme={theme} />
             <Text role="micro" tone="muted" theme={theme}>
               {

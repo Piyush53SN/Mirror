@@ -159,6 +159,7 @@ function makeMockMobileContext(overrides = {}) {
     keyMismatch: null,
     dismissKeyMismatch: () => {},
     resetStoredData: noopAsync,
+    lastReset: null,
     selectedDay: '2026-10-25',
     setSelectedDay: () => {},
     dayOptions: ['2026-10-25', '2026-10-24', '2026-10-23'],
@@ -770,4 +771,33 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
 
   assert.deepEqual(switchedTabs, ['home'], 'TabBar click should invoke setActiveTab("home")');
   assert.equal(buildTaps, 7, '7 taps on What this build is should invoke handleBuildTap 7 times');
+
+  // Verify YouTab renders "History reset on <date>" when lastReset audit is present
+  const resetCtx = makeMockMobileContext({
+    activeTab: 'you',
+    lastReset: {
+      at: 1761364800000,
+      day: '2026-10-25',
+      reason: 'user_delete_all',
+      previousHistoryStartDay: '2026-10-21',
+    },
+  });
+  const resetRenderer = create(
+    React.createElement(
+      ui.ThemeProvider,
+      { initialTheme: 'dark' },
+      React.createElement(
+        ui.MirrorAppContext.Provider,
+        { value: resetCtx },
+        React.createElement(ui.MirrorTabShell),
+      ),
+    ),
+  );
+  const resetJson = JSON.stringify(resetRenderer.toJSON());
+  assert.ok(resetJson.includes('History reset on 2026-10-25'), 'YouTab must show "History reset on 2026-10-25"');
+  assert.ok(
+    resetJson.includes('previous history began 2026-10-21'),
+    'YouTab must show previous history start day when recorded',
+  );
+  resetRenderer.unmount();
 });

@@ -598,3 +598,82 @@ test('appendEvents: duplicates inside the same batch and across syncs are skippe
     close();
   }
 });
+
+test('recordResetAudit and lastResetAudit persist when/why across reopen and log via onDiagnostic', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-reset-audit-'));
+  const file = join(dir, 'mirror.db');
+  const diagnostics = [];
+  try {
+    const d1 = NodeSqliteDriver.file(file);
+    const s1 = new MirrorStore({
+      driver: d1,
+      keys,
+      random: counterRandom(),
+      clock: () => T0,
+      onDiagnostic: (msg, detail) => diagnostics.push({ msg, detail }),
+    });
+    await s1.open();
+    assert.equal(await s1.lastResetAudit(), null);
+    await s1.appendEvents([foreground({ id: 'evt_pre_reset', at: iso(0) })]);
+    await s1.deleteAll();
+    await s1.recordResetAudit({
+      at: T0 + 5_000,
+      day: '2026-10-25',
+      reason: 'user_delete_all',
+      previousHistoryStartDay: '2026-10-21',
+    });
+    assert.ok(diagnostics.some((d) => d.msg === 'store reset recorded' && d.detail?.day === '2026-10-25'));
+    d1.close();
+
+    const d2 = NodeSqliteDriver.file(file);
+    const s2 = new MirrorStore({ driver: d2, keys, random: counterRandom(), clock: () => T0 });
+    await s2.open();
+    const audit = await s2.lastResetAudit();
+    assert.deepEqual(audit, {
+      at: T0 + 5_000,
+      day: '2026-10-25',
+      reason: 'user_delete_all',
+      previousHistoryStartDay: '2026-10-21',
+    });
+    d2.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('earliestEventAt ignores intent_label rows and earliestSessionStart returns earliest session', async () => {
+  const { s, close } = await makeStore();
+  try {
+    assert.equal(await s.earliestEventAt(), null);
+    assert.equal(await s.earliestSessionStart(), null);
+
+    const appended = await s.appendEvents([
+      {
+        schema_version: 1,
+        id: 'lbl_early_0001',
+        kind: 'intent_label',
+        at: iso(1_000),
+        tier: 'D',
+        origin: 'user',
+        content: 'metadata',
+        session_id: 'ses_00000001',
+        label: 'intentional',
+      },
+      foreground({ id: 'evt_usage_0001', at: iso(10_000) }),
+      background({ id: 'evt_usage_0002', at: iso(40_000) }),
+    ]);
+    assert.deepEqual(appended.rejected, []);
+    assert.equal(appended.inserted, 3);
+    assert.equal(await s.earliestEventAt(), T0 + 10_000);
+
+    await s.applySessions({
+      window: { fromMs: T0, toMs: T0 + 100_000 },
+      sessions: [{ id: 'ses_00000001', app: 'org.wikipedia', start_ms: T0 + 10_000, end_ms: T0 + 40_000, duration_ms: 30_000 }],
+      assignments: [],
+    });
+    assert.equal(await s.earliestSessionStart(), T0 + 10_000);
+  } finally {
+    close();
+  }
+});
+

@@ -35,6 +35,8 @@ import type {
   SqlDriver,
   StoredEvent,
   StoreOptions,
+  StoreResetAudit,
+  StoreResetReason,
 } from './types';
 
 const DEFAULT_RETENTION_DAYS = 180;
@@ -518,6 +520,88 @@ export class MirrorStore {
       // reason to claim success, but it is a reason to say so.
       this.diagnostic('VACUUM failed after deleteAll; pages may remain until reused', error);
     }
+  }
+
+  /**
+   * Persist a minimal plaintext-only audit record in `meta` after an intentional
+   * reset (`user_delete_all` or `key_mismatch_reset`) so the UI can show
+   * "History reset on YYYY-MM-DD" and diagnostics can explain why history restarted.
+   *
+   * Never stores app names, package names, or personal content.
+   */
+  async recordResetAudit(entry: StoreResetAudit): Promise<void> {
+    const validReasons: StoreResetReason[] = [
+      'user_delete_all',
+      'key_mismatch_reset',
+      'reinstall_or_storage_cleared',
+    ];
+    if (!validReasons.includes(entry.reason)) {
+      throw new Error(`invalid store reset reason "${entry.reason}"`);
+    }
+    if (!Number.isFinite(entry.at) || entry.at < 0) {
+      throw new Error(`invalid store reset timestamp ${entry.at}`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.day)) {
+      throw new Error(`store reset day must be YYYY-MM-DD, got "${entry.day}"`);
+    }
+    const clean: StoreResetAudit = {
+      at: Math.floor(entry.at),
+      day: entry.day,
+      reason: entry.reason,
+      ...(entry.previousHistoryStartDay && /^\d{4}-\d{2}-\d{2}$/.test(entry.previousHistoryStartDay)
+        ? { previousHistoryStartDay: entry.previousHistoryStartDay }
+        : {}),
+      ...(entry.detail ? { detail: String(entry.detail).slice(0, 160) } : {}),
+    };
+    await writeMeta(this.driver, 'last_reset_audit', JSON.stringify(clean));
+    this.diagnostic('store reset recorded', clean);
+  }
+
+  async lastResetAudit(): Promise<StoreResetAudit | null> {
+    const raw = await readMeta(this.driver, 'last_reset_audit');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<StoreResetAudit>;
+      if (
+        typeof parsed.at !== 'number' ||
+        typeof parsed.day !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}$/.test(parsed.day) ||
+        (parsed.reason !== 'user_delete_all' &&
+          parsed.reason !== 'key_mismatch_reset' &&
+          parsed.reason !== 'reinstall_or_storage_cleared')
+      ) {
+        return null;
+      }
+      return {
+        at: parsed.at,
+        day: parsed.day,
+        reason: parsed.reason,
+        ...(typeof parsed.previousHistoryStartDay === 'string'
+          ? { previousHistoryStartDay: parsed.previousHistoryStartDay }
+          : {}),
+        ...(typeof parsed.detail === 'string' ? { detail: parsed.detail } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Earliest non-label event timestamp (`ms`), via index scan with zero decryption. */
+  async earliestEventAt(): Promise<number | null> {
+    const rows = await this.driver.all<{ min_at: number | null }>(
+      `SELECT MIN(at) AS min_at FROM events WHERE kind != 'intent_label'`,
+    );
+    const val = rows[0]?.min_at;
+    return val === null || val === undefined ? null : Number(val);
+  }
+
+  /** Earliest derived session start timestamp (`ms`), via index scan with zero decryption. */
+  async earliestSessionStart(): Promise<number | null> {
+    const rows = await this.driver.all<{ min_start: number | null }>(
+      `SELECT MIN(start_ms) AS min_start FROM sessions`,
+    );
+    const val = rows[0]?.min_start;
+    return val === null || val === undefined ? null : Number(val);
   }
 
   /* ----------------------------------------------------------- cursor state */

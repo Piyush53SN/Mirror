@@ -141,3 +141,17 @@ export type ImportRecord = {
   item_count: number;
   consent_id: string;
 };
+
+export type StoreResetReason =
+  | 'user_delete_all'
+  | 'key_mismatch_reset'
+  | 'reinstall_or_storage_cleared';
+
+export type StoreResetAudit = {
+  at: number;
+  day: string;
+  reason: StoreResetReason;
+  previousHistoryStartDay?: string | null;
+  detail?: string;
+};
+

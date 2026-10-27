@@ -207,7 +207,7 @@ export function HomeTab(): React.ReactElement {
             {`Mirror's encrypted database was sealed with key "${keyMismatch.oldKey}" but the current key is "${keyMismatch.newKey}". This happens after reinstall, clear data, or when Android restores a backup of the database without its key (SecureStore is not backed up).`}
           </Text>
           <View style={{ flexDirection: 'row', gap: theme.space(2), marginTop: theme.space(3), flexWrap: 'wrap' }}>
-            <Pill theme={theme} onPress={resetStoredData}>
+            <Pill theme={theme} onPress={() => resetStoredData('key_mismatch_reset')}>
               Reset stored data
             </Pill>
             <LinkButton theme={theme} onPress={dismissKeyMismatch}>

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { SessionRow } from '@mirror/store';
+import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
 import type {
   CuriositySplit,
   DepthBand,
@@ -125,7 +125,8 @@ export type MirrorAppContextValue = {
   collectingSince: string | null;
   keyMismatch: { oldKey: string; newKey: string } | null;
   dismissKeyMismatch: () => void;
-  resetStoredData: () => Promise<void>;
+  resetStoredData: (reason?: StoreResetReason) => Promise<void>;
+  lastReset?: StoreResetAudit | null;
 
   selectedDay: string;
   setSelectedDay: (day: string) => void;

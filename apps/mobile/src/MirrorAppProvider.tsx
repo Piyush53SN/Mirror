@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import * as React from 'react';
 import { AppState, Share } from 'react-native';
-import type { SessionRow } from '@mirror/store';
+import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
 import type {
   CuriositySplit,
   DepthBand,
@@ -64,6 +64,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [lastCollect, setLastCollect] = React.useState<string | null>(null);
   const [copyStatus, setCopyStatus] = React.useState<string | null>(null);
   const [keyMismatch, setKeyMismatch] = React.useState<{ oldKey: string; newKey: string } | null>(null);
+  const [lastReset, setLastReset] = React.useState<StoreResetAudit | null>(null);
   const [selectedDay, setSelectedDay] = React.useState<string>(() => toDayStr(Date.now()));
   const [singleDayRows, setSingleDayRows] = React.useState<SingleDayRow[]>([]);
   const [collectingSince, setCollectingSince] = React.useState<string | null>(null);
@@ -108,6 +109,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       setError(null);
       const runtime = await createRuntime();
       runtimeRef.current = runtime;
+      try {
+        const resetAudit = await runtime.lastReset();
+        if (isCurrent()) setLastReset(resetAudit);
+      } catch {}
       provideRuntime({
         store: runtime.store,
         collectNow: runtime.collectNow,
@@ -465,6 +470,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       const msg = e instanceof Error ? e.message : String(e);
       const m = /record was sealed with key "([^"]+)", current key is "([^"]+)"/.exec(msg);
       if (m) {
+        console.info(
+          '[MirrorStore:keyMismatch]',
+          JSON.stringify({ at: new Date().toISOString(), sealedWith: m[1], currentKey: m[2] }),
+        );
         setKeyMismatch({ oldKey: m[1]!, newKey: m[2]! });
         setError(
           `Stored data can't be read – it was sealed with key "${m[1]}", current key is "${m[2]}". This can happen after reinstall or backup restore.`,
@@ -581,38 +590,52 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     await recomputeFromLabels({});
   }, [recomputeFromLabels]);
 
-  const resetStoredData = React.useCallback(async () => {
-    try {
-      const rt = runtimeRef.current;
-      if (rt) {
-        await rt.store.deleteAll();
-        setKeyMismatch(null);
-        setError(null);
-        setSessions([]);
-        setDailyTotals([]);
-        setScaledSessions([]);
-        setDayScoredSessions([]);
-        setDayScoreGaps([]);
-        setDayReady(false);
-        setIntentLabels({});
-        setExpandedSessionId(null);
-        setQuality(null);
-        setValidation(null);
-        setSingleDayRows([]);
-        setLatestSyncOrphans(null);
-        setRaw24hOrphans(null);
-        setCollectingSince(null);
-        setEvolution(null);
-        setDiscovery(null);
-        setRabbitHole(null);
-        setFocusWindows(null);
-        setLastCollect('store reset');
-        await checkPermissionAndCollect();
+  const resetStoredData = React.useCallback(
+    async (reason: StoreResetReason = 'user_delete_all') => {
+      try {
+        const rt = runtimeRef.current;
+        if (rt) {
+          const previousHistoryStartDay =
+            focusWindows?.historyStartDay ?? evolution?.historyStartDay ?? null;
+          const detail =
+            reason === 'key_mismatch_reset' && keyMismatch
+              ? `sealed=${keyMismatch.oldKey}, current=${keyMismatch.newKey}`
+              : undefined;
+          const audit = await rt.resetStore({
+            reason,
+            previousHistoryStartDay,
+            detail,
+          });
+          setLastReset(audit);
+          setKeyMismatch(null);
+          setError(null);
+          setSessions([]);
+          setDailyTotals([]);
+          setScaledSessions([]);
+          setDayScoredSessions([]);
+          setDayScoreGaps([]);
+          setDayReady(false);
+          setIntentLabels({});
+          setExpandedSessionId(null);
+          setQuality(null);
+          setValidation(null);
+          setSingleDayRows([]);
+          setLatestSyncOrphans(null);
+          setRaw24hOrphans(null);
+          setCollectingSince(null);
+          setEvolution(null);
+          setDiscovery(null);
+          setRabbitHole(null);
+          setFocusWindows(null);
+          setLastCollect(`store reset (${reason})`);
+          await checkPermissionAndCollect();
+        }
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : String(e));
       }
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [checkPermissionAndCollect]);
+    },
+    [checkPermissionAndCollect, evolution?.historyStartDay, focusWindows?.historyStartDay, keyMismatch],
+  );
 
   const dismissKeyMismatch = React.useCallback(() => {
     setKeyMismatch(null);
@@ -753,6 +776,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       keyMismatch,
       dismissKeyMismatch,
       resetStoredData,
+      lastReset,
       selectedDay,
       setSelectedDay,
       dayOptions,
@@ -814,6 +838,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       keyMismatch,
       dismissKeyMismatch,
       resetStoredData,
+      lastReset,
       selectedDay,
       dayOptions,
       sessions,

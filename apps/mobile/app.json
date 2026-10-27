@@ -52,6 +52,7 @@
     "plugins": [
       "expo-system-ui",
       "./plugins/remove-forbidden-permissions",
+      "./plugins/with-release-signing",
       "./plugins/add-queries",
       [
         "expo-build-properties",

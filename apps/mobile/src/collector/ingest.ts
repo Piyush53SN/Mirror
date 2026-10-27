@@ -106,9 +106,36 @@ export async function ingestRecentDays(store: MirrorStore, now: number, utcOffse
   const today = localDayKey(now, utcOffsetMinutes);
   const yesterday = localDayKey(now - DAY_MS, utcOffsetMinutes);
   const dayBefore = localDayKey(now - 2 * DAY_MS, utcOffsetMinutes);
-  return [
-    await ingestDay(store, dayBefore, utcOffsetMinutes),
-    await ingestDay(store, yesterday, utcOffsetMinutes),
-    await ingestDay(store, today, utcOffsetMinutes),
-  ];
+
+  const results: IngestDayResult[] = [];
+  // If earlier `events` exist without derived `sessions` (for example after the
+  // one-time 6-day raw-stream backfill in `lifecycle_repair_v27`), ingest those
+  // missing days once so `sessions` and `historyStartDay` cover the full stored
+  // event span rather than stopping at `now - 2 days`.
+  try {
+    const earliestEvMs = await store.earliestEventAt();
+    if (earliestEvMs !== null) {
+      const earliestEvDay = localDayKey(earliestEvMs, utcOffsetMinutes);
+      if (earliestEvDay < dayBefore) {
+        const earliestSessMs = await store.earliestSessionStart();
+        const earliestSessDay =
+          earliestSessMs !== null ? localDayKey(earliestSessMs, utcOffsetMinutes) : null;
+        if (earliestSessDay === null || earliestEvDay < earliestSessDay) {
+          for (let d = 30; d >= 3; d -= 1) {
+            const candidateDay = localDayKey(now - d * DAY_MS, utcOffsetMinutes);
+            if (candidateDay < earliestEvDay) continue;
+            if (earliestSessDay !== null && candidateDay >= earliestSessDay) continue;
+            results.push(await ingestDay(store, candidateDay, utcOffsetMinutes));
+          }
+        }
+      }
+    }
+  } catch {
+    // Non-fatal; standard 3-day window still runs below.
+  }
+
+  results.push(await ingestDay(store, dayBefore, utcOffsetMinutes));
+  results.push(await ingestDay(store, yesterday, utcOffsetMinutes));
+  results.push(await ingestDay(store, today, utcOffsetMinutes));
+  return results;
 }

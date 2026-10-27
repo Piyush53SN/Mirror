@@ -9,13 +9,14 @@
  * screen must not query `data_gaps` itself: the sentence and the numbers have to
  * come from the same call, or a zero can disagree with the words beside it.
  */
+/* eslint-disable no-console */
 import * as SQLite from 'expo-sqlite';
-import { MirrorStore } from '@mirror/store';
+import { MirrorStore, type StoreResetAudit, type StoreResetReason } from '@mirror/store';
 import { buildUsageEvents, collectUsage, describeGapSummary, validateDailyTotals, isIgnoredSystemApp } from '@mirror/core-analytics';
 import type { OsTotal } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
-import { ingestDay, ingestRecentDays } from './collector/ingest';
+import { ingestDay, ingestRecentDays, localDayKey } from './collector/ingest';
 import { nativeUsageSource } from './collector/usageSource';
 
 export type DataQuality = {
@@ -48,6 +49,15 @@ export type MirrorRuntime = {
   loadIntentLabels(): Promise<Record<string, 'intentional' | 'mindless' | 'unsure'>>;
   /** Delete all stored `intent_label` events while keeping usage history intact */
   clearAllIntentLabels(): Promise<number>;
+  /** Wipe all stored data, log when and why, and record a plaintext reset marker */
+  resetStore(options: {
+    reason: StoreResetReason;
+    previousHistoryStartDay?: string | null;
+    detail?: string;
+    now?: number;
+  }): Promise<StoreResetAudit>;
+  /** Read the most recent reset audit marker, if any */
+  lastReset(): Promise<StoreResetAudit | null>;
 };
 
 let singleton: MirrorRuntime | null = null;
@@ -65,6 +75,9 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       random: osRandom,
       allowContent: options.allowContent ?? false,
       retentionDays: options.retentionDays ?? 180,
+      onDiagnostic: (message, detail) => {
+        console.info('[MirrorStore]', message, detail ?? '');
+      },
     });
     await store.open();
 
@@ -238,6 +251,43 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           return await store.clearIntentLabels();
         } catch {
           return 0;
+        }
+      },
+      resetStore: async ({ reason, previousHistoryStartDay, detail, now = Date.now() }) => {
+        const day = localDayKey(now, offsetNow());
+        const audit: StoreResetAudit = {
+          at: now,
+          day,
+          reason,
+          ...(previousHistoryStartDay ? { previousHistoryStartDay } : {}),
+          ...(detail ? { detail } : {}),
+        };
+        console.info(
+          '[MirrorStore:reset]',
+          JSON.stringify({
+            when: new Date(now).toISOString(),
+            day,
+            why: reason,
+            previousHistoryStartDay: previousHistoryStartDay ?? null,
+            detail: detail ?? null,
+          }),
+        );
+        await store.deleteAll();
+        if (reason === 'user_delete_all') {
+          // Advance the collector watermark and one-time repair marker to `now`
+          // so an explicit "Delete all local data" does not silently re-import
+          // the previous 1–6 days from Android's UsageEvents buffer.
+          await store.setCursorState('usage_stats', { at: now, open: [] });
+          await store.setCursor('lifecycle_repair_v27', now);
+        }
+        await store.recordResetAudit(audit);
+        return audit;
+      },
+      lastReset: async () => {
+        try {
+          return await store.lastResetAudit();
+        } catch {
+          return null;
         }
       },
     };
