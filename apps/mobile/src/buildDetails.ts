@@ -5,7 +5,7 @@
  */
 
 export const BUILD_SHORT = [
-  'Per-app totals from OS aggregate (Digital Wellbeing source)',
+  'Per-app totals from day-clipped OS foreground events (matches Digital Wellbeing)',
   'App opens only – no durations, no scaling',
   'IQS out of measured factors (/55 before labels, /75 with 5+ labels; minimum-activity floor enforced, never rescaled)',
   'Labeling optional, only explicit labels count',
@@ -13,10 +13,10 @@ export const BUILD_SHORT = [
 ].join('\n');
 
 export const BUILD_FULL = [
-  'Per-app totals from OS aggregate (queryUsageStats, local day bucket), matches Digital Wellbeing by construction, excludes launchers (HOME role), Mirror, Play Store/Services, Settings, and all Package installers',
+  'Per-app totals from day-clipped OS UsageEvents foreground intervals (6h pre-midnight lookback, clipped strictly to [00:00, min(now, 24:00)]), matching Digital Wellbeing within max(10%, 60s) without INTERVAL_DAILY pre-midnight bucket bleed; excludes launchers (HOME role), Mirror, Play Store/Services, Settings, and all Package installers',
   'App opens from raw events, open times only, no durations, no scaling (60s recent-close honest + 1h overlap + per-class persisted map; in-app Activity A->B STOPPED(A) no longer kills B, delayed PAUSED->STOPPED on closed apps and PAUSED+STOPPED pairs no longer inflate orphans)',
   'Zero-length unmatched OS events are reported as point-in-time boundary events (with per-app and per-eventType breakdown), never as “collection gaps (0 min unmeasured)” or lost usage time',
-  'IQS v2: Tier-D usage-pattern score out of measured parts (/55 without 5 labels, /75 with 5+ labels, /100 with topic vectors; never rescaled), minimum-activity floors (session length ≥5 sittings, switching ≥3 sittings & ≥15 min / 0.25 active hours, late-night ≥15 min sitting time), 0.49 confidence cap on reconstructed boundaries, only explicit labels feed Deliberate share',
+  'IQS v2: Tier-D usage-pattern score out of measured parts (/55 without 5 labels, /75 with 5+ labels, /100 with topic vectors; never rescaled), minimum-activity floors (session length ≥5 sittings, switching ≥3 sittings & ≥15 min / 0.25 active hours, late-night ≥15 min sitting spans), 0.49 confidence cap on reconstructed boundaries, only explicit labels feed Deliberate share',
   'P3 J4 Interest Evolution, J9 Discovery Journey & J11 Rabbit Hole: hard gate orphans ≤50 & total unmatched/gap events ≤100 plus 3+ distinct local days, limited-history caveat below 14 days, small-sample rates guarded',
   'P3 J18 What-if Simulator: local counterfactual arithmetic over recorded history; every output is labelled “Estimate”, never rescaled to 100, includes only measured factors, states exact assumptions, and explains whenever a scenario has no change today',
   'P3 J20 Focus Windows: requires at least 21 local days (3 weeks) and 5+ sittings per weekday × 4-hour block; shows a clear progress empty state until met, purely descriptive timing blocks, never blocks or nudges',
@@ -33,7 +33,7 @@ export const P3_GUARD_FULL = (orphanCount: number) =>
     `1h overlap does NOT pair unrelated – idempotent ids, single-fg, max 6h, merge 2s only, tested A 0-10 B 20-30 A 70-80 stays 3 intervals.`,
     `Until orphans ≤50 and total unmatched/gap events ≤100, P3 features remain blocked. Using only OS totals meanwhile.`,
     `Only explicit labels feed Deliberate share, never duration-based guess.`,
-    `OS-total match 100% before/after because totals come from queryUsageStats INTERVAL_DAILY authoritative, excluding launchers, Mirror, Settings, Play Store, and Package installers.`,
+    `Per-app daily totals match Digital Wellbeing within max(10%, 60s) via day-clipped OS UsageEvents foreground intervals, excluding launchers, Mirror, Settings, Play Store, and Package installers.`,
   ].join('\n');
 
 export const J4_SHORT = (orphanCount: number) =>

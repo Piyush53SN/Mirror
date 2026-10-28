@@ -37,6 +37,8 @@
  * ACTIVITY_STOPPED = 23, ACTIVITY_DESTROYED = 24 (hide), FLUSH_TO_DISK = 25 (hide),
  * DEVICE_SHUTDOWN = 26, DEVICE_STARTUP = 27.
  */
+import type { OsTotal } from './validate';
+
 export const USAGE_EVENT_TYPE = {
   NONE: 0,
   MOVE_TO_FOREGROUND: 1,
@@ -596,6 +598,38 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
+    // Android UsageStatsService writes END_OF_DAY (3) at bucket rollover and
+    // CONTINUE_PREVIOUS_DAY (4) at the start of the next bucket when an app is
+    // still in the foreground. If we already saw the real ACTIVITY_RESUMED (1)
+    // earlier in this stream, keep that true start timestamp untouched; if the
+    // real ACTIVITY_RESUMED predates `sinceMs` (or rolled off the OS buffer),
+    // CONTINUE_PREVIOUS_DAY opens the interval at bucket start instead of
+    // turning the subsequent ACTIVITY_PAUSED into an orphan_background.
+    if (row.eventType === USAGE_EVENT_TYPE.END_OF_DAY) {
+      continue;
+    }
+    if (row.eventType === USAGE_EVENT_TYPE.CONTINUE_PREVIOUS_DAY) {
+      if (open.has(row.packageName)) {
+        continue;
+      }
+      const contClass = row.className && row.className.length > 0 ? row.className : '__carried__';
+      for (const [otherApp, otherEntry] of [...open.entries()]) {
+        if (otherApp !== row.packageName) {
+          closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
+          recentlyClosed.set(otherApp, row.timeStamp);
+          closedInStream.add(otherApp);
+          open.delete(otherApp);
+        }
+      }
+      closedInStream.delete(row.packageName);
+      orphanPausedAt.delete(row.packageName);
+      open.set(row.packageName, {
+        earliestStart: row.timeStamp,
+        activities: new Map([[contClass, row.timeStamp]]),
+      });
+      continue;
+    }
+
     if (!FOREGROUND_TYPES.has(row.eventType) && !BACKGROUND_TYPES.has(row.eventType) && !DESTROY_TYPES.has(row.eventType)) {
       drops.push({ reason: 'unknown_type', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
       continue;
@@ -928,3 +962,176 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
     cursor: built.nextCursor,
   };
 }
+
+/* ------------------------------------------- local-day foreground totals -- */
+
+export type UsageStatsBucketRow = {
+  packageName: string;
+  totalTimeInForeground: number;
+  firstTimeStamp?: number;
+  lastTimeStamp?: number;
+  lastTimeUsed?: number;
+};
+
+export type DayForegroundTotalsOptions = {
+  /** Local-day window `[fromMs, toMs)`, typically `[00:00:00 local, 24:00:00 local)`. */
+  window: { fromMs: number; toMs: number };
+  /** Current clock ms so partial today windows clip cleanly at `min(toMs, nowMs)`. */
+  nowMs?: number;
+  /** Lookback before `window.fromMs` so overnight intervals starting yesterday pair cleanly (default 6 h). */
+  lookbackMs?: number;
+  /** Dynamic launcher packages (HOME role) and any extra ignored packages. */
+  ignorePackages?: readonly string[];
+  /** Optional resolved labels so OEM `"Package installer"` labels are excluded too. */
+  appLabels?: Readonly<Record<string, string>>;
+  /** Maximum plausible single foreground interval (default 6 h). */
+  maxIntervalMs?: number;
+};
+
+/**
+ * Sum exact local-day active foreground durations from stored/built `app_background`
+ * events by clipping every `[endMs - duration_ms, endMs]` strictly to
+ * `[window.fromMs, min(window.toMs, nowMs)]`.
+ */
+export function computeDayForegroundTotalsFromStoredEvents(
+  events: readonly Pick<UsageEvent, 'kind' | 'app' | 'at' | 'duration_ms'>[],
+  options: Omit<DayForegroundTotalsOptions, 'lookbackMs' | 'maxIntervalMs'>,
+): OsTotal[] {
+  const { window } = options;
+  const effectiveEndMs =
+    options.nowMs !== undefined ? Math.min(window.toMs, options.nowMs) : window.toMs;
+  if (
+    !Number.isFinite(window.fromMs) ||
+    !Number.isFinite(effectiveEndMs) ||
+    effectiveEndMs <= window.fromMs
+  ) {
+    return [];
+  }
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const appLabels = options.appLabels ?? {};
+  const byPkg = new Map<string, number>();
+
+  for (const ev of events) {
+    if (!ev || ev.kind !== 'app_background') continue;
+    const dur = ev.duration_ms ?? 0;
+    if (!Number.isFinite(dur) || dur <= 0) continue;
+    if (launcherSet.has(ev.app) || isIgnoredSystemApp(ev.app, appLabels[ev.app])) continue;
+    const endMs = Date.parse(ev.at);
+    if (!Number.isFinite(endMs)) continue;
+    const startMs = endMs - dur;
+    const clippedStart = Math.max(startMs, window.fromMs);
+    const clippedEnd = Math.min(endMs, effectiveEndMs);
+    if (clippedEnd > clippedStart) {
+      byPkg.set(ev.app, (byPkg.get(ev.app) ?? 0) + (clippedEnd - clippedStart));
+    }
+  }
+
+  return [...byPkg.entries()]
+    .filter(([, totalMs]) => totalMs > 0)
+    .map(([packageName, totalMs]) => ({ packageName, totalMs }))
+    .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+}
+
+/**
+ * Compute Digital-Wellbeing-equivalent per-app foreground screen time for a local
+ * calendar day `[window.fromMs, min(window.toMs, nowMs)]` directly from raw
+ * `UsageEvents`.
+ *
+ * Why `UsageStatsManager.queryUsageStats(INTERVAL_DAILY, dayFrom, dayTo)` inflates
+ * totals on Android (e.g. ChatGPT 1h 18m in `INTERVAL_DAILY` vs 47m in Digital
+ * Wellbeing on `2026-10-28` in `Asia/Calcutta` UTC+05:30):
+ *   1. Android's `INTERVAL_DAILY` `IntervalStats` buckets roll on ~24h boundaries
+ *      (`00:00 UTC` = `05:30 IST` or prior rollover epoch), NOT `00:00:00` local,
+ *      and `queryUsageStats` expands the range to every overlapping daily bucket
+ *      (`lastTimeStamp > dayFrom`) without clipping `totalTimeInForeground` at
+ *      local midnight — leaking yesterday's evening/pre-midnight usage into today.
+ *   2. Pairing raw `UsageEvents` with a 6h pre-midnight lookback and clipping each
+ *      closed foreground interval strictly to `[dayFrom, min(dayTo, nowMs)]`
+ *      eliminates pre-midnight bucket bleed and splits overnight intervals cleanly
+ *      at `00:00:00` local, matching Digital Wellbeing.
+ */
+export function computeDayForegroundTotals(
+  rows: readonly UsageRow[],
+  options: DayForegroundTotalsOptions,
+): OsTotal[] {
+  const { window } = options;
+  const effectiveEndMs =
+    options.nowMs !== undefined ? Math.min(window.toMs, options.nowMs) : window.toMs;
+  if (
+    !Number.isFinite(window.fromMs) ||
+    !Number.isFinite(effectiveEndMs) ||
+    effectiveEndMs <= window.fromMs
+  ) {
+    return [];
+  }
+  const lookaroundMs = Math.max(0, options.lookbackMs ?? DEFAULT_MAX_INTERVAL_MS);
+  const queryUntilMs =
+    options.nowMs !== undefined
+      ? Math.min(window.toMs + lookaroundMs, options.nowMs)
+      : window.toMs + lookaroundMs;
+  const built = buildUsageEvents(rows, {
+    sinceMs: window.fromMs - lookaroundMs,
+    untilMs: queryUntilMs,
+    ignorePackages: options.ignorePackages,
+    maxIntervalMs: options.maxIntervalMs,
+  });
+  return computeDayForegroundTotalsFromStoredEvents(built.events, {
+    window,
+    nowMs: options.nowMs,
+    ignorePackages: options.ignorePackages,
+    appLabels: options.appLabels,
+  });
+}
+
+/**
+ * Sanitize `UsageStatsManager.queryUsageStats(INTERVAL_DAILY, ...)` rows when used
+ * as a pre-install fallback (>7 days ago after Android prunes raw `UsageEvents`):
+ * rejects buckets whose midpoint belongs to an adjacent local day (such as
+ * yesterday's `[Oct 27 05:30 IST, Oct 28 05:30 IST)` bucket) and merges multiple
+ * intra-day buckets per `packageName`.
+ */
+export function filterUsageStatsBucketsForDay(
+  buckets: readonly UsageStatsBucketRow[],
+  options: {
+    window: { fromMs: number; toMs: number };
+    ignorePackages?: readonly string[];
+    appLabels?: Readonly<Record<string, string>>;
+  },
+): OsTotal[] {
+  const { window } = options;
+  if (!Number.isFinite(window.fromMs) || !Number.isFinite(window.toMs) || window.toMs <= window.fromMs) {
+    return [];
+  }
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const appLabels = options.appLabels ?? {};
+  const byPkg = new Map<string, number>();
+
+  for (const b of buckets) {
+    if (!b || !b.packageName) continue;
+    const fgMs = b.totalTimeInForeground;
+    if (!Number.isFinite(fgMs) || fgMs <= 0) continue;
+    if (launcherSet.has(b.packageName) || isIgnoredSystemApp(b.packageName, appLabels[b.packageName])) {
+      continue;
+    }
+    const first = b.firstTimeStamp;
+    const last = b.lastTimeStamp;
+    if (
+      typeof first === 'number' &&
+      typeof last === 'number' &&
+      Number.isFinite(first) &&
+      Number.isFinite(last) &&
+      last > first
+    ) {
+      if (last <= window.fromMs || first >= window.toMs) continue;
+      const midpoint = (first + last) / 2;
+      if (midpoint < window.fromMs || midpoint >= window.toMs) continue;
+    }
+    byPkg.set(b.packageName, (byPkg.get(b.packageName) ?? 0) + fgMs);
+  }
+
+  return [...byPkg.entries()]
+    .filter(([, totalMs]) => totalMs > 0)
+    .map(([packageName, totalMs]) => ({ packageName, totalMs }))
+    .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+}
+

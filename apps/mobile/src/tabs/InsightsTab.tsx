@@ -38,10 +38,12 @@ export function InsightsTab(): React.ReactElement {
   const theme = useTheme();
   const {
     selectedDay,
+    lastSyncedAt,
     iqs,
     curiosity,
     depthBands,
     dayScoredSessions,
+    sittingSpanMs,
     whatIf,
     whatIfCapMin,
     setWhatIfCapMin,
@@ -65,10 +67,6 @@ export function InsightsTab(): React.ReactElement {
   );
 
   const sittingCount = dayScoredSessions.length;
-  const sittingSpanMs = React.useMemo(
-    () => dayScoredSessions.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0),
-    [dayScoredSessions],
-  );
   const bandTotalCount = React.useMemo(
     () => depthBands.reduce((sum, b) => sum + b.count, 0),
     [depthBands],
@@ -86,7 +84,7 @@ export function InsightsTab(): React.ReactElement {
   return (
     <AppShell
       title="Insights"
-      subtitle={`What-if · Score factors · Curiosity · Depth (${selectedDay})`}
+      subtitle={`What-if · Score factors · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
@@ -178,7 +176,7 @@ export function InsightsTab(): React.ReactElement {
                   <View style={{ flex: 1, minWidth: 120 }}>
                     <Stat
                       value={`${sittingCount} ${sittingCount === 1 ? 'sitting' : 'sittings'}`}
-                      label={`Sitting spans · ${formatDuration(whatIf.sittingTimeMs)}`}
+                      label={`Sitting spans · ${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'}`}
                       hint="Merged ≤15m reopens"
                       theme={theme}
                     />
@@ -472,7 +470,7 @@ export function InsightsTab(): React.ReactElement {
             <SectionHeader
               theme={theme}
               title="Depth & Sitting Length Mix"
-              caption={`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} on ${selectedDay} · ${formatDuration(sittingSpanMs)} merged spans`}
+              caption={`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} on ${selectedDay} · ${formatDuration(sittingSpanMs)} sitting spans`}
             />
           </View>
           <View style={{ gap: theme.space(2.5) }}>
@@ -499,7 +497,7 @@ export function InsightsTab(): React.ReactElement {
                     {`Sitting-length bands (${bandTotalCount} sitting${bandTotalCount === 1 ? '' : 's'})`}
                   </Text>
                   <Text role="micro" tone="muted" theme={theme}>
-                    {`${formatDuration(bandTotalMs)} total sitting span`}
+                    {`${formatDuration(bandTotalMs)} sitting spans`}
                   </Text>
                 </View>
                 <Divider theme={theme} />

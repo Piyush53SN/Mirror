@@ -17,7 +17,13 @@ import fc from 'fast-check';
 import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { computeWhatIf, sessionBands } = await bundleTs(join(HERE, '..', 'src/index.ts'), {
+const {
+  buildCanonicalDaySittings,
+  computeWhatIf,
+  formatDurationShort,
+  sessionBands,
+  sumSittingSpanMs,
+} = await bundleTs(join(HERE, '..', 'src/index.ts'), {
   outfile: join(HERE, '.build', 'core-whatif.mjs'),
 });
 
@@ -148,7 +154,7 @@ test('explains when cap_sittings reduces screen time while composite IQS stays u
   const cap = res.scenarios.find((s) => s.id === 'cap_sittings');
   assert.equal(cap.deltaTimeMs, -8 * MIN_MS);
   assert.equal(cap.estimatedIqs.deltaPoints, 0);
-  assert.match(cap.noChangeReason, /Screen time drops by 8m, while IQS stays unchanged \(0\.0 pts\)/);
+  assert.match(cap.noChangeReason, /Sitting spans drop by 8m, while IQS stays unchanged \(0\.0 pts\)/);
 });
 
 /* -------------------------- core J18 acceptance criteria -------------------- */
@@ -294,9 +300,9 @@ test('cap_sittings recomputes directly from sitting durations, reconciles with s
   assert.equal(cap10.affectedSessions, 5);
   assert.ok(Math.abs(cap10.deltaTimeMs) <= expectedAbove10m, 'cap-reduction must never exceed sum of time above cap');
   assert.equal(Math.abs(cap10.deltaTimeMs), expectedAbove10m);
-  assert.equal(cap10.estimatedTimeMs, expectedRemaining10m, 'capped sitting time must be 67m, never 19m');
-  assert.equal(Math.round(cap10.deltaTimePct * 100), -52, 'must be -52% vs 2h 20m sitting time, never -79%');
-  assert.match(cap10.timeEstimateLabel, /vs 2h 20m sitting time/);
+  assert.equal(cap10.estimatedTimeMs, expectedRemaining10m, 'capped sitting spans must be 67m, never 19m');
+  assert.equal(Math.round(cap10.deltaTimePct * 100), -52, 'must be -52% vs 2h 20m sitting spans, never -79%');
+  assert.match(cap10.timeEstimateLabel, /vs 2h 20m sitting spans/);
 
   // Cap at 20m: only 45m (25m above) and 35m (15m above) exceed 20m -> 40m reduction -> 100m remaining (-29%)
   const res20 = computeWhatIf({
@@ -312,6 +318,45 @@ test('cap_sittings recomputes directly from sitting durations, reconciles with s
   assert.ok(Math.abs(cap20.deltaTimeMs) <= expectedAbove20m);
   assert.equal(Math.abs(cap20.deltaTimeMs), expectedAbove20m);
   assert.equal(cap20.estimatedTimeMs, 100 * MIN_MS);
+});
+
+test('reconciles Home sitting spans and Insights What-if / Depth sitting spans with zero rounding or terminology discrepancy (including .8s sub-second boundary)', () => {
+  // Exact boundary case: 2h 4m 59.8s (7,499,800 ms) previously formatted as "2h 4m sitting spans"
+  // via Math.floor on Home vs "2h 5m sitting time" via Math.round in What-if.
+  const sessions = [
+    { id: 'h_1', app: 'com.openai.chatgpt', startMs: DAY_START + 3_600_000, endMs: DAY_START + 3_600_000 + 69 * MIN_MS },
+    { id: 'h_2', app: 'cn.wps.moffice_eng.xiaomi.lite', startMs: DAY_START + 3 * 3_600_000, endMs: DAY_START + 3 * 3_600_000 + 25 * MIN_MS },
+    { id: 'h_3', app: 'com.whatsapp', startMs: DAY_START + 5 * 3_600_000, endMs: DAY_START + 5 * 3_600_000 + 30 * MIN_MS + 59_800 },
+  ];
+  const canonical = buildCanonicalDaySittings(sessions, { window: WINDOW });
+  const homeSittingSpanMs = sumSittingSpanMs(canonical);
+  const homeLabel = `${formatDurationShort(homeSittingSpanMs)} sitting spans`;
+  assert.equal(homeLabel, '2h 4m sitting spans');
+
+  const whatIf = computeWhatIf({
+    window: WINDOW,
+    sessions: canonical,
+    sittingCapMinutes: 10,
+    utcOffsetMinutes: 330,
+  });
+  const bands = sessionBands(canonical);
+  const bandTotalMs = bands.reduce((sum, b) => sum + b.ms, 0);
+
+  assert.equal(whatIf.sittingTimeMs, homeSittingSpanMs);
+  assert.equal(bandTotalMs, homeSittingSpanMs);
+  assert.equal(`${formatDurationShort(whatIf.sittingTimeMs)} sitting spans`, homeLabel);
+  assert.equal(`${formatDurationShort(bandTotalMs)} sitting spans`, homeLabel);
+
+  for (const sc of whatIf.scenarios) {
+    assert.equal(sc.timeEstimateLabel.includes('sitting time'), false, `stale 'sitting time' in ${sc.timeEstimateLabel}`);
+    assert.equal(sc.assumption.includes('sitting time'), false, `stale 'sitting time' in ${sc.assumption}`);
+    if (sc.timeSource === 'sessions') {
+      assert.ok(
+        sc.timeEstimateLabel.includes(`vs ${homeLabel}`),
+        `expected '${homeLabel}' in '${sc.timeEstimateLabel}'`,
+      );
+    }
+  }
 });
 
 test('property: What-if invariants hold across arbitrary sessions, OS totals, labels, caps, and quiet hours', () => {

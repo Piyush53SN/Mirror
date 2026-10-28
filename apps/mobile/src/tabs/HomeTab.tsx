@@ -137,6 +137,7 @@ export function HomeTab(): React.ReactElement {
     dismissKeyMismatch,
     iqs,
     dayScoredSessions,
+    sittingSpanMs,
     evolution,
     focusWindows,
     setShowWhy,
@@ -155,10 +156,6 @@ export function HomeTab(): React.ReactElement {
     [dailyTotals],
   );
   const sittingCount = dayScoredSessions.length;
-  const sittingSpanMs = React.useMemo(
-    () => dayScoredSessions.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0),
-    [dayScoredSessions],
-  );
   const maxAppMs = dailyTotals[0]?.totalMs ?? 1;
   const measuredFactors = React.useMemo(
     () => (iqs ? iqs.factors.filter((f) => f.measurable && f.max > 0) : []),
@@ -372,17 +369,17 @@ export function HomeTab(): React.ReactElement {
         </Callout>
       ) : null}
 
-      {/* Frosted glass card — Per-app totals from OS aggregate */}
+      {/* Frosted glass card — Per-app totals from day-clipped OS foreground events */}
       <Card theme={theme} style={{ marginBottom: 0 }}>
         <SectionHeader
           theme={theme}
           title={`Per-app totals · ${selectedDay}`}
-          caption="OS aggregate (Digital Wellbeing source), excludes launchers, Mirror, and system installers"
+          caption="Day-clipped OS foreground events (matches Digital Wellbeing), excludes launchers, Mirror, and system installers"
         />
         {dailyTotals.length === 0 ? (
           <EmptyState
             title={`No totals for ${selectedDay}`}
-            body="Use apps that day, then tap Refresh. Totals come from OS queryUsageStats, not event rebuild, so they match Settings."
+            body="Use apps that day, then tap Refresh. Totals sum OS foreground intervals clipped strictly to the local day, matching Digital Wellbeing."
             theme={theme}
           />
         ) : (

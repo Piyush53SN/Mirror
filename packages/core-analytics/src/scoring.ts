@@ -191,6 +191,38 @@ export function buildCanonicalDaySittings(
   return out;
 }
 
+/**
+ * Canonical sum of day-clipped merged sitting spans (`endMs - startMs`).
+ * Shared across Home, Insights, What-if Simulator, and Sitting-Length Bands so
+ * every screen reports the exact same figure.
+ */
+export function sumSittingSpanMs(sittings: readonly ScoredSession[]): number {
+  let total = 0;
+  for (const s of sittings) {
+    if (!s || !Number.isFinite(s.startMs) || !Number.isFinite(s.endMs)) continue;
+    if (s.endMs > s.startMs) {
+      total += s.endMs - s.startMs;
+    }
+  }
+  return total;
+}
+
+/**
+ * Canonical compact duration formatter (`Math.floor` whole seconds) shared by UI
+ * cards and `@mirror/core-analytics` copy so Home (`Sitting spans`) and Insights
+ * (`What-if` / `Depth` / `IQS`) never diverge by rounding.
+ */
+export function formatDurationShort(ms: number): string {
+  const totalSec = Math.floor(Math.max(0, Number.isFinite(ms) ? ms : 0) / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return sec === 0 ? `${min}m` : `${min}m ${sec}s`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 /** Milliseconds of `[start, end)` inside `[from, to)`. */
 function overlap(start: number, end: number, from: number, to: number): number {
   return Math.max(0, Math.min(end, to) - Math.max(start, from));
@@ -496,10 +528,10 @@ export function scoreIqs(input: ScoreInput): Score {
     max: 15,
     tier: 'D',
     detail: lateMeasurable
-      ? `${Math.round(lateShare * 100)}% of sitting time fell between 23:00 and 05:00 local.`
+      ? `${Math.round(lateShare * 100)}% of sitting spans fell between 23:00 and 05:00 local.`
       : totalMs === 0
-        ? 'Not measured: no sitting time.'
-        : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min of sitting time in this window (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min needed before computing late-night share).`,
+        ? 'Not measured: no sitting spans.'
+        : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min of sitting spans in this window (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min needed before computing late-night share).`,
     measurable: lateMeasurable,
   };
 
@@ -557,7 +589,7 @@ export function scoreIqs(input: ScoreInput): Score {
     value === null
       ? sessions.length === 0
         ? 'Not enough data to score. Mirror will not fill the gap with an estimate.'
-        : `Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SESSION_MIX_SITTINGS} sittings or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min of sitting time before scoring; small-sample rates are hidden rather than guessed).`
+        : `Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SESSION_MIX_SITTINGS} sittings or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min of sitting spans before scoring; small-sample rates are hidden rather than guessed).`
       : max < 100
         ? `Out of ${max}: ${factors.filter((f) => !f.measurable).map((f) => f.label.toLowerCase()).join(', ')} ${factors.filter((f) => !f.measurable).length === 1 ? 'is' : 'are'} not measured. The score is not rescaled to 100.`
         : 'Every part is measured. The parts add up exactly; a total you cannot take apart is not a measurement.';
@@ -623,7 +655,7 @@ function confidenceFor(
   const activeMinLabel = totalMs < MINUTE_MS ? `${Math.max(1, Math.round(totalMs / 1000))} s` : `${Math.round(totalMs / MINUTE_MS)} min`;
   const reasons: string[] = [gapReason];
   reasons.push(
-    `${sessions.length} complete sitting${sessions.length === 1 ? '' : 's'} (${activeMinLabel} sitting time)${smallSample ? ' — a small sample' : ''}.`,
+    `${sessions.length} complete sitting${sessions.length === 1 ? '' : 's'} (${activeMinLabel} sitting spans)${smallSample ? ' — a small sample' : ''}.`,
   );
   if (labels >= MIN_LABELS) reasons.push(`${labels} decisive intent labels.`);
   else reasons.push(`No deliberate-share score: ${labels} of ${MIN_LABELS} labels needed.`);

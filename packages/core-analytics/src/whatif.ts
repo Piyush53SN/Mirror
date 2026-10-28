@@ -16,7 +16,10 @@
  *      displacement before quiet hours).
  */
 import {
+  buildCanonicalDaySittings,
+  formatDurationShort,
   scoreIqs,
+  sumSittingSpanMs,
   type Factor,
   type IntentLabel,
   type Score,
@@ -133,14 +136,7 @@ function fmtHour(h: number): string {
 }
 
 function fmtDurationShort(ms: number): string {
-  const safe = Math.max(0, Math.round(ms / 1000));
-  if (safe < 60) return `${safe}s`;
-  const min = Math.floor(safe / 60);
-  const sec = safe % 60;
-  if (min < 60) return sec === 0 ? `${min}m` : `${min}m ${sec}s`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  return formatDurationShort(ms);
 }
 
 function fmtSignedPoints(delta: number): string {
@@ -260,21 +256,12 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
   const quietHoursLabel = `${fmtHour(startHour)}–${fmtHour(endHour)}`;
 
   // Clip & filter valid non-system, non-launcher sessions overlapping `window`
-  const validSessions: ScoredSession[] = [];
-  for (const s of input.sessions) {
-    if (!Number.isFinite(s.startMs) || !Number.isFinite(s.endMs)) continue;
-    if (launcherSet.has(s.app) || isIgnoredSystemApp(s.app, appLabels[s.app])) continue;
-    const clippedStart = Math.max(s.startMs, window.fromMs);
-    const clippedEnd = Math.min(s.endMs, window.toMs);
-    if (clippedEnd > clippedStart) {
-      validSessions.push({
-        ...s,
-        startMs: clippedStart,
-        endMs: clippedEnd,
-      });
-    }
-  }
-  validSessions.sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+  // via the exact same canonical helper used on Home, Insights, IQS, and Sessions.
+  const validSessions = buildCanonicalDaySittings(input.sessions, {
+    window,
+    ignorePackages: input.ignorePackages,
+    appLabels,
+  });
 
   const validOsTotals = (input.osTotals ?? [])
     .filter(
@@ -287,7 +274,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     .sort((a, b) => b.totalMs - a.totalMs || a.app.localeCompare(b.app));
 
   const osSumMs = validOsTotals.reduce((sum, r) => sum + r.totalMs, 0);
-  const sessionSumMs = validSessions.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
+  const sessionSumMs = sumSittingSpanMs(validSessions);
   const timeSource: 'os_aggregate' | 'sessions' = osSumMs > 0 ? 'os_aggregate' : 'sessions';
   const baselineTimeMs = osSumMs > 0 ? osSumMs : sessionSumMs;
 
@@ -317,7 +304,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       : baselineIqs.value === null
         ? baselineIqs.caveat
         : baselineIqs.confidence.smallSample
-          ? `Small sample today (${validSessions.length} sitting${validSessions.length === 1 ? '' : 's'}, ${fmtDurationShort(sessionSumMs)} sitting time) — rates below their minimum-activity floor stay unmeasured.`
+          ? `Small sample today (${validSessions.length} sitting${validSessions.length === 1 ? '' : 's'}, ${fmtDurationShort(sessionSumMs)} sitting spans) — rates below their minimum-activity floor stay unmeasured.`
           : null;
 
   if (validSessions.length === 0) {
@@ -375,8 +362,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       scenarioBaselineMs > 0 ? Math.max(-1, Math.min(0, deltaTimeMs / scenarioBaselineMs)) : 0;
     const baselineLabel =
       params.scenarioTimeSource === 'os_aggregate'
-        ? `${fmtDurationShort(scenarioBaselineMs)} OS total`
-        : `${fmtDurationShort(scenarioBaselineMs)} sitting time`;
+        ? `${fmtDurationShort(scenarioBaselineMs)} OS screen time`
+        : `${fmtDurationShort(scenarioBaselineMs)} sitting spans`;
 
     const timeEstimateLabel =
       deltaTimeMs === 0
@@ -544,8 +531,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         scenarioTimeSource: 'sessions',
         estimatedTimeMs: cappedEstimatedMs,
         zeroAffectedReason: `No change today: no sitting longer than ${sittingCapMinutes} min today (longest sitting was ${fmtDurationShort(longestSittingMs)}).`,
-        zeroIqsDeltaReason: `Screen time drops by ${fmtDurationShort(capReductionMs)}, while IQS stays unchanged (0.0 pts): capping above ${sittingCapMinutes} min keeps opens at 8 s or longer (longer is not scored as better) and did not shift switching or late-night share enough to move rounded points today.`,
-        assumption: `Assumes sittings longer than ${sittingCapMinutes} min end at ${sittingCapMinutes} min without extra re-opens later. Recomputed directly from sitting durations (sum of time above ${sittingCapMinutes} min subtracted from ${fmtDurationShort(sessionSumMs)} sitting time, matching sitting-length bands).`,
+        zeroIqsDeltaReason: `Sitting spans drop by ${fmtDurationShort(capReductionMs)}, while IQS stays unchanged (0.0 pts): capping above ${sittingCapMinutes} min keeps opens at 8 s or longer (longer is not scored as better) and did not shift switching or late-night share enough to move rounded points today.`,
+        assumption: `Assumes sittings longer than ${sittingCapMinutes} min end at ${sittingCapMinutes} min without extra re-opens later. Recomputed directly from sitting durations (sum of time above ${sittingCapMinutes} min subtracted from ${fmtDurationShort(sessionSumMs)} sitting spans, matching sitting-length bands).`,
       }),
     );
   }

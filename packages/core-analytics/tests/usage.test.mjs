@@ -16,7 +16,20 @@ import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, '..');
 const core = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.build', 'core.mjs') });
-const { buildUsageEvents, collectUsage, summarizeOrphanDrops, USAGE_EVENT_TYPE, DEFAULT_IGNORED_PACKAGES } = core;
+const {
+  buildUsageEvents,
+  collectUsage,
+  computeDayForegroundTotals,
+  computeDayForegroundTotalsFromStoredEvents,
+  filterUsageStatsBucketsForDay,
+  validateDailyTotals,
+  sessionize,
+  buildCanonicalDaySittings,
+  sumSittingSpanMs,
+  summarizeOrphanDrops,
+  USAGE_EVENT_TYPE,
+  DEFAULT_IGNORED_PACKAGES,
+} = core;
 
 const T0 = Date.parse('2026-10-16T09:00:00Z');
 const at = (minutes) => T0 + minutes * 60_000;
@@ -512,5 +525,228 @@ test('delayed ACTIVITY_STOPPED (23) >60s after an already-closed sitting does no
   assert.equal(diag.byApp[0].label, 'Reddit');
   assert.equal(diag.newest[0].typeName, '2:ACTIVITY_PAUSED');
 });
+
+/* ----------- Digital Wellbeing parity & long ChatGPT-style intervals ------- */
+
+test('2026-10-28 IST (11:32) ChatGPT 47m vs INTERVAL_DAILY 1h 18m: eliminates +31m pre-midnight bucket bleed while Mi Doc Viewer, WhatsApp, X, and Discord match Digital Wellbeing within max(10%, 60s)', () => {
+  // Local day 2026-10-28 in Asia/Calcutta (UTC+05:30):
+  //   00:00 IST = 2026-10-27T18:30:00.000Z
+  //   05:30 IST = 2026-10-28T00:00:00.000Z (Android UTC INTERVAL_DAILY rollover!)
+  //   11:32 IST = 2026-10-28T06:02:00.000Z
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const rollover0530 = Date.parse('2026-10-28T00:00:00.000Z');
+  const now1132 = Date.parse('2026-10-28T06:02:00.000Z');
+  const MIN = 60_000;
+
+  const CHATGPT = 'com.openai.chatgpt';
+  const MI_DOC = 'cn.wps.moffice_eng.xiaomi.lite';
+  const WHATSAPP = 'com.whatsapp';
+  const X_APP = 'com.twitter.android';
+  const DISCORD = 'com.discord';
+  const LAUNCHER = 'com.mi.android.globallauncher';
+
+  // Raw UsageEvents across [2026-10-27 evening .. 2026-10-28 11:32 IST]:
+  // 1) Yesterday (2026-10-27 22:15–22:46 IST = 31m): ChatGPT used for 31m inside the
+  //    [Oct 27 05:30 IST, Oct 28 05:30 IST) INTERVAL_DAILY bucket.
+  // 2) Today (2026-10-28):
+  //    - 00:20–01:07 IST (47m): long ChatGPT interval across MainActivity -> VoiceActivity -> MainActivity,
+  //      with a transient SystemUI notification shade check + PermissionController mic dialog + delayed STOPPED (23).
+  //    - Morning before 11:32 IST: Mi Doc Viewer (18m), WhatsApp (14m), X (11m), Discord (8m).
+  const prevEveningStart = dayStart - 105 * MIN; // 22:15 IST on 2026-10-27
+  const todayLateStart = dayStart + 20 * MIN; // 00:20 IST on 2026-10-28
+  const morningBase = rollover0530 + 180 * MIN; // 08:30 IST on 2026-10-28
+
+  const rawRows = [
+    // Yesterday 31m ChatGPT session (must NOT bleed into 2026-10-28!)
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: prevEveningStart },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: prevEveningStart + 31 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: prevEveningStart + 31 * MIN + 350 },
+
+    // Today 47m long ChatGPT session (00:20 -> 01:07 IST) with multi-activity voice handoff & SystemUI shade
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: todayLateStart },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: todayLateStart + 15 * MIN },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: todayLateStart + 15 * MIN + 40 },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: todayLateStart + 15 * MIN + 420 },
+    // Transient SystemUI notification shade at +25m (must NOT close ChatGPT)
+    { packageName: 'com.android.systemui', className: '.ShadeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: todayLateStart + 25 * MIN },
+    { packageName: 'com.android.systemui', className: '.ShadeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: todayLateStart + 25 * MIN + 5_000 },
+    // Return from VoiceModeActivity -> MainActivity at +33m
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: todayLateStart + 33 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: todayLateStart + 33 * MIN + 30 },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: todayLateStart + 33 * MIN + 400 },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_DESTROYED, timeStamp: todayLateStart + 33 * MIN + 500 },
+    // Exit to launcher at +47m
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: todayLateStart + 47 * MIN },
+    { packageName: LAUNCHER, className: '.Launcher', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: todayLateStart + 47 * MIN + 20 },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: todayLateStart + 47 * MIN + 350 },
+
+    // Morning apps (08:30–11:32 IST): Mi Doc Viewer 18m, WhatsApp 14m, X 11m, Discord 8m
+    { packageName: MI_DOC, className: '.DocActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: morningBase },
+    { packageName: MI_DOC, className: '.DocActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: morningBase + 18 * MIN },
+    { packageName: WHATSAPP, className: '.HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: morningBase + 30 * MIN },
+    { packageName: WHATSAPP, className: '.HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: morningBase + 44 * MIN },
+    { packageName: X_APP, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: morningBase + 60 * MIN },
+    { packageName: X_APP, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: morningBase + 71 * MIN },
+    { packageName: DISCORD, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: morningBase + 90 * MIN },
+    { packageName: DISCORD, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: morningBase + 98 * MIN },
+  ];
+
+  // What Android's raw queryUsageStats(INTERVAL_DAILY, dayStart, dayEnd) returned:
+  // Bucket 1 [Oct 27 05:30 IST, Oct 28 05:30 IST) overlaps dayStart (00:00 IST) and sums
+  // yesterday's 31m + today's 47m = 78m (1h 18m) for ChatGPT; Bucket 2 [05:30, 11:32] has the 4 morning apps.
+  const rawIntervalDailyBuckets = [
+    {
+      packageName: CHATGPT,
+      totalTimeInForeground: (31 + 47) * MIN, // 1h 18m inflated!
+      firstTimeStamp: rollover0530 - 86_400_000,
+      lastTimeStamp: rollover0530,
+    },
+    { packageName: MI_DOC, totalTimeInForeground: 18 * MIN, firstTimeStamp: rollover0530, lastTimeStamp: now1132 },
+    { packageName: WHATSAPP, totalTimeInForeground: 14 * MIN, firstTimeStamp: rollover0530, lastTimeStamp: now1132 },
+    { packageName: X_APP, totalTimeInForeground: 11 * MIN, firstTimeStamp: rollover0530, lastTimeStamp: now1132 },
+    { packageName: DISCORD, totalTimeInForeground: 8 * MIN, firstTimeStamp: rollover0530, lastTimeStamp: now1132 },
+  ];
+
+  // Digital Wellbeing ground truth for 2026-10-28 at 11:32 IST:
+  const digitalWellbeingTotals = [
+    { packageName: CHATGPT, totalMs: 47 * MIN },
+    { packageName: MI_DOC, totalMs: 18 * MIN },
+    { packageName: WHATSAPP, totalMs: 14 * MIN },
+    { packageName: X_APP, totalMs: 11 * MIN },
+    { packageName: DISCORD, totalMs: 8 * MIN },
+  ];
+
+  // Confirm the old raw INTERVAL_DAILY bucket failed max(10%, 60s) on ChatGPT (+66%, +31m)
+  const brokenValidation = validateDailyTotals(
+    rawIntervalDailyBuckets.map((b) => ({ app: b.packageName, totalMs: b.totalTimeInForeground })),
+    digitalWellbeingTotals,
+  );
+  assert.equal(brokenValidation.ok, false);
+  assert.equal(brokenValidation.overThreshold.length, 1);
+  assert.equal(brokenValidation.overThreshold[0].app, CHATGPT);
+  assert.equal(brokenValidation.overThreshold[0].diffMs, 31 * MIN);
+
+  // Confirm Mirror's fixed day-clipped foreground totals match Digital Wellbeing within max(10%, 60s)
+  const mirrorDayTotals = computeDayForegroundTotals(rawRows, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+    nowMs: now1132,
+    ignorePackages: [LAUNCHER],
+  });
+  const fixedValidation = validateDailyTotals(
+    mirrorDayTotals.map((r) => ({ app: r.packageName, totalMs: r.totalMs })),
+    digitalWellbeingTotals,
+  );
+  assert.equal(fixedValidation.ok, true, 'must match Digital Wellbeing within max(10%, 60s)');
+  assert.equal(fixedValidation.overThreshold.length, 0);
+  assert.equal(
+    mirrorDayTotals.find((r) => r.packageName === CHATGPT)?.totalMs,
+    47 * MIN,
+    'ChatGPT must be 47m (never 1h 18m)',
+  );
+  assert.ok(fixedValidation.maxAbsMs < 1_000, `expected <1s diff, got ${fixedValidation.maxAbsMs}ms`);
+});
+
+test('overnight long ChatGPT interval straddling local midnight (23:29 -> 00:47 = 1h 18m, and 22:15 -> 00:47 = 2h 32m) clips strictly to 47m on today and 31m on yesterday', () => {
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z'); // 2026-10-28 00:00 IST
+  const prevDayStart = dayStart - 86_400_000;
+  const dayEnd = dayStart + 86_400_000;
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+
+  // Case A: 23:29 Oct 27 -> 00:47 Oct 28 (78m = 1h 18m continuous interval across midnight,
+  // including Android's END_OF_DAY=3 and CONTINUE_PREVIOUS_DAY=4 markers)
+  const rows78m = [
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: dayStart - 31 * MIN },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.END_OF_DAY, timeStamp: dayStart - 1 },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.CONTINUE_PREVIOUS_DAY, timeStamp: dayStart },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayStart + 47 * MIN },
+  ];
+
+  const todayTotals = computeDayForegroundTotals(rows78m, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+  });
+  const yesterdayTotals = computeDayForegroundTotals(rows78m, {
+    window: { fromMs: prevDayStart, toMs: dayStart },
+  });
+  assert.equal(todayTotals.find((r) => r.packageName === CHATGPT)?.totalMs, 47 * MIN, 'today gets strictly post-midnight 47m');
+  assert.equal(yesterdayTotals.find((r) => r.packageName === CHATGPT)?.totalMs, 31 * MIN, 'yesterday gets pre-midnight 31m');
+
+  // Case B: >1h pre-midnight start (22:15 Oct 27 -> 00:47 Oct 28 = 2h 32m, inside 6h lookback)
+  const rows152m = [
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: dayStart - 105 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayStart + 47 * MIN },
+  ];
+  const todayFrom152m = computeDayForegroundTotals(rows152m, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+  });
+  assert.equal(todayFrom152m.find((r) => r.packageName === CHATGPT)?.totalMs, 47 * MIN);
+
+  // Case C: ACTIVITY_RESUMED rolled off the OS buffer, leaving CONTINUE_PREVIOUS_DAY (4) at 00:00 -> PAUSED (2) at 00:47
+  const rowsContOnly = [
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.CONTINUE_PREVIOUS_DAY, timeStamp: dayStart },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayStart + 47 * MIN },
+  ];
+  const builtCont = buildUsageEvents(rowsContOnly, { sinceMs: dayStart - 3_600_000, untilMs: dayEnd });
+  assert.equal(builtCont.gaps.length, 0, 'CONTINUE_PREVIOUS_DAY prevents false orphan_background');
+  const todayCont = computeDayForegroundTotalsFromStoredEvents(builtCont.events, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+  });
+  assert.equal(todayCont.find((r) => r.packageName === CHATGPT)?.totalMs, 47 * MIN);
+});
+
+test('compares active foreground total (47m) vs 15-min-merged sitting span (1h 9m) when switching between ChatGPT and Mi Doc Viewer/WhatsApp, and verifies filterUsageStatsBucketsForDay', () => {
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const rollover0530 = Date.parse('2026-10-28T00:00:00.000Z');
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const MI_DOC = 'cn.wps.moffice_eng.xiaomi.lite';
+  const WHATSAPP = 'com.whatsapp';
+
+  const tBase = dayStart + 9 * 3_600_000; // 09:00 IST
+  // ChatGPT 20m -> Mi Doc Viewer 12m (<=15m!) -> ChatGPT 17m -> WhatsApp 10m (<=15m!) -> ChatGPT 10m
+  const rows = [
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: tBase },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: tBase + 20 * MIN },
+    { packageName: MI_DOC, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: tBase + 20 * MIN },
+    { packageName: MI_DOC, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: tBase + 32 * MIN },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: tBase + 32 * MIN },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: tBase + 49 * MIN },
+    { packageName: WHATSAPP, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: tBase + 49 * MIN },
+    { packageName: WHATSAPP, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: tBase + 59 * MIN },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: tBase + 59 * MIN },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: tBase + 69 * MIN },
+  ];
+
+  // 1) Per-app active foreground totals match Digital Wellbeing (ChatGPT = 47m, Mi Doc = 12m, WhatsApp = 10m)
+  const fgTotals = computeDayForegroundTotals(rows, { window: { fromMs: dayStart, toMs: dayEnd } });
+  assert.equal(fgTotals.find((r) => r.packageName === CHATGPT)?.totalMs, 47 * MIN);
+  assert.equal(fgTotals.find((r) => r.packageName === MI_DOC)?.totalMs, 12 * MIN);
+  assert.equal(fgTotals.find((r) => r.packageName === WHATSAPP)?.totalMs, 10 * MIN);
+
+  // 2) Sessionized sitting spans merge same-app reopens <=15m, so ChatGPT spans [09:00, 10:09] = 69m (1h 9m)
+  const built = buildUsageEvents(rows, { sinceMs: dayStart, untilMs: dayEnd });
+  const { sessions } = sessionize(built.events);
+  const canonical = buildCanonicalDaySittings(
+    sessions.map((s) => ({ id: s.id, app: s.app, startMs: s.startMs, endMs: s.endMs })),
+    { window: { fromMs: dayStart, toMs: dayEnd } },
+  );
+  const chatGptSittingSpanMs = sumSittingSpanMs(canonical.filter((s) => s.app === CHATGPT));
+  assert.equal(chatGptSittingSpanMs, 69 * MIN);
+
+  // 3) Pre-install bucket fallback rejects yesterday's [Oct 27 05:30, Oct 28 05:30) bucket (midpoint Oct 27 17:30 < Oct 28 00:00)
+  //    and merges multiple intra-day buckets per packageName
+  const sanitizedBuckets = filterUsageStatsBucketsForDay(
+    [
+      { packageName: CHATGPT, totalTimeInForeground: 31 * MIN, firstTimeStamp: rollover0530 - 86_400_000, lastTimeStamp: rollover0530 },
+      { packageName: CHATGPT, totalTimeInForeground: 27 * MIN, firstTimeStamp: rollover0530, lastTimeStamp: rollover0530 + 3 * 3_600_000 },
+      { packageName: CHATGPT, totalTimeInForeground: 20 * MIN, firstTimeStamp: rollover0530 + 3 * 3_600_000, lastTimeStamp: rollover0530 + 6 * 3_600_000 },
+    ],
+    { window: { fromMs: dayStart, toMs: dayEnd } },
+  );
+  assert.deepEqual(sanitizedBuckets, [{ packageName: CHATGPT, totalMs: 47 * MIN }]);
+});
+
 
 

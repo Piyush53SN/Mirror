@@ -66,8 +66,8 @@ export function DebugView(): React.ReactElement {
           />
           <Text role="micro" tone="muted" theme={theme}>
             {[
-              'Per-app daily totals come from OS aggregate queryUsageStats (INTERVAL_DAILY, same as Digital Wellbeing), so they match by construction. Excludes launchers (HOME role via getLauncherPackages), Mirror itself, Settings, Play Store/Services, and all Package installers.',
-              'Session timeline comes from raw UsageEvents (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Show only open times (when app came to foreground), no durations, no scaling. Daily totals authoritative, open times informative.',
+              'Per-app daily totals sum raw OS UsageEvents foreground intervals clipped strictly to [00:00 local, min(now, 24:00 local)] with a 6h pre-midnight lookback, matching Digital Wellbeing without INTERVAL_DAILY pre-midnight bucket bleed. Excludes launchers (HOME role via getLauncherPackages), Mirror itself, Settings, Play Store/Services, and all Package installers.',
+              'Session timeline comes from raw UsageEvents (RESUMED=1, PAUSED=2, STOPPED=23, DESTROYED=24, CONTINUE_PREVIOUS_DAY=4, SCREEN_NON_INTERACTIVE=16, KEYGUARD_SHOWN=17, DEVICE_SHUTDOWN=26). Show only open times (when app came to foreground), no durations, no scaling. Daily totals authoritative, open times informative.',
               'Scores: approximate session data does NOT feed scores as exact. ScoreInput has approximate flag, confidenceFor caps score to 0.49 and level low when approximate true.',
             ].join('\n\n')}
           </Text>
@@ -85,7 +85,7 @@ export function DebugView(): React.ReactElement {
                 {`OS vs Mirror validation (max(10%,60s)): max diff ${validation.maxAbsPct.toFixed(1)}% / ${formatDuration(validation.maxAbsMs)}, ${validation.ok ? 'OK' : `FAIL ${validation.overThreshold.length} apps`}`}
               </Text>
               <Text role="micro" tone="muted" theme={theme}>
-                {`Period: ${selectedDay} local day, OS from queryUsageStats, Mirror from sessions (raw events). Should be same period.`}
+                {`Period: ${selectedDay} local day, OS from day-clipped UsageEvents, Mirror from stored foreground events (same period).`}
               </Text>
               {validation.rows.slice(0, 20).map((r) => (
                 <Text key={r.app} role="micro" tone="muted" theme={theme}>
@@ -121,7 +121,7 @@ export function DebugView(): React.ReactElement {
             singleDayRows.slice(0, 30).map((r) => (
               <View key={r.app} style={{ paddingVertical: theme.space(1) }}>
                 <Text role="micro" theme={theme}>
-                  {`${r.label} – Mirror ${formatDuration(r.mirrorMs)} / OS ${formatDuration(r.osMs)} diff ${r.diffPct.toFixed(1)}% ${r.status}`}
+                  {`${r.label} – Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}` : ''}`}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {r.app}

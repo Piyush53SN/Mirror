@@ -178,7 +178,7 @@ test('late-night share lowers that part proportionally', () => {
   ];
   const factor = scoreIqs({ window: DAY, sessions }).factors.find((f) => f.id === 'late_night');
   assert.equal(factor.points, 7.5);
-  assert.match(factor.detail, /50% of sitting time/);
+  assert.match(factor.detail, /50% of sitting spans/);
 });
 
 /* -------------------------------------------------------------- topic depth -- */

@@ -1,18 +1,19 @@
 import * as React from 'react';
 import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
-import type {
-  CuriositySplit,
-  DepthBand,
-  DiscoveryJourneyResult,
-  FocusWindowsResult,
-  InterestEvolutionResult,
-  OrphanDiagnosticSummary,
-  RabbitHoleResult,
-  Score,
-  ScoreGap,
-  ScoredSession,
-  ValidationResult,
-  WhatIfResult,
+import {
+  formatDurationShort,
+  type CuriositySplit,
+  type DepthBand,
+  type DiscoveryJourneyResult,
+  type FocusWindowsResult,
+  type InterestEvolutionResult,
+  type OrphanDiagnosticSummary,
+  type RabbitHoleResult,
+  type Score,
+  type ScoreGap,
+  type ScoredSession,
+  type ValidationResult,
+  type WhatIfResult,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 
@@ -26,6 +27,8 @@ export type SingleDayRow = {
   label: string;
   mirrorMs: number;
   osMs: number;
+  rawBucketMs?: number;
+  sittingSpanMs?: number;
   diffPct: number;
   status: string;
 };
@@ -50,14 +53,7 @@ export type DebugRawEvent = {
 };
 
 export function formatDuration(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  if (totalSec < 60) return `${totalSec}s`;
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
-  if (min < 60) return sec === 0 ? `${min}m` : `${min}m ${sec}s`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  return formatDurationShort(ms);
 }
 
 export function formatTime(ms: number): string {
@@ -122,6 +118,7 @@ export type MirrorAppContextValue = {
   loading: boolean;
   error: string | null;
   lastCollect: string | null;
+  lastSyncedAt: string | null;
   collectingSince: string | null;
   keyMismatch: { oldKey: string; newKey: string } | null;
   dismissKeyMismatch: () => void;
@@ -148,6 +145,7 @@ export type MirrorAppContextValue = {
   curiosity: CuriositySplit | null;
   depthBands: DepthBand[];
   dayScoredSessions: ScoredSession[];
+  sittingSpanMs: number;
   dayScoreGaps: ScoreGap[];
 
   evolution: InterestEvolutionResult | null;

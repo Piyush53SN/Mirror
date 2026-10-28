@@ -12,7 +12,16 @@
 /* eslint-disable no-console */
 import * as SQLite from 'expo-sqlite';
 import { MirrorStore, type StoreResetAudit, type StoreResetReason } from '@mirror/store';
-import { buildUsageEvents, collectUsage, describeGapSummary, validateDailyTotals, isIgnoredSystemApp } from '@mirror/core-analytics';
+import {
+  DEFAULT_MAX_INTERVAL_MS,
+  buildUsageEvents,
+  collectUsage,
+  computeDayForegroundTotals,
+  computeDayForegroundTotalsFromStoredEvents,
+  describeGapSummary,
+  filterUsageStatsBucketsForDay,
+  validateDailyTotals,
+} from '@mirror/core-analytics';
 import type { OsTotal } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
@@ -37,8 +46,12 @@ export type MirrorRuntime = {
   ingestRecent(now?: number): ReturnType<typeof ingestRecentDays>;
   /** What Mirror could not measure, in words and numbers. */
   dataQuality(range?: { fromMs?: number; toMs?: number }): Promise<DataQuality>;
-  /** OS-reported totals for validation */
+  /** OS-reported day-clipped foreground totals (matches Digital Wellbeing) */
   osTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
+  /** Mirror's stored day-clipped foreground totals from `events` */
+  storedForegroundTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
+  /** Raw unclipped `queryUsageStats(INTERVAL_DAILY)` totals for debug comparison */
+  rawBucketTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Validate Mirror vs OS totals */
   validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
   /** Cursor state – where collection started, for "collecting since" line */
@@ -124,10 +137,10 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                   dEndDate.setDate(dEndDate.getDate() + 1);
                   const dStart = dStartDate.getTime();
                   const dEnd = dEndDate.getTime();
-                  const rawDay = await usage.queryEvents(dStart - 3_600_000, dEnd);
+                  const rawDay = await usage.queryEvents(dStart - DEFAULT_MAX_INTERVAL_MS, dEnd);
                   if (rawDay.length > 0) {
                     const rebuiltDay = buildUsageEvents(rawDay, {
-                      sinceMs: dStart - 3_600_000,
+                      sinceMs: dStart - DEFAULT_MAX_INTERVAL_MS,
                       untilMs: dEnd,
                       ignorePackages: launcherPkgs,
                       gapFloorMs: dStart,
@@ -139,10 +152,10 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                 await store.setCursor('lifecycle_repair_v27', now);
               }
 
-              const rawToday = await usage.queryEvents(fromDayMs - 3_600_000, now);
+              const rawToday = await usage.queryEvents(fromDayMs - DEFAULT_MAX_INTERVAL_MS, now);
               if (rawToday.length > 0) {
                 const rebuiltToday = buildUsageEvents(rawToday, {
-                  sinceMs: fromDayMs - 3_600_000,
+                  sinceMs: fromDayMs - DEFAULT_MAX_INTERVAL_MS,
                   untilMs: now,
                   ignorePackages: launcherPkgs,
                   gapFloorMs: fromDayMs,
@@ -174,32 +187,97 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         const summary = await store.gapSummary(range);
         return { ...summary, sentence: describeGapSummary(summary) };
       },
-      osTotals: async (range) => {
+      storedForegroundTotals: async (range) => {
+        try {
+          const now = Date.now();
+          const effectiveToMs = Math.min(range.toMs, now);
+          if (effectiveToMs <= range.fromMs) return [];
+          let launcherPkgs: string[] = [];
+          try {
+            launcherPkgs = await usage.getLauncherPackages();
+          } catch {}
+          const storedRows = await store.events({
+            from: range.fromMs - DEFAULT_MAX_INTERVAL_MS,
+            to: effectiveToMs + DEFAULT_MAX_INTERVAL_MS,
+          });
+          if (storedRows.length === 0) return [];
+          const storedEvents = storedRows
+            .map(
+              (r) =>
+                r.payload as unknown as {
+                  kind: 'app_foreground' | 'app_background';
+                  app: string;
+                  at: string;
+                  duration_ms?: number;
+                },
+            )
+            .filter((e) => e.kind === 'app_background' && typeof e.duration_ms === 'number');
+          return computeDayForegroundTotalsFromStoredEvents(storedEvents, {
+            window: range,
+            nowMs: now,
+            ignorePackages: launcherPkgs,
+          });
+        } catch {
+          return [];
+        }
+      },
+      rawBucketTotals: async (range) => {
         try {
           const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
-          return rows.map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
+          const byPkg = new Map<string, number>();
+          for (const r of rows) {
+            if (!r.packageName || r.totalTimeInForeground <= 0) continue;
+            byPkg.set(r.packageName, (byPkg.get(r.packageName) ?? 0) + r.totalTimeInForeground);
+          }
+          return [...byPkg.entries()]
+            .map(([packageName, totalMs]) => ({ packageName, totalMs }))
+            .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+        } catch {
+          return [];
+        }
+      },
+      osTotals: async (range) => {
+        try {
+          const now = Date.now();
+          const effectiveToMs = Math.min(range.toMs, now);
+          if (effectiveToMs <= range.fromMs) return [];
+          let launcherPkgs: string[] = [];
+          try {
+            launcherPkgs = await usage.getLauncherPackages();
+          } catch {}
+          if (await usage.hasPermission()) {
+            const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
+            const rawRows = await usage.queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs);
+            if (rawRows.length > 0) {
+              return computeDayForegroundTotals(rawRows, {
+                window: range,
+                nowMs: now,
+                lookbackMs: DEFAULT_MAX_INTERVAL_MS,
+                ignorePackages: launcherPkgs,
+              });
+            }
+          }
+          // Fallback for days older than Android's ~7-day UsageEvents buffer:
+          // prefer Mirror's stored day-clipped foreground intervals, falling back
+          // to midpoint-filtered INTERVAL_DAILY buckets only for pre-install days.
+          const fromStored = await singleton!.storedForegroundTotals(range);
+          if (fromStored.length > 0) return fromStored;
+          const bucketRows = await usage.queryUsageStats(range.fromMs, effectiveToMs);
+          return filterUsageStatsBucketsForDay(bucketRows, {
+            window: range,
+            ignorePackages: launcherPkgs,
+          });
         } catch {
           return [];
         }
       },
       validate: async (range) => {
         try {
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
-          const launcherSet = new Set(launcherPkgs);
-          const osRows = await usage.queryUsageStats(range.fromMs, range.toMs);
-          const osTotals: OsTotal[] = osRows
-            .filter((r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName))
-            .map((r) => ({ packageName: r.packageName, totalMs: r.totalTimeInForeground }));
-          const sessions = await store.sessions({ fromMs: range.fromMs, toMs: range.toMs });
-          const mirrorMap = new Map<string, number>();
-          for (const s of sessions) {
-            if (launcherSet.has(s.app) || isIgnoredSystemApp(s.app)) continue;
-            mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + s.duration_ms);
-          }
-          const mirrorTotals = [...mirrorMap.entries()].map(([app, totalMs]) => ({ app, totalMs }));
+          const [osTotals, storedTotals] = await Promise.all([
+            singleton!.osTotals(range),
+            singleton!.storedForegroundTotals(range),
+          ]);
+          const mirrorTotals = storedTotals.map((r) => ({ app: r.packageName, totalMs: r.totalMs }));
           return validateDailyTotals(mirrorTotals, osTotals);
         } catch {
           return { rows: [], maxAbsPct: 0, maxAbsMs: 0, overThreshold: [], ok: true };

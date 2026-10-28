@@ -50,7 +50,7 @@ export function WhyScoreSheet({
           ))}
         </View>
         <Callout theme={theme} tone="neutral">
-          {`Current max is /${iqs.max}: only measured factors enter the denominator — session length (25, needs 5+ sittings)${iqs.factors.find((f) => f.id === 'switching')?.measurable ? ', switching (15)' : ' [switching hidden until 3+ sittings & 15+ min active]'}${iqs.factors.find((f) => f.id === 'late_night')?.measurable ? ', late-night (15)' : ' [late-night hidden until 15+ min sitting time]'}${iqs.factors.find((f) => f.id === 'deliberate' || f.id === 'deliberate_share')?.measurable ? ', deliberate share (20)' : ''}. Small-sample rates leave the max rather than counting as zero (reaches /75 with 5+ decisive labels and 15+ min; /100 adds Tier A/B/C topic depth).`}
+          {`Current max is /${iqs.max}: only measured factors enter the denominator — session length (25, needs 5+ sittings)${iqs.factors.find((f) => f.id === 'switching')?.measurable ? ', switching (15)' : ' [switching hidden until 3+ sittings & 15+ min active]'}${iqs.factors.find((f) => f.id === 'late_night')?.measurable ? ', late-night (15)' : ' [late-night hidden until 15+ min sitting spans]'}${iqs.factors.find((f) => f.id === 'deliberate' || f.id === 'deliberate_share')?.measurable ? ', deliberate share (20)' : ''}. Small-sample rates leave the max rather than counting as zero (reaches /75 with 5+ decisive labels and 15+ min; /100 adds Tier A/B/C topic depth).`}
         </Callout>
       </View>
     </Sheet>

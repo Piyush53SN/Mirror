@@ -29,6 +29,7 @@ import {
   isIgnoredSystemApp,
   scoreIqs,
   sessionBands,
+  sumSittingSpanMs,
   summarizeOrphanDrops,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
@@ -62,6 +63,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [lastCollect, setLastCollect] = React.useState<string | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = React.useState<string | null>(null);
   const [copyStatus, setCopyStatus] = React.useState<string | null>(null);
   const [keyMismatch, setKeyMismatch] = React.useState<{ oldKey: string; newKey: string } | null>(null);
   const [lastReset, setLastReset] = React.useState<StoreResetAudit | null>(null);
@@ -150,9 +152,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           );
           const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
           const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
-          const totals: DailyTotal[] = filteredOs
-            .map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs }))
-            .sort((a, b) => b.totalMs - a.totalMs);
+          const byAppDenied = new Map<string, number>();
+          for (const r of filteredOs) {
+            byAppDenied.set(r.packageName, (byAppDenied.get(r.packageName) ?? 0) + r.totalMs);
+          }
+          const totals: DailyTotal[] = [...byAppDenied.entries()]
+            .map(([app, totalMs]) => ({ app, label: resolved[app] ?? app, totalMs }))
+            .sort((a, b) => b.totalMs - a.totalMs || a.app.localeCompare(b.app));
           if (!isCurrent()) return;
           setQuality(q);
           setDailyTotals(totals);
@@ -222,9 +228,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         );
         const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
         const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
-        const totals: DailyTotal[] = filteredOs
-          .map((r) => ({ app: r.packageName, label: resolved[r.packageName] ?? r.packageName, totalMs: r.totalMs }))
-          .sort((a, b) => b.totalMs - a.totalMs);
+        const osMap = new Map<string, number>();
+        for (const r of filteredOs) {
+          osMap.set(r.packageName, (osMap.get(r.packageName) ?? 0) + r.totalMs);
+        }
+        const totals: DailyTotal[] = [...osMap.entries()]
+          .map(([app, totalMs]) => ({ app, label: resolved[app] ?? app, totalMs }))
+          .sort((a, b) => b.totalMs - a.totalMs || a.app.localeCompare(b.app));
 
         const sessDay = await runtime.store.sessions({ fromMs: dayFrom, toMs: dayTo });
         const sessResolved = await resolveAppLabels(sessDay.map((s) => s.app));
@@ -291,6 +301,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setDayWindow({ day: targetDay, fromMs: dayFrom, toMs: dayTo });
         setDayScoredSessions(canonicalSittings);
         setDayScoreGaps(scoreGaps);
+        setLastSyncedAt(
+          new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        );
         setDayReady(true);
 
         try {
@@ -364,27 +377,39 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           }
         }
 
-        const osMap = new Map<string, number>();
-        for (const r of filteredOs) osMap.set(r.packageName, r.totalMs);
-
         try {
           const v = await runtime.validate({ fromMs: dayFrom, toMs: dayTo });
           if (isCurrent()) setValidation(v);
         } catch {}
 
         try {
-          const mirrorMap = new Map<string, number>();
+          const [storedFg, rawBuckets] = await Promise.all([
+            runtime.storedForegroundTotals({ fromMs: dayFrom, toMs: dayTo }),
+            runtime.rawBucketTotals({ fromMs: dayFrom, toMs: dayTo }),
+          ]);
+          const storedMap = new Map<string, number>();
+          for (const r of storedFg) storedMap.set(r.packageName, r.totalMs);
+          const rawBucketMap = new Map<string, number>();
+          for (const r of rawBuckets) rawBucketMap.set(r.packageName, r.totalMs);
+          const sittingMap = new Map<string, number>();
           for (const s of canonicalSittings) {
-            mirrorMap.set(s.app, (mirrorMap.get(s.app) ?? 0) + (s.endMs - s.startMs));
+            sittingMap.set(s.app, (sittingMap.get(s.app) ?? 0) + (s.endMs - s.startMs));
           }
-          const allApps = new Set<string>([...mirrorMap.keys(), ...osMap.keys()]);
+          const allApps = new Set<string>([
+            ...storedMap.keys(),
+            ...osMap.keys(),
+            ...sittingMap.keys(),
+            ...rawBucketMap.keys(),
+          ]);
           const candidateApps = [...allApps].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
           const resolvedDay = await resolveAppLabels(candidateApps);
           const filteredApps = candidateApps.filter((app) => !isIgnoredSystemApp(app, resolvedDay[app]));
           const rows: SingleDayRow[] = filteredApps
             .map((app) => {
-              const mirrorMs = mirrorMap.get(app) ?? 0;
+              const mirrorMs = storedMap.get(app) ?? 0;
               const osMs = osMap.get(app) ?? 0;
+              const rawBucketMs = rawBucketMap.get(app) ?? 0;
+              const appSittingSpanMs = sittingMap.get(app) ?? 0;
               const diff = osMs > 0 ? ((mirrorMs - osMs) / osMs) * 100 : 0;
               const status =
                 Math.abs(mirrorMs - osMs) <= Math.max(osMs * 0.1, 60_000)
@@ -392,9 +417,18 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
                   : mirrorMs < osMs
                     ? 'low'
                     : 'high';
-              return { app, label: resolvedDay[app] ?? app, mirrorMs, osMs, diffPct: diff, status };
+              return {
+                app,
+                label: resolvedDay[app] ?? app,
+                mirrorMs,
+                osMs,
+                rawBucketMs,
+                sittingSpanMs: appSittingSpanMs,
+                diffPct: diff,
+                status,
+              };
             })
-            .sort((a, b) => b.osMs - a.osMs);
+            .sort((a, b) => b.osMs - a.osMs || b.rawBucketMs! - a.rawBucketMs!);
           if (isCurrent()) setSingleDayRows(rows);
         } catch {}
       } catch (e) {
@@ -623,6 +657,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setLatestSyncOrphans(null);
           setRaw24hOrphans(null);
           setCollectingSince(null);
+          setLastSyncedAt(null);
           setEvolution(null);
           setDiscovery(null);
           setRabbitHole(null);
@@ -720,6 +755,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     [dayScoredSessions],
   );
 
+  const sittingSpanMs: number = React.useMemo(
+    () => sumSittingSpanMs(dayScoredSessions),
+    [dayScoredSessions],
+  );
+
   const copyRawEvents = React.useCallback(async () => {
     try {
       const json = JSON.stringify(
@@ -772,6 +812,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       loading,
       error,
       lastCollect,
+      lastSyncedAt,
       collectingSince,
       keyMismatch,
       dismissKeyMismatch,
@@ -795,6 +836,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       curiosity,
       depthBands,
       dayScoredSessions,
+      sittingSpanMs,
       dayScoreGaps,
       evolution,
       discovery,
@@ -834,6 +876,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       loading,
       error,
       lastCollect,
+      lastSyncedAt,
       collectingSince,
       keyMismatch,
       dismissKeyMismatch,
@@ -856,6 +899,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       curiosity,
       depthBands,
       dayScoredSessions,
+      sittingSpanMs,
       dayScoreGaps,
       evolution,
       discovery,
