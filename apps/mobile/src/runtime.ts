@@ -16,6 +16,7 @@ import {
   DEFAULT_MAX_INTERVAL_MS,
   buildUsageEvents,
   collectUsage,
+  computeDayForegroundTotals,
   computeDayForegroundTotalsFromStoredEvents,
   describeGapSummary,
   resolveDayForegroundTotals,
@@ -54,6 +55,8 @@ export type MirrorRuntime = {
   osTotalsWithSource(range: { fromMs: number; toMs: number }): Promise<ResolvedDayForegroundTotals>;
   /** OS-reported day-clipped foreground totals (matches Digital Wellbeing on live days) */
   osTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
+  /** Pure live OS `UsageEvents` foreground totals clipped to `range` (never falls back to SQLite `stored_events`) */
+  liveDayForegroundTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Mirror's stored day-clipped foreground totals from `events` */
   storedForegroundTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Raw unclipped `queryUsageStats(INTERVAL_DAILY)` bucket diagnostics for debug comparison */
@@ -102,6 +105,28 @@ export async function createRuntime(options: { allowContent?: boolean; retention
 
     const usage = nativeUsageSource();
     const offsetNow = () => -new Date().getTimezoneOffset();
+    const FALLBACK_HOME_LAUNCHERS = [
+      'com.mi.android.globallauncher',
+      'com.miui.home',
+      'com.google.android.apps.nexuslauncher',
+      'com.sec.android.app.launcher',
+      'com.android.launcher',
+      'com.android.launcher3',
+      'com.oppo.launcher',
+      'com.oneplus.launcher',
+      'com.nothing.launcher',
+    ];
+    let cachedLauncherPkgs: string[] = [];
+    const resolveLaunchers = async (): Promise<string[]> => {
+      try {
+        const pkgs = await usage.getLauncherPackages();
+        if (Array.isArray(pkgs) && pkgs.length > 0) {
+          cachedLauncherPkgs = pkgs;
+          return pkgs;
+        }
+      } catch {}
+      return cachedLauncherPkgs.length > 0 ? cachedLauncherPkgs : FALLBACK_HOME_LAUNCHERS;
+    };
 
     // Single-flight guards so AppState 'active', initial mount, Refresh, and
     // background WorkManager tasks coalesce rather than racing on cursor_state.
@@ -114,17 +139,17 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       collectNow: async (now = Date.now()) => {
         if (collectInFlight) return collectInFlight;
         collectInFlight = (async () => {
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
+          const launcherPkgs = await resolveLaunchers();
           const res = await collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
-          // Keep stored `data_gaps` truthful to the authoritative raw UsageEvents stream:
-          //   1. One-time 7-day repair (`lifecycle_repair_v27`) replaces stale pre-fix
-          //      stored gap rows on recent days still held in Android's UsageEvents buffer.
-          //   2. Every sync reconciles today's `[fromDayMs, toDayMs)` gap rows from a
-          //      single full-day raw-stream pass so incremental foreground syncs never
-          //      accumulate or preserve stale earlier-day orphan counts.
+          // Keep stored `events` and `data_gaps` truthful to the authoritative raw
+          // UsageEvents stream:
+          //   1. One-time 7-day repair (`lifecycle_repair_v28`) atomically replaces
+          //      leftover/duplicate pre-fix `app_foreground`/`app_background` intervals
+          //      and stale gap rows on recent days still held in Android's UsageEvents
+          //      buffer, then re-ingests derived sessions for days t-6..t-3.
+          //   2. Every sync reconciles today's `[fromDayMs, toDayMs)` OS usage events
+          //      and gap rows from a single full-day raw-stream pass so incremental
+          //      overlap syncs never leave duplicate `app_background` intervals behind.
           try {
             if (await usage.hasPermission()) {
               const todayStart = new Date(now);
@@ -134,9 +159,9 @@ export async function createRuntime(options: { allowContent?: boolean; retention
               nextDay.setDate(nextDay.getDate() + 1);
               const toDayMs = nextDay.getTime();
 
-              const repairMarker = await store.getCursor('lifecycle_repair_v27');
+              const repairMarker = await store.getCursor('lifecycle_repair_v28');
               if (repairMarker === null) {
-                for (let d = 1; d <= 6; d += 1) {
+                for (let d = 6; d >= 1; d -= 1) {
                   const dStartDate = new Date(todayStart);
                   dStartDate.setDate(dStartDate.getDate() - d);
                   const dEndDate = new Date(dStartDate);
@@ -151,11 +176,14 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                       ignorePackages: launcherPkgs,
                       gapFloorMs: dStart,
                     });
-                    await store.appendEvents(rebuiltDay.events);
+                    await store.replaceUsageEventsForWindow({ fromMs: dStart, toMs: dEnd }, rebuiltDay.events);
                     await store.replaceGapsForWindow('usage_stats', { fromMs: dStart, toMs: dEnd }, rebuiltDay.gaps, dEnd - 1);
+                    if (d >= 3) {
+                      await ingestDay(store, localDayKey(dStart, offsetNow()), offsetNow());
+                    }
                   }
                 }
-                await store.setCursor('lifecycle_repair_v27', now);
+                await store.setCursor('lifecycle_repair_v28', now);
               }
 
               const rawToday = await usage.queryEvents(fromDayMs - DEFAULT_MAX_INTERVAL_MS, now);
@@ -166,7 +194,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                   ignorePackages: launcherPkgs,
                   gapFloorMs: fromDayMs,
                 });
-                await store.appendEvents(rebuiltToday.events);
+                await store.replaceUsageEventsForWindow({ fromMs: fromDayMs, toMs: toDayMs }, rebuiltToday.events);
                 await store.replaceGapsForWindow('usage_stats', { fromMs: fromDayMs, toMs: toDayMs }, rebuiltToday.gaps, now);
               }
             }
@@ -193,15 +221,38 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         const summary = await store.gapSummary(range);
         return { ...summary, sentence: describeGapSummary(summary) };
       },
+      liveDayForegroundTotals: async (range) => {
+        try {
+          const now = Date.now();
+          const effectiveToMs = Math.min(range.toMs, now);
+          if (effectiveToMs <= range.fromMs) return [];
+          const hasPerm = await usage.hasPermission().catch(() => false);
+          if (!hasPerm) return [];
+          const launcherPkgs = await resolveLaunchers();
+          const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
+          const rawRows = await usage
+            .queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs)
+            .catch(() => []);
+          const hasLiveInDay = rawRows.some(
+            (r) => r && typeof r.timeStamp === 'number' && r.timeStamp < effectiveToMs,
+          );
+          if (!hasLiveInDay) return [];
+          return computeDayForegroundTotals(rawRows, {
+            window: range,
+            nowMs: now,
+            lookbackMs: DEFAULT_MAX_INTERVAL_MS,
+            ignorePackages: launcherPkgs,
+          });
+        } catch {
+          return [];
+        }
+      },
       storedForegroundTotals: async (range) => {
         try {
           const now = Date.now();
           const effectiveToMs = Math.min(range.toMs, now);
           if (effectiveToMs <= range.fromMs) return [];
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
+          const launcherPkgs = await resolveLaunchers();
           const storedRows = await store.events({
             from: range.fromMs - DEFAULT_MAX_INTERVAL_MS,
             to: effectiveToMs + DEFAULT_MAX_INTERVAL_MS,
@@ -229,10 +280,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       rawBucketTotals: async (range) => {
         try {
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
+          const launcherPkgs = await resolveLaunchers();
           const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
           return summarizeUsageStatsBucketsForDay(rows, {
             window: range,
@@ -249,10 +297,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           if (effectiveToMs <= range.fromMs) {
             return { totals: [], source: 'os_events' };
           }
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
+          const launcherPkgs = await resolveLaunchers();
           const hasPerm = await usage.hasPermission().catch(() => false);
           const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
           const [rawRows, storedRows, earliestStoredEventMs] = await Promise.all([
@@ -389,11 +434,12 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         );
         await store.deleteAll();
         if (reason === 'user_delete_all') {
-          // Advance the collector watermark and one-time repair marker to `now`
+          // Advance the collector watermark and one-time repair markers to `now`
           // so an explicit "Delete all local data" does not silently re-import
           // the previous 1–6 days from Android's UsageEvents buffer.
           await store.setCursorState('usage_stats', { at: now, open: [] });
           await store.setCursor('lifecycle_repair_v27', now);
+          await store.setCursor('lifecycle_repair_v28', now);
         }
         await store.recordResetAudit(audit);
         return audit;

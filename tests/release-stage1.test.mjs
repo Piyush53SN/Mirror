@@ -125,3 +125,21 @@ test('CHANGELOG.md reflects v0.1 day-clipped UsageEvents totals and P3 features 
   assert.doesNotMatch(narrativeOnly, /from OS aggregate/i);
 });
 
+test('DebugView, MirrorAppProvider, and runtime flag any app differing from OS by > max(10%, 60s) and reconcile leftover stored intervals', () => {
+  const debugView = readFileSync(join(ROOT, 'apps', 'mobile', 'src', 'components', 'DebugView.tsx'), 'utf8');
+  const provider = readFileSync(join(ROOT, 'apps', 'mobile', 'src', 'MirrorAppProvider.tsx'), 'utf8');
+  const runtime = readFileSync(join(ROOT, 'apps', 'mobile', 'src', 'runtime.ts'), 'utf8');
+
+  assert.match(provider, /evaluateAppOsDiscrepancies/);
+  assert.match(provider, /liveDayForegroundTotals/);
+  assert.match(provider, /'com\.openai\.chatgpt'/);
+
+  assert.match(debugView, /flaggedDiscrepancies/);
+  assert.match(debugView, /max\(10%, 60s\)/);
+  assert.match(debugView, /\[FLAGGED/);
+  assert.match(debugView, /4-source trace: Home/);
+
+  assert.match(runtime, /replaceUsageEventsForWindow/);
+  assert.match(runtime, /lifecycle_repair_v28/);
+});
+

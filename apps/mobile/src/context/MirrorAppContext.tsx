@@ -6,6 +6,7 @@ import {
   type DayTotalsSource,
   type DepthBand,
   type DiscoveryJourneyResult,
+  type FlaggedAppDiscrepancy,
   type FocusWindowsResult,
   type InterestEvolutionResult,
   type OrphanDiagnosticSummary,
@@ -18,7 +19,7 @@ import {
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 
-export type { DayTotalsSource };
+export type { DayTotalsSource, FlaggedAppDiscrepancy };
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
 export type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -27,6 +28,7 @@ export type DailyTotal = { app: string; label: string; totalMs: number };
 export type SingleDayRow = {
   app: string;
   label: string;
+  displayedMs?: number;
   mirrorMs: number;
   osMs: number;
   rawBucketMs?: number;
@@ -37,6 +39,8 @@ export type SingleDayRow = {
   sittingSpanMs?: number;
   diffPct: number;
   status: string;
+  flagged?: boolean;
+  flagReason?: string;
 };
 
 export type ScaledSessionRow = {
@@ -141,6 +145,7 @@ export type MirrorAppContextValue = {
   labels: Record<string, string>;
   quality: DataQuality | null;
   validation: ValidationResult | null;
+  flaggedDiscrepancies: FlaggedAppDiscrepancy[];
   singleDayRows: SingleDayRow[];
   debugEvents: DebugRawEvent[];
   honkaiDebug: DebugRawEvent[];

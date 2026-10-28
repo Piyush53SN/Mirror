@@ -677,3 +677,67 @@ test('earliestEventAt ignores intent_label rows and earliestSessionStart returns
   }
 });
 
+test('replaceUsageEventsForWindow purges leftover/duplicate OS intervals (e.g. frozen ChatGPT 78m / 31m+47m) while preserving intent_label and earlier-day sittings', async () => {
+  const { s, close } = await makeStore();
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const dayFrom = T0;
+  const dayTo = T0 + 86_400_000;
+  try {
+    // 1) Yesterday sitting (ends before dayFrom -> must NOT be touched)
+    // 2) User intent_label inside today -> must NOT be touched
+    // 3) Stale pre-fix ChatGPT 78m sitting + duplicate incremental 31m sitting inside today -> MUST be purged
+    await s.appendEvents([
+      foreground({ id: 'evt_fg_yest01', app: 'com.whatsapp', at: iso(-50 * MIN) }),
+      background({ id: 'evt_bg_yest01', app: 'com.whatsapp', at: iso(-30 * MIN), duration_ms: 20 * MIN }),
+      {
+        schema_version: 1,
+        id: 'lbl_keep_0001',
+        kind: 'intent_label',
+        at: iso(120 * MIN),
+        tier: 'D',
+        origin: 'user',
+        content: 'metadata',
+        session_id: 'ses_00000001',
+        label: 'intentional',
+      },
+      foreground({ id: 'evt_fg_stale78', app: CHATGPT, at: iso(20 * MIN) }),
+      background({ id: 'evt_bg_stale78', app: CHATGPT, at: iso(98 * MIN), duration_ms: 78 * MIN }),
+      foreground({ id: 'evt_fg_dup31', app: CHATGPT, at: iso(36 * MIN) }),
+      background({ id: 'evt_bg_dup31', app: CHATGPT, at: iso(67 * MIN), duration_ms: 31 * MIN }),
+    ]);
+
+    // Authoritative rebuilt today events: ChatGPT 47m ([20m, 67m]) + YouTube 36m ([200m, 236m])
+    const rebuiltToday = [
+      foreground({ id: 'evt_fg_clean47', app: CHATGPT, at: iso(20 * MIN) }),
+      background({ id: 'evt_bg_clean47', app: CHATGPT, at: iso(67 * MIN), duration_ms: 47 * MIN }),
+      foreground({ id: 'evt_fg_yt36', app: 'com.google.android.youtube', at: iso(200 * MIN) }),
+      background({ id: 'evt_bg_yt36', app: 'com.google.android.youtube', at: iso(236 * MIN), duration_ms: 36 * MIN }),
+    ];
+
+    const res = await s.replaceUsageEventsForWindow({ fromMs: dayFrom, toMs: dayTo }, rebuiltToday);
+    assert.equal(res.deleted, 4, 'purges both stale 78m pair and duplicate 31m pair');
+    assert.equal(res.inserted, 4, 'inserts clean 47m ChatGPT pair + 36m YouTube pair');
+
+    // Re-running with identical authoritative events is a zero-churn no-op
+    const secondPass = await s.replaceUsageEventsForWindow({ fromMs: dayFrom, toMs: dayTo }, rebuiltToday);
+    assert.equal(secondPass.deleted, 0);
+    assert.equal(secondPass.inserted, 0);
+    assert.equal(secondPass.unchanged, 4);
+
+    const allEvents = await s.events();
+    const ids = allEvents.map((e) => e.id).sort();
+    assert.deepEqual(ids, [
+      'evt_bg_clean47',
+      'evt_bg_yest01',
+      'evt_bg_yt36',
+      'evt_fg_clean47',
+      'evt_fg_yest01',
+      'evt_fg_yt36',
+      'lbl_keep_0001',
+    ]);
+  } finally {
+    close();
+  }
+});
+

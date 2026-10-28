@@ -7,6 +7,7 @@ import type {
   DayTotalsSource,
   DepthBand,
   DiscoveryJourneyResult,
+  FlaggedAppDiscrepancy,
   FocusWindowsResult,
   InterestEvolutionResult,
   OrphanDiagnosticSummary,
@@ -27,6 +28,7 @@ import {
   computeRabbitHoles,
   computeWhatIf,
   curiositySplit,
+  evaluateAppOsDiscrepancies,
   getTopInvalidPackages,
   isIgnoredSystemApp,
   scoreIqs,
@@ -61,6 +63,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [labels, setLabels] = React.useState<Record<string, string>>({});
   const [quality, setQuality] = React.useState<DataQuality | null>(null);
   const [validation, setValidation] = React.useState<ValidationResult | null>(null);
+  const [flaggedDiscrepancies, setFlaggedDiscrepancies] = React.useState<FlaggedAppDiscrepancy[]>([]);
   const [debugEvents, setDebugEvents] = React.useState<DebugRawEvent[]>([]);
   const [invalidTop, setInvalidTop] = React.useState<{ pkg: string; count: number }[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -221,6 +224,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       await runtime.ingestRecent();
       if (!isCurrent()) return;
 
+      let flaggedAppsForDebug = new Set<string>();
       try {
         const dayFrom = dayStartMs(targetDay);
         const dayTo = dayEndMs(targetDay);
@@ -392,10 +396,14 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         } catch {}
 
         try {
-          const [storedFg, rawBuckets] = await Promise.all([
+          const [liveDayFg, storedFg, rawBuckets] = await Promise.all([
+            runtime.liveDayForegroundTotals({ fromMs: dayFrom, toMs: dayTo }),
             runtime.storedForegroundTotals({ fromMs: dayFrom, toMs: dayTo }),
             runtime.rawBucketTotals({ fromMs: dayFrom, toMs: dayTo }),
           ]);
+          const liveDayFgMap = new Map<string, number>();
+          for (const r of liveDayFg) liveDayFgMap.set(r.packageName, r.totalMs);
+          const effectiveDayFgMap = liveDayFgMap.size > 0 ? liveDayFgMap : osMap;
           const storedMap = new Map<string, number>();
           for (const r of storedFg) storedMap.set(r.packageName, r.totalMs);
           const rawBucketMap = new Map<string, RawUsageBucketDiagnostic>();
@@ -407,22 +415,46 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           const allApps = new Set<string>([
             ...storedMap.keys(),
             ...osMap.keys(),
+            ...effectiveDayFgMap.keys(),
             ...sittingMap.keys(),
             ...rawBucketMap.keys(),
           ]);
           const candidateApps = [...allApps].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
           const resolvedDay = await resolveAppLabels(candidateApps);
           const filteredApps = candidateApps.filter((app) => !isIgnoredSystemApp(app, resolvedDay[app]));
+          const allowedSet = new Set(filteredApps);
+
+          const discrepancies = evaluateAppOsDiscrepancies({
+            displayedTotals: totals.filter((t) => allowedSet.has(t.app)).map((t) => ({ app: t.app, totalMs: t.totalMs })),
+            dayFgTotals: [...effectiveDayFgMap.entries()]
+              .filter(([pkg]) => allowedSet.has(pkg))
+              .map(([packageName, totalMs]) => ({ packageName, totalMs })),
+            storedTotals: [...storedMap.entries()]
+              .filter(([pkg]) => allowedSet.has(pkg))
+              .map(([packageName, totalMs]) => ({ packageName, totalMs })),
+            sittingTotals: [...sittingMap.entries()]
+              .filter(([pkg]) => allowedSet.has(pkg))
+              .map(([app, totalMs]) => ({ app, totalMs })),
+            rawBucketDiagnostics: [...rawBucketMap.values()].filter((d) => allowedSet.has(d.packageName)),
+            labels: resolvedDay,
+          });
+          flaggedAppsForDebug = new Set(discrepancies.map((d) => d.app));
+          const discrepancyByApp = new Map<string, FlaggedAppDiscrepancy>();
+          for (const d of discrepancies) discrepancyByApp.set(d.app, d);
+
           const rows: SingleDayRow[] = filteredApps
             .map((app) => {
+              const displayedMs = osMap.get(app) ?? 0;
               const mirrorMs = storedMap.get(app) ?? 0;
-              const osMs = osMap.get(app) ?? 0;
+              const osMs = effectiveDayFgMap.get(app) ?? 0;
               const rawDiag = rawBucketMap.get(app);
               const rawBucketMs = rawDiag?.totalMs ?? 0;
               const appSittingSpanMs = sittingMap.get(app) ?? 0;
-              const diff = osMs > 0 ? ((mirrorMs - osMs) / osMs) * 100 : 0;
-              const status =
-                Math.abs(mirrorMs - osMs) <= Math.max(osMs * 0.1, 60_000)
+              const diff = osMs > 0 ? ((mirrorMs - osMs) / osMs) * 100 : mirrorMs > 0 ? 100 : 0;
+              const disc = discrepancyByApp.get(app);
+              const status = disc
+                ? disc.status
+                : Math.abs(mirrorMs - osMs) <= Math.max(osMs * 0.1, 60_000)
                   ? 'ok'
                   : mirrorMs < osMs
                     ? 'low'
@@ -430,6 +462,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               return {
                 app,
                 label: resolvedDay[app] ?? app,
+                displayedMs,
                 mirrorMs,
                 osMs,
                 rawBucketMs,
@@ -440,10 +473,23 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
                 sittingSpanMs: appSittingSpanMs,
                 diffPct: diff,
                 status,
+                flagged: Boolean(disc),
+                flagReason: disc
+                  ? `${disc.comparison}: ${disc.diffMs >= 0 ? '+' : '-'}${Math.round(Math.abs(disc.diffMs) / 1000)}s (${disc.diffPct.toFixed(1)}%)`
+                  : undefined,
               };
             })
-            .sort((a, b) => b.osMs - a.osMs || b.rawBucketMs! - a.rawBucketMs!);
-          if (isCurrent()) setSingleDayRows(rows);
+            .sort((a, b) => {
+              const aFlag = a.flagged ? 1 : 0;
+              const bFlag = b.flagged ? 1 : 0;
+              if (aFlag !== bFlag) return bFlag - aFlag;
+              return b.osMs - a.osMs || (b.displayedMs ?? 0) - (a.displayedMs ?? 0) || b.rawBucketMs! - a.rawBucketMs!;
+            });
+          if (isCurrent()) {
+            setLabels((prev) => ({ ...prev, ...resolvedDay }));
+            setFlaggedDiscrepancies(discrepancies);
+            setSingleDayRows(rows);
+          }
         } catch {}
       } catch (e) {
         console.log('OS totals failed', e);
@@ -474,24 +520,27 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             setRaw24hOrphans(summarizeOrphanDrops(built24h.dropped, orphanLabels, 8));
           }
         } catch {}
-        const honkaiPkgs = [
+        const inspectedPkgs = new Set<string>([
+          'com.openai.chatgpt',
           'com.HoYoverse.hkrpgoversea',
           'com.miHoYo.hkrpg',
           'com.HoYoverse.StarRail',
           'com.miHoYo.GenshinImpact',
-        ];
-        const honkai = debug.filter((e) =>
-          honkaiPkgs.some(
-            (p) =>
-              e.packageName.toLowerCase().includes('hkrpg') ||
-              e.packageName.toLowerCase().includes('honkai') ||
-              e.packageName.toLowerCase().includes('genshin') ||
-              e.packageName === p,
-          ),
+          ...flaggedAppsForDebug,
+        ]);
+        const inspected = debug.filter(
+          (e) =>
+            inspectedPkgs.has(e.packageName) ||
+            e.packageName.toLowerCase().includes('chatgpt') ||
+            e.packageName.toLowerCase().includes('hkrpg') ||
+            e.packageName.toLowerCase().includes('honkai') ||
+            e.packageName.toLowerCase().includes('genshin'),
         );
-        if (honkai.length > 0 && isCurrent()) {
-          setHonkaiDebug(honkai.slice(-100));
-          console.log('Honkai/Genshin raw events (last 24h):', JSON.stringify(honkai, null, 2));
+        if (isCurrent()) {
+          setHonkaiDebug(inspected.slice(-120));
+          if (inspected.length > 0) {
+            console.log('Inspected/Flagged app raw events (last 24h):', JSON.stringify(inspected.slice(-60), null, 2));
+          }
         }
       } catch {}
 
@@ -657,6 +706,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setLastReset(audit);
           setKeyMismatch(null);
           setError(null);
+          setFlaggedDiscrepancies([]);
           setSessions([]);
           setDailyTotals([]);
           setDailyTotalsSource('os_events');
@@ -844,6 +894,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       labels,
       quality,
       validation,
+      flaggedDiscrepancies,
       singleDayRows,
       debugEvents,
       honkaiDebug,
@@ -908,6 +959,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       labels,
       quality,
       validation,
+      flaggedDiscrepancies,
       singleDayRows,
       debugEvents,
       honkaiDebug,

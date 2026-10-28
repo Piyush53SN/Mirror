@@ -482,8 +482,37 @@ function closeInterval(
 
 type OpenEntry = {
   earliestStart: number;
-  activities: Map<string, number>; // className -> startMs
+  activeClass: string;
+  activeStartMs: number;
+  /**
+   * Earlier Activity classes of this same package that transitioned directly to a
+   * newer in-app Activity (`A -> B`) without emitting `ACTIVITY_PAUSED (2)` first.
+   *
+   * Within a single Android package on one display, only ONE Activity (`activeClass`)
+   * is `RESUMED` at a time. Keeping `A` in an open refcount map previously left the
+   * entire package stuck "open" after `MainActivity` (`B`) paused whenever a splash,
+   * intent-router, share, or voice sub-activity `A` never emitted a separate `PAUSED`
+   * for `A` (inflating e.g. ChatGPT from 47m to 1h 18m). Storing `A` in
+   * `supersededClasses` instead lets a delayed `PAUSED(A)`/`STOPPED(A)`/`DESTROYED(A)`
+   * be absorbed cleanly without holding the package open once `B` pauses.
+   */
+  supersededClasses: Set<string>;
 };
+
+/**
+ * Transient system overlays/dialogs that appear *above* a foreground app without
+ * the user navigating away from that app (notification shade, volume/biometric UI,
+ * runtime permission dialog, share sheet, Play Services overlay). Full-screen
+ * ignored apps outside this set (launchers, Mirror itself, Settings, Play Store,
+ * Package installers) DO close the previous app interval on `ACTIVITY_RESUMED`.
+ */
+const NON_CLOSING_OVERLAY_PACKAGES = new Set<string>([
+  'com.android.systemui',
+  'com.google.android.permissioncontroller',
+  'com.android.permissioncontroller',
+  'com.android.intentresolver',
+  'com.google.android.gms',
+]);
 
 export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageOptions): BuildUsageResult {
   // Merge hard-coded ignored (Mirror itself, systemui etc) with dynamic launchers resolved via HOME role.
@@ -491,10 +520,6 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   // Now launcher detection is dynamic via PackageManager CATEGORY_HOME (needs <queries> for HOME).
   // For per-app daily totals, computeDayForegroundTotals sums closed intervals from
   // buildUsageEvents clipped strictly to [dayStart, min(dayEnd, now)], matching Digital Wellbeing.
-  // For session timeline (raw events), we keep per-activity tracking but:
-  // - Only launchers (HOME role) and Mirror itself close previous app on fg (user went home or opened Mirror)
-  // - SystemUI, settings, permissioncontroller etc are ignored WITHOUT closing previous (notification shade should not end game session)
-  // This fixes Honkai 31s vs OS 52m48s where systemui fg at 31s prematurely closed Honkai.
   const launcherSet = new Set<string>(options.ignorePackages ?? []);
   const systemIgnore = new Set<string>(DEFAULT_IGNORED_PACKAGES);
   const ignore = new Set<string>([...systemIgnore, ...launcherSet]);
@@ -504,27 +529,50 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const gaps: UsageGap[] = [];
 
   const ordered = [...rows].sort((a, b) => a.timeStamp - b.timeStamp);
+  // Real Android UsageEvents streams pair SCREEN_NON_INTERACTIVE (16) with
+  // SCREEN_INTERACTIVE (15) and KEYGUARD_SHOWN (17) with KEYGUARD_HIDDEN (18).
+  // Minimal synthetic unit-test fixtures may omit 15/18; checking presence keeps
+  // synthetic split-sync fixtures stateless while gating real screen-off / locked
+  // ghost resumes (e.g. background voice/config-change/rollover while screen is off)
+  // exactly like Digital Wellbeing.
+  const hasScreenInteractiveEvents = ordered.some(
+    (r) => r.eventType === USAGE_EVENT_TYPE.SCREEN_INTERACTIVE,
+  );
+  const hasKeyguardHiddenEvents = ordered.some(
+    (r) => r.eventType === USAGE_EVENT_TYPE.KEYGUARD_HIDDEN,
+  );
+  let screenInteractive = true;
+  let keyguardLocked = false;
+  let deferredInactive: { app: string; activeClass: string } | null = null;
+
   const open = new Map<string, OpenEntry>();
   const carriedIn = options.openIntervals ?? [];
   for (const interval of carriedIn) {
     if (!open.has(interval.app)) {
       if (interval.activities && interval.activities.length > 0) {
-        // Persisted per-class map
-        const actMap = new Map<string, number>();
         let earliest = interval.startMs;
         for (const a of interval.activities) {
-          actMap.set(a.className, a.startMs);
           if (a.startMs < earliest) earliest = a.startMs;
+        }
+        const active = interval.activities[interval.activities.length - 1]!;
+        const superseded = new Set<string>();
+        for (let i = 0; i < interval.activities.length - 1; i += 1) {
+          const cls = interval.activities[i]!.className;
+          if (cls !== active.className) superseded.add(cls);
         }
         open.set(interval.app, {
           earliestStart: earliest,
-          activities: actMap,
+          activeClass: active.className,
+          activeStartMs: active.startMs,
+          supersededClasses: superseded,
         });
       } else {
         // Legacy carried intervals have no className; use __carried__ placeholder
         open.set(interval.app, {
           earliestStart: interval.startMs,
-          activities: new Map([['__carried__', interval.startMs]]),
+          activeClass: '__carried__',
+          activeStartMs: interval.startMs,
+          supersededClasses: new Set(),
         });
       }
     }
@@ -549,12 +597,60 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const orphanPausedAt = new Map<string, number>();
   const RECENT_CLOSE_SUPPRESS_MS = 60_000;
 
+  const promoteDeferredIfInteractive = (atMs: number) => {
+    if (!screenInteractive || keyguardLocked || !deferredInactive) return;
+    const { app, activeClass } = deferredInactive;
+    deferredInactive = null;
+    if (atMs < options.sinceMs || atMs >= options.untilMs) return;
+    closedInStream.delete(app);
+    orphanPausedAt.delete(app);
+    if (!open.has(app)) {
+      open.set(app, {
+        earliestStart: atMs,
+        activeClass,
+        activeStartMs: atMs,
+        supersededClasses: new Set(),
+      });
+    }
+  };
+
   for (const row of ordered) {
+    // Track physical display wake (15) and keyguard unlock (18) before package checks
+    // because systemui/android emits these global state transitions.
+    if (row.eventType === USAGE_EVENT_TYPE.SCREEN_INTERACTIVE) {
+      screenInteractive = true;
+      promoteDeferredIfInteractive(row.timeStamp);
+      continue;
+    }
+    if (row.eventType === USAGE_EVENT_TYPE.KEYGUARD_HIDDEN) {
+      keyguardLocked = false;
+      promoteDeferredIfInteractive(row.timeStamp);
+      continue;
+    }
+    if (
+      screenInteractive &&
+      keyguardLocked &&
+      (row.eventType === USAGE_EVENT_TYPE.USER_INTERACTION ||
+        row.eventType === USAGE_EVENT_TYPE.SHORTCUT_INVOCATION)
+    ) {
+      keyguardLocked = false;
+      promoteDeferredIfInteractive(row.timeStamp);
+    }
+
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
     // intervals. They must be handled before the ignore-package check because
     // the event itself may come from systemui which is ignored, but its effect
     // is global: the user is no longer looking at any app.
     if (IMPLICIT_BACKGROUND_TYPES.has(row.eventType)) {
+      if (row.eventType === USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE && hasScreenInteractiveEvents) {
+        screenInteractive = false;
+      }
+      if (row.eventType === USAGE_EVENT_TYPE.KEYGUARD_SHOWN && hasKeyguardHiddenEvents) {
+        keyguardLocked = true;
+      }
+      if (row.eventType === USAGE_EVENT_TYPE.DEVICE_SHUTDOWN) {
+        deferredInactive = null;
+      }
       if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
         drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
         continue;
@@ -582,12 +678,15 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     }
 
     // Ignored packages handling:
-    // - Launchers (HOME role, dynamic) and Mirror itself close previous app on fg (user went home)
-    // - SystemUI, settings, permissioncontroller, OEM packageinstaller, etc are ignored WITHOUT closing previous (fixes Honkai 31s vs 52m)
+    // - Transient overlays (SystemUI notification shade, PermissionController dialog,
+    //   IntentResolver chooser, GMS) are ignored WITHOUT closing the underlying app
+    //   (preserves Honkai 52m48s when pulling down notification shade at 31s).
+    // - Full-screen ignored apps (Launchers via HOME role, Mirror itself, Settings,
+    //   Play Store, Package installers) close any currently open app interval on
+    //   ACTIVITY_RESUMED because the user switched away from the previous app.
     if (ignore.has(row.packageName) || isIgnoredSystemApp(row.packageName)) {
-      const isLauncher = launcherSet.has(row.packageName);
-      const isMirror = row.packageName === 'dev.mirror.app';
-      if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
+      if (FOREGROUND_TYPES.has(row.eventType) && !NON_CLOSING_OVERLAY_PACKAGES.has(row.packageName)) {
+        deferredInactive = null;
         for (const [app, entry] of open) {
           closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
           recentlyClosed.set(app, row.timeStamp);
@@ -605,7 +704,8 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     // earlier in this stream, keep that true start timestamp untouched; if the
     // real ACTIVITY_RESUMED predates `sinceMs` (or rolled off the OS buffer),
     // CONTINUE_PREVIOUS_DAY opens the interval at bucket start instead of
-    // turning the subsequent ACTIVITY_PAUSED into an orphan_background.
+    // turning the subsequent ACTIVITY_PAUSED into an orphan_background — unless
+    // the screen is currently off or locked, in which case we defer until wake.
     if (row.eventType === USAGE_EVENT_TYPE.END_OF_DAY) {
       continue;
     }
@@ -614,6 +714,10 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
         continue;
       }
       const contClass = row.className && row.className.length > 0 ? row.className : '__carried__';
+      if (!screenInteractive || keyguardLocked) {
+        deferredInactive = { app: row.packageName, activeClass: contClass };
+        continue;
+      }
       for (const [otherApp, otherEntry] of [...open.entries()]) {
         if (otherApp !== row.packageName) {
           closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
@@ -626,7 +730,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       orphanPausedAt.delete(row.packageName);
       open.set(row.packageName, {
         earliestStart: row.timeStamp,
-        activities: new Map([[contClass, row.timeStamp]]),
+        activeClass: contClass,
+        activeStartMs: row.timeStamp,
+        supersededClasses: new Set(),
       });
       continue;
     }
@@ -643,13 +749,30 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     // OS cleanup, never a missed foreground sitting (`orphan_background`).
     if (DESTROY_TYPES.has(row.eventType)) {
       const className = row.className && row.className.length > 0 ? row.className : '__default__';
+      if (deferredInactive && deferredInactive.app === row.packageName) {
+        if (
+          deferredInactive.activeClass === className ||
+          deferredInactive.activeClass === '__carried__' ||
+          deferredInactive.activeClass === '__default__' ||
+          className === '__default__'
+        ) {
+          deferredInactive = null;
+        }
+      }
       const entry = open.get(row.packageName);
       if (!entry) {
         drops.push({ reason: 'below_minimum', app: row.packageName, at: row.timeStamp, eventType: row.eventType, className: row.className });
         continue;
       }
-      entry.activities.delete(className);
-      if (entry.activities.size === 0) {
+      if (entry.supersededClasses.delete(className)) {
+        continue;
+      }
+      if (
+        entry.activeClass === className ||
+        entry.activeClass === '__carried__' ||
+        entry.activeClass === '__default__' ||
+        className === '__default__'
+      ) {
         closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
         recentlyClosed.set(row.packageName, row.timeStamp);
         closedInStream.add(row.packageName);
@@ -661,6 +784,35 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     const className = row.className && row.className.length > 0 ? row.className : '__default__';
 
     if (FOREGROUND_TYPES.has(row.eventType)) {
+      if (!screenInteractive || keyguardLocked) {
+        // If a user-initiated switch to a DIFFERENT package arrives while only
+        // `keyguardLocked` was true (e.g. an OEM skipped KEYGUARD_HIDDEN=18 on
+        // direct biometric unlock), clear `keyguardLocked` rather than dropping
+        // real unlocked usage; while `!screenInteractive` (display physically off),
+        // never accumulate foreground time until SCREEN_INTERACTIVE (15).
+        if (
+          screenInteractive &&
+          keyguardLocked &&
+          deferredInactive !== null &&
+          deferredInactive.app !== row.packageName
+        ) {
+          keyguardLocked = false;
+          deferredInactive = null;
+        } else {
+          for (const [otherApp, otherEntry] of [...open.entries()]) {
+            if (otherApp !== row.packageName) {
+              closeInterval(otherApp, otherEntry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
+              recentlyClosed.set(otherApp, row.timeStamp);
+              closedInStream.add(otherApp);
+              open.delete(otherApp);
+            }
+          }
+          deferredInactive = { app: row.packageName, activeClass: className };
+          continue;
+        }
+      }
+
+      deferredInactive = null;
       // Enforce single foreground app: a new foreground closes any other open
       // interval at this timestamp. This prevents overlapping sessions like
       // YouTube, Genshin and Brawl Stars all ending at 3:17:44-45.
@@ -676,23 +828,46 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       closedInStream.delete(row.packageName);
       orphanPausedAt.delete(row.packageName);
 
-      let entry = open.get(row.packageName);
+      const entry = open.get(row.packageName);
       if (!entry) {
-        entry = { earliestStart: row.timeStamp, activities: new Map() };
-        open.set(row.packageName, entry);
-      }
-      // Track resumed activities per package (className)
-      if (!entry.activities.has(className)) {
-        entry.activities.set(className, row.timeStamp);
-        if (row.timeStamp < entry.earliestStart) entry.earliestStart = row.timeStamp;
+        open.set(row.packageName, {
+          earliestStart: row.timeStamp,
+          activeClass: className,
+          activeStartMs: row.timeStamp,
+          supersededClasses: new Set(),
+        });
+      } else {
+        if (row.timeStamp < entry.earliestStart) {
+          entry.earliestStart = row.timeStamp;
+        }
+        if (entry.activeClass !== className) {
+          entry.supersededClasses.delete(className);
+          if (entry.activeClass !== '__carried__' && entry.activeClass !== '__default__') {
+            entry.supersededClasses.add(entry.activeClass);
+          }
+          entry.activeClass = className;
+          entry.activeStartMs = row.timeStamp;
+        }
       }
       continue;
     }
 
     // Background: PAUSED (2) and STOPPED (23)
-    // Close an app only when its last resumed activity pauses/stops.
-    // STOPPED (23) for an already-paused activity must NEVER close a different
-    // currently-resumed activity of the same app (e.g. Splash -> Main or Home -> Chat).
+    if (deferredInactive && deferredInactive.app === row.packageName) {
+      if (
+        PAUSE_TYPES.has(row.eventType) ||
+        deferredInactive.activeClass === className ||
+        deferredInactive.activeClass === '__carried__' ||
+        deferredInactive.activeClass === '__default__' ||
+        className === '__default__'
+      ) {
+        deferredInactive = null;
+        recentlyClosed.set(row.packageName, row.timeStamp);
+        closedInStream.add(row.packageName);
+      }
+      continue;
+    }
+
     const entry = open.get(row.packageName);
     if (!entry) {
       const recentClose = recentlyClosed.get(row.packageName);
@@ -722,38 +897,30 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
 
-    // Remove this activity. Carried intervals have __carried__ placeholder
-    // which should be closed by any background for that app.
-    let deleted = entry.activities.delete(className);
-    if (!deleted) {
-      deleted = entry.activities.delete('__default__');
-    }
-    if (!deleted) {
-      deleted = entry.activities.delete('__carried__');
-    }
-    if (!deleted && entry.activities.size > 0) {
-      // Only apply the `firstKey` class-mismatch fallback on `ACTIVITY_PAUSED (2)`
-      // (or when `ACTIVITY_STOPPED (23)` carries no className). When `ACTIVITY_STOPPED (23)`
-      // names a specific Activity `A` while Activity `B` is currently resumed in `entry.activities`,
-      // `A` is simply finishing its `PAUSED -> STOPPED` transition after in-app navigation `A -> B`;
-      // deleting `B` here prematurely killed multi-activity sessions and caused +2 false orphans later.
-      if (PAUSE_TYPES.has(row.eventType) || className === '__default__') {
-        const firstKey = entry.activities.keys().next().value;
-        if (firstKey) {
-          entry.activities.delete(firstKey);
-          deleted = true;
-        }
-      }
+    // If an earlier in-app Activity `A` (already superseded by `B`) emits its
+    // delayed `PAUSED (2)` or `STOPPED (23)`, absorb it cleanly without closing `B`.
+    if (className !== entry.activeClass && entry.supersededClasses.delete(className)) {
+      continue;
     }
 
-    if (entry.activities.size === 0) {
-      // Last activity closed, close interval
+    // When `ACTIVITY_STOPPED (23)` names a specific Activity `A` that does not
+    // match `entry.activeClass` (`B`), `A` is finishing an earlier `PAUSED -> STOPPED`
+    // transition (e.g. `A` opened before `sinceMs`, then `B` resumed inside window);
+    // do not kill `B`. By contrast, `ACTIVITY_PAUSED (2)` on the non-superseded
+    // foreground package — or `STOPPED (23)` matching `activeClass` / wildcard —
+    // closes the package immediately so no phantom multi-activity refcount leaks.
+    const shouldClose =
+      PAUSE_TYPES.has(row.eventType) ||
+      className === entry.activeClass ||
+      className === '__default__' ||
+      entry.activeClass === '__carried__' ||
+      entry.activeClass === '__default__';
+
+    if (shouldClose) {
       closeInterval(row.packageName, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
       recentlyClosed.set(row.packageName, row.timeStamp);
       closedInStream.add(row.packageName);
       open.delete(row.packageName);
-    } else {
-      // Still has other resumed activities, keep earliestStart unchanged
     }
   }
 
@@ -761,7 +928,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   // old that it cannot be a sitting any more: then it is an abandoned gap.
   // Persist open intervals in checkpoint; cap still-open at last event, not sync time.
   // The last event timestamp is the max timeStamp in ordered rows, or sinceMs if no rows.
-  // Persist per-class open map so split syncs give same totals.
+  // Persist ordered [superseded..., active] so split syncs give identical totals.
   const lastEventMs = ordered.length > 0 ? ordered[ordered.length - 1]!.timeStamp : options.sinceMs;
   const nextOpen: OpenInterval[] = [];
   for (const [app, entry] of open) {
@@ -779,10 +946,20 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       drops.push({ reason: 'too_long', app, at: start });
       continue;
     }
+    const serializedActivities: { className: string; startMs: number }[] = [];
+    for (const sup of entry.supersededClasses) {
+      if (sup !== entry.activeClass) {
+        serializedActivities.push({ className: sup, startMs: start });
+      }
+    }
+    serializedActivities.push({
+      className: entry.activeClass,
+      startMs: Math.max(start, entry.activeStartMs),
+    });
     nextOpen.push({
       app,
       startMs: start,
-      activities: [...entry.activities.entries()].map(([className, s]) => ({ className, startMs: s })),
+      activities: serializedActivities,
     });
   }
   nextOpen.sort((a, b) => a.startMs - b.startMs || a.app.localeCompare(b.app));
@@ -992,7 +1169,9 @@ export type DayForegroundTotalsOptions = {
 /**
  * Sum exact local-day active foreground durations from stored/built `app_background`
  * events by clipping every `[endMs - duration_ms, endMs]` strictly to
- * `[window.fromMs, min(window.toMs, nowMs)]`.
+ * `[window.fromMs, min(window.toMs, nowMs)]` and unioning overlapping intervals per
+ * package so leftover/duplicate `app_background` rows from overlapping incremental
+ * syncs or pre-fix APK runs can never double-count the same sitting (e.g. 31m + 47m -> 78m).
  */
 export function computeDayForegroundTotalsFromStoredEvents(
   events: readonly Pick<UsageEvent, 'kind' | 'app' | 'at' | 'duration_ms'>[],
@@ -1010,7 +1189,7 @@ export function computeDayForegroundTotalsFromStoredEvents(
   }
   const launcherSet = new Set<string>(options.ignorePackages ?? []);
   const appLabels = options.appLabels ?? {};
-  const byPkg = new Map<string, number>();
+  const spansByPkg = new Map<string, { start: number; end: number }[]>();
 
   for (const ev of events) {
     if (!ev || ev.kind !== 'app_background') continue;
@@ -1023,14 +1202,38 @@ export function computeDayForegroundTotalsFromStoredEvents(
     const clippedStart = Math.max(startMs, window.fromMs);
     const clippedEnd = Math.min(endMs, effectiveEndMs);
     if (clippedEnd > clippedStart) {
-      byPkg.set(ev.app, (byPkg.get(ev.app) ?? 0) + (clippedEnd - clippedStart));
+      let spans = spansByPkg.get(ev.app);
+      if (!spans) {
+        spans = [];
+        spansByPkg.set(ev.app, spans);
+      }
+      spans.push({ start: clippedStart, end: clippedEnd });
     }
   }
 
-  return [...byPkg.entries()]
-    .filter(([, totalMs]) => totalMs > 0)
-    .map(([packageName, totalMs]) => ({ packageName, totalMs }))
-    .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+  const out: OsTotal[] = [];
+  for (const [packageName, spans] of spansByPkg.entries()) {
+    spans.sort((a, b) => a.start - b.start || a.end - b.end);
+    let totalMs = 0;
+    let curStart = spans[0]!.start;
+    let curEnd = spans[0]!.end;
+    for (let i = 1; i < spans.length; i += 1) {
+      const next = spans[i]!;
+      if (next.start <= curEnd) {
+        if (next.end > curEnd) curEnd = next.end;
+      } else {
+        totalMs += curEnd - curStart;
+        curStart = next.start;
+        curEnd = next.end;
+      }
+    }
+    totalMs += curEnd - curStart;
+    if (totalMs > 0) {
+      out.push({ packageName, totalMs });
+    }
+  }
+
+  return out.sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
 }
 
 /**
@@ -1291,34 +1494,41 @@ export function resolveDayForegroundTotals(input: {
   if (rawInOrBeforeDay.length > 0) {
     const osTotals = computeDayForegroundTotals(rawEvents, options);
     // Check whether Android's rolling ~7-day UsageEvents buffer partially pruned the
-    // start of this day while Mirror's SQLite store still retains the earlier hours.
-    let earliestRawMs = Infinity;
-    for (const r of rawInOrBeforeDay) {
-      if (r.timeStamp < earliestRawMs) earliestRawMs = r.timeStamp;
-    }
-    let earliestStoredOverlapStartMs = Infinity;
-    const launcherSet = new Set<string>(options.ignorePackages ?? []);
-    const appLabels = options.appLabels ?? {};
-    for (const ev of storedEvents) {
-      if (!ev || ev.kind !== 'app_background') continue;
-      const dur = ev.duration_ms ?? 0;
-      if (!Number.isFinite(dur) || dur <= 0) continue;
-      if (launcherSet.has(ev.app) || isIgnoredSystemApp(ev.app, appLabels[ev.app])) continue;
-      const endMs = Date.parse(ev.at);
-      if (!Number.isFinite(endMs) || endMs <= window.fromMs) continue;
-      const startMs = Math.max(window.fromMs, endMs - dur);
-      if (startMs < effectiveEndMs && startMs < earliestStoredOverlapStartMs) {
-        earliestStoredOverlapStartMs = startMs;
+    // start of an older boundary day (~5+ days old) while Mirror's SQLite store still
+    // retains the earlier hours. On today / recent days (<5 days old), an idle stretch
+    // after midnight simply means the phone had no events at 00:00 — never override
+    // live OS UsageEvents with leftover stored rows on a recent live day.
+    const canHaveBufferRolloff =
+      options.nowMs === undefined || window.fromMs < options.nowMs - 5 * 86_400_000;
+    if (canHaveBufferRolloff) {
+      let earliestRawMs = Infinity;
+      for (const r of rawInOrBeforeDay) {
+        if (r.timeStamp < earliestRawMs) earliestRawMs = r.timeStamp;
       }
-    }
-    const osSum = osTotals.reduce((s, r) => s + r.totalMs, 0);
-    const storedSum = storedTotals.reduce((s, r) => s + r.totalMs, 0);
-    if (
-      earliestRawMs > window.fromMs &&
-      earliestStoredOverlapStartMs < earliestRawMs &&
-      storedSum > osSum
-    ) {
-      return { totals: storedTotals, source: 'stored_events' };
+      let earliestStoredOverlapStartMs = Infinity;
+      const launcherSet = new Set<string>(options.ignorePackages ?? []);
+      const appLabels = options.appLabels ?? {};
+      for (const ev of storedEvents) {
+        if (!ev || ev.kind !== 'app_background') continue;
+        const dur = ev.duration_ms ?? 0;
+        if (!Number.isFinite(dur) || dur <= 0) continue;
+        if (launcherSet.has(ev.app) || isIgnoredSystemApp(ev.app, appLabels[ev.app])) continue;
+        const endMs = Date.parse(ev.at);
+        if (!Number.isFinite(endMs) || endMs <= window.fromMs) continue;
+        const startMs = Math.max(window.fromMs, endMs - dur);
+        if (startMs < effectiveEndMs && startMs < earliestStoredOverlapStartMs) {
+          earliestStoredOverlapStartMs = startMs;
+        }
+      }
+      const osSum = osTotals.reduce((s, r) => s + r.totalMs, 0);
+      const storedSum = storedTotals.reduce((s, r) => s + r.totalMs, 0);
+      if (
+        earliestRawMs > window.fromMs &&
+        earliestStoredOverlapStartMs < earliestRawMs &&
+        storedSum > osSum
+      ) {
+        return { totals: storedTotals, source: 'stored_events' };
+      }
     }
     return { totals: osTotals, source: 'os_events' };
   }

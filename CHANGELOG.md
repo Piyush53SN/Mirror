@@ -5,7 +5,8 @@ Range: initial..v0.1.0
 
 ## Highlights (v0.1 — Android On-Device Tier D)
 
-- **Day-clipped OS foreground totals (Digital Wellbeing parity):** Per-app daily totals sum raw `UsageEvents` foreground intervals clipped strictly to `[00:00 local, min(now, 24:00 local)]` with symmetric 6h lookaround and `CONTINUE_PREVIOUS_DAY` handling — eliminating `INTERVAL_DAILY` pre-midnight bucket bleed while matching Digital Wellbeing within `max(10%, 60s)`. Excludes launchers (`CATEGORY_HOME`), Mirror itself, Settings, Play Store/Services, and Android/OEM Package installers.
+- **Day-clipped OS foreground totals (Digital Wellbeing parity):** Per-app daily totals sum raw `UsageEvents` foreground intervals clipped strictly to `[00:00 local, min(now, 24:00 local)]` with symmetric 6h lookaround, `CONTINUE_PREVIOUS_DAY` handling, active-class multi-activity tracking, `SCREEN_INTERACTIVE`/`KEYGUARD_HIDDEN` gating, atomic `MirrorStore` window reconciliation (`replaceUsageEventsForWindow`), and headless `WorkManager` launcher fallback — matching Digital Wellbeing within `max(10%, 60s)`. Excludes launchers (`CATEGORY_HOME`), Mirror itself, Settings, Play Store/Services, and Android/OEM Package installers.
+- **Per-app `max(10%, 60s)` OS discrepancy flagging in `DebugView`:** Automatically flags any app whose Mirror total (`Home`, `Day fg`, or `Stored`) diverges from OS `UsageEvents` or OS `UsageStats` beyond `max(10%, 60s)` with a 4-source trace (`Home · Day fg · Stored · Sittings · Raw`).
 - **Explicit older-day source labels (`Stored` vs `Approximate`):** Days beyond Android’s rolling ~7-day `UsageEvents` buffer are explicitly badged as **Stored** (when served from Mirror’s encrypted local event log) or **Approximate** (when served from fallback `INTERVAL_DAILY` OS buckets).
 - **Reconciled 5-tab Frosted Horizon shell (`Home · Insights · Journey · Sessions · You`):** Unified canonical day sittings across `Home`, `Insights`, `IQS`, and `Sessions`; reconciled active foreground screen time vs merged `<= 15 min` sitting spans; honest `IQS v2` out of measured parts only (`/55` before 5 explicit labels, `/75` with 5+ explicit labels, minimum-activity floors enforced, never rescaled to 100).
 - **P3 multi-day & counterfactual on-device analytics:** Shipped `J4 Interest Evolution`, `J9 Discovery Journey`, `J11 Rabbit Hole`, `J18 What-if Simulator` (every output explicitly labelled `Estimate`), and `J20 Focus Windows` (requires `>= 21` local days and `>= 5` sittings/cell; zero diagnostic language) behind the honest `orphans <= 50` and `gaps <= 100` reliability gate.
@@ -14,6 +15,7 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- feat(mobile,analytics,release): label Stored/Approximate older days, surface INTERVAL_DAILY bleed proof, remove OS-aggregate copy, and complete v0.1 Step 4 (0f01606) 2026-10-28
 - fix(analytics,mobile): clip per-app daily totals from OS UsageEvents to match Digital Wellbeing and reconcile Home/Insights sitting spans (f1f5848) 2026-10-28
 - fix(store,mobile,android): harden reset/ingest history path, record & display reset audit on You, and wire env-based release signing (de85378) 2026-10-27
 - fix(android,mobile): strip INTERNET in release manifest, document WorkManager ACCESS_NETWORK_STATE, and polish You/Debug history & orphan copy (50d41e8) 2026-10-25
@@ -53,7 +55,6 @@ Range: initial..v0.1.0
 - Update android-build.yml (b44b70e) 2026-10-20
 - ci: stable debug keystore via DEBUG_KEYSTORE_BASE64 secret restored before build, document secret creation, clarify reinstall vs backup restore for key mismatch (6d35085) 2026-10-20
 - fix: key stability across updates – atomic v2 SecureStore entry, id derived from key, allowBackup false, graceful mismatch prompt with explicit reset, add key-change test, explain 12 orphan_background (9bb9097) 2026-10-20
-- Update android-build.yml (775e165) 2026-10-20
 
 ## v0.1 Checklist vs Spec
 

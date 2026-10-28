@@ -891,5 +891,170 @@ test('resolveDayForegroundTotals explicitly labels os_events, stored_events (inc
   assert.deepEqual(approxRes.totals, [{ packageName: CHATGPT, totalMs: 34 * MIN }]);
 });
 
+test('frozen ChatGPT 1h 18m (78m) vs Digital Wellbeing 47m (11:32 am -> 8:35 pm): closes superseded multi-activity + Settings switch cleanly while YouTube, Discord, WhatsApp, and Brawl Stars match', () => {
+  // 2026-10-28 in Asia/Calcutta (UTC+05:30): local midnight = 2026-10-27T18:30:00Z
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const MIN = 60_000;
+  const now1132 = dayStart + (11 * 60 + 32) * MIN; // 11:32 am IST
+  const now2035 = dayStart + (20 * 60 + 35) * MIN; // 8:35 pm IST
+
+  const CHATGPT = 'com.openai.chatgpt';
+  const YOUTUBE = 'com.google.android.youtube';
+  const DISCORD = 'com.discord';
+  const WHATSAPP = 'com.whatsapp';
+  const BRAWL = 'com.supercell.brawlstars';
+  const LAUNCHER = 'com.mi.android.globallauncher';
+
+  // Morning ChatGPT sitting (09:20 -> 10:07 IST = 47m):
+  //   - Opens via trampoline/router Activity `.IntentRouterActivity` (RESUMED=1), which
+  //     immediately launches `.MainActivity` (RESUMED=1) WITHOUT emitting PAUSED for
+  //     `.IntentRouterActivity`, then transitions `.MainActivity` -> `.VoiceModeActivity`
+  //     -> `.MainActivity`.
+  //   - At 10:07 IST (47m), `.MainActivity` emits PAUSED (2) + STOPPED (23) and the user
+  //     spends 31m in Settings (`com.android.settings`) / idle screen until screen-off at 10:38 IST!
+  //   - Previously, `.IntentRouterActivity` leaked in `entry.activities` AND `com.android.settings`
+  //     did not close `open`, leaving ChatGPT stuck "open" until 10:38 IST (47m + 31m = 78m = 1h 18m),
+  //     frozen at 78m at both 11:32 am and 8:35 pm!
+  const chatStart = dayStart + (9 * 60 + 20) * MIN;
+  const morningRows = [
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_INTERACTIVE, timeStamp: chatStart - 5_000 },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_HIDDEN, timeStamp: chatStart - 4_000 },
+    { packageName: CHATGPT, className: '.IntentRouterActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: chatStart },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: chatStart + 80 },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: chatStart + 12 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: chatStart + 12 * MIN + 10 },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: chatStart + 28 * MIN },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: chatStart + 28 * MIN + 20 },
+    { packageName: CHATGPT, className: '.VoiceModeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: chatStart + 28 * MIN + 300 },
+    // User exits ChatGPT at +47m into Settings, then screen turns off +31m later (at +78m):
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: chatStart + 47 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_STOPPED, timeStamp: chatStart + 47 * MIN + 320 },
+    { packageName: 'com.android.settings', className: '.Settings', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: chatStart + 47 * MIN + 50 },
+    { packageName: 'com.android.settings', className: '.Settings', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: chatStart + 52 * MIN },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE, timeStamp: chatStart + 78 * MIN },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_SHOWN, timeStamp: chatStart + 78 * MIN + 50 },
+  ];
+
+  // Afternoon/evening apps between 11:32 am and 8:35 pm (ChatGPT untouched):
+  const afternoonBase = dayStart + 14 * 60 * MIN;
+  const afternoonRows = [
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_INTERACTIVE, timeStamp: afternoonBase - 2_000 },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_HIDDEN, timeStamp: afternoonBase - 1_000 },
+    { packageName: YOUTUBE, className: '.WatchActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase },
+    { packageName: YOUTUBE, className: '.WatchActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: afternoonBase + 36 * MIN },
+    { packageName: LAUNCHER, className: '.Launcher', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase + 36 * MIN + 20 },
+    { packageName: DISCORD, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase + 50 * MIN },
+    { packageName: DISCORD, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: afternoonBase + 69 * MIN },
+    { packageName: WHATSAPP, className: '.HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase + 80 * MIN },
+    { packageName: WHATSAPP, className: '.HomeActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: afternoonBase + 95 * MIN },
+    { packageName: BRAWL, className: '.GameApp', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase + 110 * MIN },
+    { packageName: BRAWL, className: '.GameApp', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: afternoonBase + 132 * MIN },
+    { packageName: LAUNCHER, className: '.Launcher', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: afternoonBase + 132 * MIN + 20 },
+  ];
+
+  const totalsAt1132 = computeDayForegroundTotals(morningRows, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+    nowMs: now1132,
+    ignorePackages: [LAUNCHER],
+  });
+  assert.equal(
+    totalsAt1132.find((r) => r.packageName === CHATGPT)?.totalMs,
+    47 * MIN,
+    'at 11:32 am ChatGPT must be 47m (never leaked 78m)',
+  );
+
+  const allRows2035 = [...morningRows, ...afternoonRows];
+  const totalsAt2035 = computeDayForegroundTotals(allRows2035, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+    nowMs: now2035,
+    ignorePackages: [LAUNCHER],
+  });
+  const byPkg2035 = Object.fromEntries(totalsAt2035.map((r) => [r.packageName, r.totalMs]));
+  assert.equal(byPkg2035[CHATGPT], 47 * MIN, 'at 8:35 pm ChatGPT matches Digital Wellbeing 47m');
+  assert.equal(byPkg2035[YOUTUBE], 36 * MIN);
+  assert.equal(byPkg2035[BRAWL], 22 * MIN);
+  assert.equal(byPkg2035[DISCORD], 19 * MIN);
+  assert.equal(byPkg2035[WHATSAPP], 15 * MIN);
+  assert.equal(byPkg2035['com.android.settings'], undefined, 'Settings itself stays excluded');
+});
+
+test('screen-off (16) and keyguard-locked (17) ghost ACTIVITY_RESUMED / CONTINUE_PREVIOUS_DAY do not inflate ChatGPT (+31m -> 78m), and promote cleanly at unlock (15 + 18)', () => {
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const t0 = dayStart + 8 * 60 * MIN;
+
+  const rows = [
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_INTERACTIVE, timeStamp: t0 - 2_000 },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_HIDDEN, timeStamp: t0 - 1_000 },
+    // 47m real unlocked foreground session:
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE, timeStamp: t0 + 47 * MIN },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_SHOWN, timeStamp: t0 + 47 * MIN + 40 },
+    // Ghost background recreate / voice wake while screen is OFF (+31m while display is off):
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 + 47 * MIN + 120 },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 78 * MIN },
+    // Later wake + unlock where top task is still deferred until KEYGUARD_HIDDEN (counts only 5m unlocked, not 10m lockscreen):
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: t0 + 90 * MIN },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.SCREEN_INTERACTIVE, timeStamp: t0 + 95 * MIN },
+    { packageName: 'com.android.systemui', eventType: USAGE_EVENT_TYPE.KEYGUARD_HIDDEN, timeStamp: t0 + 100 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: t0 + 105 * MIN },
+  ];
+
+  const built = buildUsageEvents(rows, { sinceMs: dayStart, untilMs: dayEnd });
+  assert.equal(built.gaps.length, 0, 'ghost screen-off close must not create false orphan_background');
+  const totals = computeDayForegroundTotalsFromStoredEvents(built.events, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+  });
+  assert.equal(
+    totals.find((r) => r.packageName === CHATGPT)?.totalMs,
+    (47 + 5) * MIN,
+    'counts 47m + 5m unlocked time = 52m, excluding 31m screen-off and 10m locked time',
+  );
+});
+
+test('leftover/overlapping stored app_background intervals (31m + 47m = 78m) union to 47m and never override live OS UsageEvents on today', () => {
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const MIN = 60_000;
+  const now2035 = dayStart + (20 * 60 + 35) * MIN;
+  const CHATGPT = 'com.openai.chatgpt';
+
+  // Incremental overlap sync wrote [10:15, 10:46] (31m) while full-day rebuild wrote [09:59, 10:46] (47m):
+  const end1046 = dayStart + (10 * 60 + 46) * MIN;
+  const duplicateStored = [
+    { kind: 'app_background', app: CHATGPT, at: new Date(end1046).toISOString(), duration_ms: 31 * MIN },
+    { kind: 'app_background', app: CHATGPT, at: new Date(end1046).toISOString(), duration_ms: 47 * MIN },
+  ];
+
+  const unioned = computeDayForegroundTotalsFromStoredEvents(duplicateStored, {
+    window: { fromMs: dayStart, toMs: dayEnd },
+    nowMs: now2035,
+  });
+  assert.deepEqual(unioned, [{ packageName: CHATGPT, totalMs: 47 * MIN }]);
+
+  // Even if a pre-fix leftover stored row held 78m starting at 00:05 while the first live raw event
+  // on today was at 09:59 (> dayStart), resolveDayForegroundTotals on today MUST serve live os_events (47m):
+  const leftover78mStored = [
+    { kind: 'app_background', app: CHATGPT, at: new Date(dayStart + 83 * MIN).toISOString(), duration_ms: 78 * MIN },
+  ];
+  const liveTodayRaw = [
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: end1046 - 47 * MIN },
+    { packageName: CHATGPT, className: '.MainActivity', eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: end1046 },
+  ];
+  const resolvedToday = resolveDayForegroundTotals({
+    rawEvents: liveTodayRaw,
+    storedEvents: leftover78mStored,
+    bucketRows: [],
+    earliestStoredEventMs: dayStart - 3 * 86_400_000,
+    hasPermission: true,
+    options: { window: { fromMs: dayStart, toMs: dayEnd }, nowMs: now2035 },
+  });
+  assert.equal(resolvedToday.source, 'os_events');
+  assert.deepEqual(resolvedToday.totals, [{ packageName: CHATGPT, totalMs: 47 * MIN }]);
+});
+
 
 

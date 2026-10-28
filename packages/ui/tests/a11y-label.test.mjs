@@ -173,6 +173,7 @@ function makeMockMobileContext(overrides = {}) {
       sentence: 'No collection gaps in this window.',
     },
     validation: null,
+    flaggedDiscrepancies: [],
     singleDayRows: [],
     debugEvents: [{ packageName: 'org.wikipedia', typeName: 'ACTIVITY_RESUMED', eventType: 1, timeStamp: 1761364800000 }],
     honkaiDebug: [],
@@ -800,4 +801,73 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     'YouTab must show previous history start day when recorded',
   );
   resetRenderer.unmount();
+
+  // Verify DebugView flags any app differing from OS by > max(10%, 60s) with 4-source trace
+  const MIN = 60_000;
+  const debugCtx = makeMockMobileContext({
+    showDebug: true,
+    selectedDay: '2026-10-28',
+    flaggedDiscrepancies: [
+      {
+        app: 'com.openai.chatgpt',
+        label: 'ChatGPT',
+        displayedMs: 78 * MIN,
+        dayFgMs: 47 * MIN,
+        storedMs: 78 * MIN,
+        sittingSpanMs: 47 * MIN,
+        rawBucketMs: 47 * MIN,
+        preMidnightBucketMs: 0,
+        mirrorMs: 78 * MIN,
+        osMs: 47 * MIN,
+        diffMs: 31 * MIN,
+        diffPct: (31 / 47) * 100,
+        toleranceMs: 4.7 * MIN,
+        status: 'over',
+        comparison: 'Home vs OS UsageEvents',
+      },
+    ],
+    singleDayRows: [
+      {
+        app: 'com.openai.chatgpt',
+        label: 'ChatGPT',
+        displayedMs: 78 * MIN,
+        mirrorMs: 78 * MIN,
+        osMs: 47 * MIN,
+        rawBucketMs: 47 * MIN,
+        preMidnightBucketMs: 0,
+        bucketCount: 1,
+        sittingSpanMs: 47 * MIN,
+        diffPct: (31 / 47) * 100,
+        status: 'over',
+        flagged: true,
+        flagReason: 'Home vs OS UsageEvents: +1860s (66.0%)',
+      },
+    ],
+  });
+  const debugRenderer = create(
+    React.createElement(
+      ui.ThemeProvider,
+      { initialTheme: 'dark' },
+      React.createElement(
+        ui.MirrorAppContext.Provider,
+        { value: debugCtx },
+        React.createElement(ui.MirrorTabShell),
+      ),
+    ),
+  );
+  const debugTreeJson = debugRenderer.toJSON();
+  const debugText = collectText(debugTreeJson).join(' ');
+  assert.ok(
+    debugText.includes('FLAGGED 1 app'),
+    'DebugView must display FLAGGED count banner when an app exceeds max(10%, 60s)',
+  );
+  assert.ok(
+    debugText.includes('[FLAGGED OVER] ChatGPT (com.openai.chatgpt)'),
+    'DebugView must render flagged app label + package name',
+  );
+  assert.ok(
+    debugText.includes('4-source trace: Home 1h 18m · Day fg 47m · Stored 1h 18m · Sittings 47m · Raw INTERVAL_DAILY 47m'),
+    'DebugView must render full 4-source trace for flagged app',
+  );
+  debugRenderer.unmount();
 });

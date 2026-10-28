@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Platform, ScrollView, StatusBar, View } from 'react-native';
-import { Backdrop, Card, Pill, SectionHeader, Text, Toolbar, useTheme } from '@mirror/ui';
+import { Backdrop, Card, Pill, SectionHeader, Text, Toolbar, rgba, useTheme } from '@mirror/ui';
 import {
   BUILD_FULL,
   J4_FULL,
@@ -12,6 +12,11 @@ import {
 } from '../buildDetails';
 import { formatDuration, lastNDays, useMirrorApp } from '../context/MirrorAppContext';
 
+function formatSignedDuration(diffMs: number): string {
+  if (!Number.isFinite(diffMs) || diffMs === 0) return '0s';
+  return `${diffMs > 0 ? '+' : '-'}${formatDuration(Math.abs(diffMs))}`;
+}
+
 export function DebugView(): React.ReactElement {
   const theme = useTheme();
   const {
@@ -20,6 +25,7 @@ export function DebugView(): React.ReactElement {
     setShowDebug,
     dailyTotalsSource,
     validation,
+    flaggedDiscrepancies = [],
     labels,
     collectingSince,
     singleDayRows,
@@ -85,27 +91,67 @@ export function DebugView(): React.ReactElement {
           <SectionHeader
             theme={theme}
             title={`Validation – same period ${selectedDay}`}
-            caption="fixed to compare same period on both sides"
+            caption="flags any app differing from OS by more than max(10%, 60s)"
           />
-          {validation ? (
-            <View style={{ gap: theme.space(1) }}>
-              <Text role="label" theme={theme}>
-                {`OS vs Mirror validation (max(10%,60s)): max diff ${validation.maxAbsPct.toFixed(1)}% / ${formatDuration(validation.maxAbsMs)}, ${validation.ok ? 'OK' : `FAIL ${validation.overThreshold.length} apps`}`}
+          <View style={{ gap: theme.space(1.5) }}>
+            <View
+              style={{
+                padding: theme.space(1.5),
+                borderRadius: theme.radius.sm,
+                borderWidth: 1,
+                borderColor: theme.color.borderCard,
+                backgroundColor:
+                  flaggedDiscrepancies.length > 0
+                    ? rgba(theme.color.anchor, theme.isDark ? 0.24 : 0.12)
+                    : rgba(theme.color.chip, theme.isDark ? 0.22 : 0.14),
+                gap: theme.space(1),
+              }}
+            >
+              <Text role="label" weight="medium" theme={theme}>
+                {flaggedDiscrepancies.length === 0
+                  ? 'Per-app OS vs Mirror check (tolerance max(10%, 60s)): PASS — 0 apps flagged'
+                  : `Per-app OS vs Mirror check (tolerance max(10%, 60s)): FLAGGED ${flaggedDiscrepancies.length} app${flaggedDiscrepancies.length === 1 ? '' : 's'}`}
               </Text>
               <Text role="micro" tone="muted" theme={theme}>
-                {`Period: ${selectedDay} local day · Totals source: ${sourceSummary}.`}
+                {`Period: ${selectedDay} local day · Totals source: ${sourceSummary}. Compares Home, Day fg (OS UsageEvents), Stored (SQLite), and independent OS UsageStats.`}
               </Text>
-              {validation.rows.slice(0, 20).map((r) => (
-                <Text key={r.app} role="micro" tone="muted" theme={theme}>
-                  {`${labels[r.app] ?? r.app}: OS ${formatDuration(r.osMs)}, Mirror ${formatDuration(r.mirrorMs)}, diff ${r.diffPct.toFixed(1)}% (${formatDuration(r.diffMs)}) ${r.status}`}
-                </Text>
+              {flaggedDiscrepancies.map((d) => (
+                <View
+                  key={d.app}
+                  style={{
+                    paddingTop: theme.space(1),
+                    borderTopWidth: 1,
+                    borderTopColor: theme.color.borderHairline,
+                    gap: theme.space(0.5),
+                  }}
+                >
+                  <Text role="micro" weight="medium" theme={theme}>
+                    {`[FLAGGED ${d.status.toUpperCase()}] ${d.label} (${d.app}) — ${d.comparison}: Mirror ${formatDuration(d.mirrorMs)} vs OS ${formatDuration(d.osMs)}, diff ${formatSignedDuration(d.diffMs)} (${d.diffPct >= 0 ? '+' : ''}${d.diffPct.toFixed(1)}%, limit ${formatDuration(d.toleranceMs)})`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`4-source trace: Home ${formatDuration(d.displayedMs)} · Day fg ${formatDuration(d.dayFgMs)} · Stored ${formatDuration(d.storedMs)} · Sittings ${formatDuration(d.sittingSpanMs)} · Raw INTERVAL_DAILY ${formatDuration(d.rawBucketMs)}${d.preMidnightBucketMs > 0 ? ` (pre-00:00 +${formatDuration(d.preMidnightBucketMs)})` : ''}`}
+                  </Text>
+                </View>
               ))}
             </View>
-          ) : (
-            <Text role="micro" tone="muted" theme={theme}>
-              No validation yet
-            </Text>
-          )}
+
+            {validation ? (
+              <View style={{ gap: theme.space(0.75) }}>
+                <Text role="micro" weight="medium" theme={theme}>
+                  {`Stored vs Day fg summary (max(10%, 60s)): max diff ${validation.maxAbsPct.toFixed(1)}% / ${formatDuration(validation.maxAbsMs)}, ${validation.ok ? 'OK' : `FAIL ${validation.overThreshold.length} app${validation.overThreshold.length === 1 ? '' : 's'}`}`}
+                </Text>
+                {validation.rows.slice(0, 20).map((r) => (
+                  <Text key={r.app} role="micro" tone="muted" theme={theme}>
+                    {`${r.status !== 'ok' ? '[FLAGGED] ' : ''}${labels[r.app] ?? r.app}: OS ${formatDuration(r.osMs)}, Mirror ${formatDuration(r.mirrorMs)}, diff ${r.diffPct >= 0 ? '+' : ''}${r.diffPct.toFixed(1)}% (${formatSignedDuration(r.diffMs)}) ${r.status}`}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text role="micro" tone="muted" theme={theme}>
+                No validation yet
+              </Text>
+            )}
+          </View>
         </Card>
 
         <Card theme={theme} elevated>
@@ -116,7 +162,7 @@ export function DebugView(): React.ReactElement {
           />
           <Text role="micro" tone="muted" theme={theme} style={{ marginBottom: theme.space(1.5) }}>
             {
-              'Column key: Day fg = live/fallback day-clipped foreground; Stored = Mirror SQLite foreground clipped to [00:00, 24:00); Sittings = merged ≤15m sitting spans; Raw INTERVAL_DAILY = unclipped OS daily buckets (shows pre-00:00 bucket bleed when firstTimeStamp precedes local midnight).'
+              'Column key: Home = total shown on Home; Day fg = live OS UsageEvents clipped to [00:00, 24:00); Stored = Mirror SQLite foreground clipped + interval-unioned; Sittings = merged <=15m sitting spans; Raw INTERVAL_DAILY = unclipped OS daily buckets. Rows exceeding max(10%, 60s) are sorted first and marked [FLAGGED].'
             }
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1), marginBottom: theme.space(2) }}>
@@ -147,13 +193,15 @@ export function DebugView(): React.ReactElement {
                   : typeof r.bucketCount === 'number' && r.bucketCount > 0
                     ? ` (${r.bucketCount} bucket${r.bucketCount === 1 ? '' : 's'}${bucketStartNote ? `, ${bucketStartNote}` : ''})`
                     : '';
+              const homeSegment =
+                typeof r.displayedMs === 'number' ? `Home ${formatDuration(r.displayedMs)} · ` : '';
               return (
                 <View key={r.app} style={{ paddingVertical: theme.space(1) }}>
-                  <Text role="micro" theme={theme}>
-                    {`${r.label} – Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}${bleedNote}` : ''}`}
+                  <Text role="micro" weight={r.flagged ? 'medium' : 'auto'} theme={theme}>
+                    {`${r.flagged ? '[FLAGGED > max(10%, 60s)] ' : ''}${r.label} – ${homeSegment}Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct >= 0 ? '+' : ''}${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}${bleedNote}` : ''}`}
                   </Text>
                   <Text role="micro" tone="muted" theme={theme}>
-                    {r.app}
+                    {r.flagReason ? `${r.app} · ${r.flagReason}` : r.app}
                   </Text>
                 </View>
               );
@@ -165,8 +213,8 @@ export function DebugView(): React.ReactElement {
           <Card theme={theme} elevated>
             <SectionHeader
               theme={theme}
-              title={`Honkai/Genshin raw events last 24h (${honkaiDebug.length})`}
-              caption="RESUMED/PAUSED/STOPPED and class names"
+              title={`Inspected & flagged app raw events last 24h (${honkaiDebug.length})`}
+              caption="ChatGPT, flagged apps, and Honkai/Genshin RESUMED/PAUSED/STOPPED + class names"
             />
             {honkaiDebug.map((e, idx) => (
               <View key={idx} style={{ paddingVertical: theme.space(1) }}>

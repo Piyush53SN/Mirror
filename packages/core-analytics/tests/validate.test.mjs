@@ -8,7 +8,15 @@ import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PKG = join(HERE, '..');
 const core = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.build', 'core-validate.mjs') });
-const { validateDailyTotals, mirrorTotalsFromRawEvents, DEVICE_FIXTURE_OS, DEVICE_FIXTURE_MIRROR_BUGGY } = core;
+const {
+  validateDailyTotals,
+  evaluateAppOsDiscrepancies,
+  isWithinDailyTotalTolerance,
+  dailyTotalToleranceMs,
+  mirrorTotalsFromRawEvents,
+  DEVICE_FIXTURE_OS,
+  DEVICE_FIXTURE_MIRROR_BUGGY,
+} = core;
 
 const rawRows = JSON.parse(readFileSync(join(HERE, 'fixtures/device-day-raw.json'), 'utf8'));
 const osFixture = JSON.parse(readFileSync(join(HERE, 'fixtures/device-day-os.json'), 'utf8'));
@@ -67,5 +75,110 @@ test('max(10%, 60s) tolerance: small OS total allows 60s absolute', () => {
   // OS 30s, Mirror 100s: diff 70s >60s and >10% so fail
   const result2 = validateDailyTotals([{ app: 'com.a', totalMs: 100000 }], [{ packageName: 'com.a', totalMs: 30000 }]);
   assert.equal(result2.ok, false, '70s diff should fail');
+});
+
+test('validateDailyTotals catches dropped OS apps (0m vs 47m) and phantom Mirror apps (78m vs 0m) when OS data exists', () => {
+  const MIN = 60_000;
+  const res = validateDailyTotals(
+    [
+      { app: 'com.google.android.youtube', totalMs: 36 * MIN },
+      { app: 'com.phantom.app', totalMs: 78 * MIN }, // Mirror has 78m, OS has 0m
+    ],
+    [
+      { packageName: 'com.google.android.youtube', totalMs: 36 * MIN },
+      { packageName: 'com.openai.chatgpt', totalMs: 47 * MIN }, // OS has 47m, Mirror dropped to 0m
+    ],
+  );
+  assert.equal(res.ok, false);
+  assert.equal(res.overThreshold.length, 2);
+  const dropped = res.overThreshold.find((r) => r.app === 'com.openai.chatgpt');
+  const phantom = res.overThreshold.find((r) => r.app === 'com.phantom.app');
+  assert.equal(dropped?.status, 'under');
+  assert.equal(dropped?.diffMs, -47 * MIN);
+  assert.equal(phantom?.status, 'over');
+  assert.equal(phantom?.diffMs, 78 * MIN);
+});
+
+test('evaluateAppOsDiscrepancies flags ChatGPT 78m vs OS 47m (> max(10%, 60s)) across Stored, Day fg, and independent OS UsageStats while matching apps pass', () => {
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const YOUTUBE = 'com.google.android.youtube';
+  const DISCORD = 'com.discord';
+  const WHATSAPP = 'com.whatsapp';
+  const BRAWL = 'com.supercell.brawlstars';
+  const labels = {
+    [CHATGPT]: 'ChatGPT',
+    [YOUTUBE]: 'YouTube',
+    [DISCORD]: 'Discord',
+    [WHATSAPP]: 'WhatsApp',
+    [BRAWL]: 'Brawl Stars',
+  };
+
+  assert.equal(dailyTotalToleranceMs(47 * MIN), 4.7 * MIN);
+  assert.equal(isWithinDailyTotalTolerance(78 * MIN, 47 * MIN), false);
+  assert.equal(isWithinDailyTotalTolerance(51 * MIN, 47 * MIN), true);
+
+  // Case 1: Self-comparison blind spot closed — even if Home, Day fg, and Stored all reported 78m
+  // while independent same-day OS UsageStats reported 47m, ChatGPT is flagged automatically!
+  const flaggedFromOsStats = evaluateAppOsDiscrepancies({
+    displayedTotals: [
+      { app: CHATGPT, totalMs: 78 * MIN },
+      { app: YOUTUBE, totalMs: 36 * MIN },
+      { app: DISCORD, totalMs: 19 * MIN },
+      { app: WHATSAPP, totalMs: 15 * MIN },
+      { app: BRAWL, totalMs: 22 * MIN },
+    ],
+    dayFgTotals: [
+      { packageName: CHATGPT, totalMs: 78 * MIN },
+      { packageName: YOUTUBE, totalMs: 36 * MIN },
+      { packageName: DISCORD, totalMs: 19 * MIN },
+      { packageName: WHATSAPP, totalMs: 15 * MIN },
+      { packageName: BRAWL, totalMs: 22 * MIN },
+    ],
+    storedTotals: [
+      { packageName: CHATGPT, totalMs: 78 * MIN },
+      { packageName: YOUTUBE, totalMs: 36 * MIN },
+      { packageName: DISCORD, totalMs: 19 * MIN },
+      { packageName: WHATSAPP, totalMs: 15 * MIN },
+      { packageName: BRAWL, totalMs: 22 * MIN },
+    ],
+    rawBucketDiagnostics: [
+      { packageName: CHATGPT, totalMs: 47 * MIN, preMidnightBucketMs: 0, bucketCount: 1 },
+      { packageName: YOUTUBE, totalMs: 36 * MIN, preMidnightBucketMs: 0, bucketCount: 1 },
+      { packageName: DISCORD, totalMs: 19 * MIN, preMidnightBucketMs: 0, bucketCount: 1 },
+      { packageName: WHATSAPP, totalMs: 15 * MIN, preMidnightBucketMs: 0, bucketCount: 1 },
+      { packageName: BRAWL, totalMs: 22 * MIN, preMidnightBucketMs: 0, bucketCount: 1 },
+    ],
+    labels,
+  });
+  assert.equal(flaggedFromOsStats.length, 1, 'only ChatGPT exceeds max(10%, 60s)');
+  assert.equal(flaggedFromOsStats[0].app, CHATGPT);
+  assert.equal(flaggedFromOsStats[0].label, 'ChatGPT');
+  assert.equal(flaggedFromOsStats[0].status, 'over');
+  assert.equal(flaggedFromOsStats[0].comparison, 'Home vs OS UsageStats');
+  assert.equal(flaggedFromOsStats[0].diffMs, 31 * MIN);
+
+  // Case 2: Leftover stored intervals (Stored = 78m while Day fg = 47m and Home = 47m) -> flagged!
+  const flaggedFromStored = evaluateAppOsDiscrepancies({
+    displayedTotals: [{ app: CHATGPT, totalMs: 47 * MIN }],
+    dayFgTotals: [{ packageName: CHATGPT, totalMs: 47 * MIN }],
+    storedTotals: [{ packageName: CHATGPT, totalMs: 78 * MIN }],
+    rawBucketDiagnostics: [{ packageName: CHATGPT, totalMs: 47 * MIN, preMidnightBucketMs: 0, bucketCount: 1 }],
+    labels,
+  });
+  assert.equal(flaggedFromStored.length, 1);
+  assert.equal(flaggedFromStored[0].comparison, 'Stored vs OS UsageEvents');
+  assert.equal(flaggedFromStored[0].diffMs, 31 * MIN);
+
+  // Case 3: Clean post-fix state where Home=47m, Day fg=47m, Stored=47m, and Raw INTERVAL_DAILY=78m
+  // solely from pre-midnight bucket bleed (preMidnightBucketMs = 31m > 0) -> 0 false flags!
+  const cleanWithBleed = evaluateAppOsDiscrepancies({
+    displayedTotals: [{ app: CHATGPT, totalMs: 47 * MIN }],
+    dayFgTotals: [{ packageName: CHATGPT, totalMs: 47 * MIN }],
+    storedTotals: [{ packageName: CHATGPT, totalMs: 47 * MIN }],
+    rawBucketDiagnostics: [{ packageName: CHATGPT, totalMs: 78 * MIN, preMidnightBucketMs: 31 * MIN, bucketCount: 2 }],
+    labels,
+  });
+  assert.equal(cleanWithBleed.length, 0, 'pre-midnight bucket bleed does not false-flag when Mirror matches OS UsageEvents');
 });
 

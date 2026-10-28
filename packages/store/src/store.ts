@@ -177,6 +177,163 @@ export class MirrorStore {
     return result;
   }
 
+  /**
+   * Atomically reconcile OS `app_foreground` / `app_background` events whose
+   * interval ends inside `[window.fromMs, window.toMs)` against an authoritative
+   * full-day `buildUsageEvents` pass.
+   *
+   * Why `appendEvents` alone is insufficient after incremental overlap syncs or
+   * collector bug fixes: `stableId` hashes `(app, startMs)`, so when an incremental
+   * sync and a full-day pass (or pre-fix vs post-fix APK) assign different `startMs`
+   * to the same sitting — or when a pre-fix APK left an unclosed multi-activity
+   * interval in SQLite — `INSERT OR IGNORE` keeps *both* rows forever, leaving
+   * `Stored` and `Sittings` frozen at an inflated total (e.g. ChatGPT 78m vs 47m).
+   *
+   * Never touches user `intent_label` events, Tier A/B/C imports, or earlier days
+   * (`endMs < window.fromMs`) whose raw `UsageEvents` may have rolled off Android's
+   * ~7-day buffer.
+   */
+  async replaceUsageEventsForWindow(
+    window: { fromMs: number; toMs: number },
+    events: readonly unknown[],
+  ): Promise<{ deleted: number; inserted: number; unchanged: number }> {
+    const LOOKAROUND_MS = 6 * 3_600_000 + 60_000;
+    const validated: MirrorEvent[] = [];
+    for (const candidate of events) {
+      const check = validateEvent(candidate);
+      if (
+        check.ok &&
+        check.value.origin === 'os' &&
+        (check.value.kind === 'app_foreground' || check.value.kind === 'app_background')
+      ) {
+        validated.push(check.value);
+      }
+    }
+
+    // Group incoming `[app_foreground, app_background]` pairs whose closing
+    // `app_background` falls inside `[window.fromMs, window.toMs)`.
+    const fgByAppAndStart = new Map<string, MirrorEvent>();
+    for (const ev of validated) {
+      if (ev.kind === 'app_foreground') {
+        const app = (ev as { app?: string }).app ?? '';
+        fgByAppAndStart.set(`${app}\u0000${Date.parse(ev.at)}`, ev);
+      }
+    }
+    const targetEvents: MirrorEvent[] = [];
+    const keepIds = new Set<string>();
+    for (const ev of validated) {
+      if (ev.kind !== 'app_background') continue;
+      const endMs = Date.parse(ev.at);
+      if (!Number.isFinite(endMs) || endMs < window.fromMs || endMs >= window.toMs) continue;
+      const app = (ev as { app?: string }).app ?? '';
+      const dur = Number((ev as { duration_ms?: number }).duration_ms ?? 0);
+      const startMs = endMs - dur;
+      const fg = fgByAppAndStart.get(`${app}\u0000${startMs}`);
+      if (fg && !keepIds.has(fg.id)) {
+        keepIds.add(fg.id);
+        targetEvents.push(fg);
+      }
+      if (!keepIds.has(ev.id)) {
+        keepIds.add(ev.id);
+        targetEvents.push(ev);
+      }
+    }
+
+    let deleted = 0;
+    let inserted = 0;
+    let unchanged = 0;
+
+    await this.driver.transaction(async () => {
+      const existingRows = await this.driver.all<EventRow>(
+        `SELECT * FROM events
+         WHERE origin = 'os'
+           AND kind IN ('app_foreground', 'app_background')
+           AND at >= ? AND at < ?
+         ORDER BY at ASC, id ASC`,
+        [window.fromMs - LOOKAROUND_MS, window.toMs + LOOKAROUND_MS],
+      );
+      const decoded = existingRows.map((row) => this.decodeRow(row));
+
+      // Identify existing `app_foreground` starts paired with an `app_background`
+      // outside `[window.fromMs, window.toMs)` so adjacent-day sittings stay intact.
+      const protectedFgKeys = new Set<string>();
+      const staleFgKeys = new Set<string>();
+      const deleteIds = new Set<string>();
+
+      for (const item of decoded) {
+        const payload = item.payload as {
+          kind?: string;
+          app?: string;
+          at?: string;
+          duration_ms?: number;
+        };
+        if (payload.kind !== 'app_background') continue;
+        const endMs = item.at;
+        const dur = Number(payload.duration_ms ?? 0);
+        const startMs = endMs - dur;
+        const app = payload.app ?? '';
+        const fgKey = `${app}\u0000${startMs}`;
+        if (endMs >= window.fromMs && endMs < window.toMs) {
+          if (!keepIds.has(item.id)) {
+            deleteIds.add(item.id);
+            staleFgKeys.add(fgKey);
+          }
+        } else {
+          protectedFgKeys.add(fgKey);
+        }
+      }
+
+      for (const item of decoded) {
+        const payload = item.payload as { kind?: string; app?: string };
+        if (payload.kind !== 'app_foreground') continue;
+        if (keepIds.has(item.id)) continue;
+        const app = payload.app ?? '';
+        const fgKey = `${app}\u0000${item.at}`;
+        if (protectedFgKeys.has(fgKey)) continue;
+        if (staleFgKeys.has(fgKey) || (item.at >= window.fromMs && item.at < window.toMs)) {
+          deleteIds.add(item.id);
+        }
+      }
+
+      for (const id of deleteIds) {
+        await this.driver.run(`DELETE FROM event_vectors WHERE event_id = ?`, [id]);
+        await this.driver.run(`DELETE FROM events WHERE id = ?`, [id]);
+        deleted += 1;
+      }
+
+      for (const event of targetEvents) {
+        const existing = await this.driver.all<{ id: string }>(
+          `SELECT id FROM events WHERE id = ?`,
+          [event.id],
+        );
+        if (existing.length > 0) {
+          unchanged += 1;
+          continue;
+        }
+        const envelope = seal(event, this.derived(), this.keyId, this.random);
+        await this.driver.run(
+          `INSERT OR IGNORE INTO events (id, at, kind, tier, origin, content, session_id, item_hash, consent_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            event.id,
+            Date.parse(event.at),
+            event.kind,
+            event.tier,
+            event.origin,
+            event.content,
+            event.session_id ?? null,
+            (event as { item_hash?: string }).item_hash ?? null,
+            event.consent ?? null,
+            envelope,
+          ],
+        );
+        inserted += 1;
+      }
+    });
+
+    return { deleted, inserted, unchanged };
+  }
+
   /** Events in [fromMs, toMs), oldest first, newest first, or both. Decrypted. */
   async events(options: { from?: number; to?: number; limit?: number; newestFirst?: boolean; kind?: string; vectors?: boolean } = {}): Promise<StoredEvent[]> {
     const clauses: string[] = [];
