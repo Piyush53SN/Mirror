@@ -142,6 +142,7 @@ export function HomeTab(): React.ReactElement {
     focusWindows,
     setShowWhy,
     dailyTotals,
+    dailyTotalsSource,
     orphanCount,
     totalGaps,
     p3Reliable,
@@ -343,13 +344,25 @@ export function HomeTab(): React.ReactElement {
         )}
       </Surface>
 
-      {/* Frosted glass summary metrics: OS foreground screen time vs merged sitting spans */}
+      {/* Frosted glass summary metrics: foreground screen time vs merged sitting spans */}
       <View style={{ flexDirection: 'row', gap: theme.space(3) }}>
         <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
           <Stat
             value={dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}
-            label="OS screen time"
-            hint={`Active foreground only · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`}
+            label={
+              dailyTotalsSource === 'stored_events'
+                ? 'Stored screen time'
+                : dailyTotalsSource === 'os_bucket_approx'
+                  ? 'Approx. screen time'
+                  : 'OS screen time'
+            }
+            hint={
+              dailyTotalsSource === 'stored_events'
+                ? `Stored · Mirror events · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
+                : dailyTotalsSource === 'os_bucket_approx'
+                  ? `Approximate · OS buckets · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
+                  : `Day-clipped OS events · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
+            }
             theme={theme}
           />
         </Card>
@@ -363,23 +376,70 @@ export function HomeTab(): React.ReactElement {
         </Card>
       </View>
 
-      {totalScreenMs > 0 || sittingSpanMs > 0 ? (
+      {dailyTotalsSource === 'stored_events' ? (
         <Callout theme={theme} tone="neutral">
-          {`OS screen time (${dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}) sums active foreground use only, matching Digital Wellbeing. Sitting spans (${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'} across ${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) merge reopens of the same app within 15 min into one sitting, so spans include brief pauses and switches between opens.`}
+          {`Stored (${selectedDay}): Android’s raw UsageEvents buffer no longer covers this older day. Totals come from Mirror’s stored day-clipped foreground events recorded on this device.`}
+        </Callout>
+      ) : dailyTotalsSource === 'os_bucket_approx' ? (
+        <Callout theme={theme} tone="limit">
+          {`Approximate (${selectedDay}): Android’s raw UsageEvents buffer no longer covers this day and Mirror has no stored events for it. Totals come from fallback OS daily buckets, which do not clip cleanly at local midnight.`}
         </Callout>
       ) : null}
 
-      {/* Frosted glass card — Per-app totals from day-clipped OS foreground events */}
+      {totalScreenMs > 0 || sittingSpanMs > 0 ? (
+        <Callout theme={theme} tone="neutral">
+          {`${
+            dailyTotalsSource === 'stored_events'
+              ? 'Stored screen time'
+              : dailyTotalsSource === 'os_bucket_approx'
+                ? 'Approximate screen time'
+                : 'OS screen time'
+          } (${dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}) ${
+            dailyTotalsSource === 'os_bucket_approx'
+              ? 'comes from fallback OS daily buckets because raw UsageEvents are unavailable for this older day.'
+              : dailyTotalsSource === 'stored_events'
+                ? 'sums Mirror’s stored day-clipped foreground intervals for this older day.'
+                : 'sums day-clipped OS foreground events only, matching Digital Wellbeing.'
+          } Sitting spans (${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'} across ${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) merge reopens of the same app within 15 min into one sitting, so spans include brief pauses and switches between opens.`}
+        </Callout>
+      ) : null}
+
+      {/* Frosted glass card — Per-app foreground totals with explicit source badge */}
       <Card theme={theme} style={{ marginBottom: 0 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: theme.space(1.5), marginBottom: dailyTotalsSource === 'os_events' ? 0 : theme.space(1) }}>
+          {dailyTotalsSource === 'stored_events' ? (
+            <Chip theme={theme} label="Stored · Mirror events" />
+          ) : dailyTotalsSource === 'os_bucket_approx' ? (
+            <Chip theme={theme} label="Approximate · OS daily buckets" />
+          ) : null}
+        </View>
         <SectionHeader
           theme={theme}
-          title={`Per-app totals · ${selectedDay}`}
-          caption="Day-clipped OS foreground events (matches Digital Wellbeing), excludes launchers, Mirror, and system installers"
+          title={
+            dailyTotalsSource === 'stored_events'
+              ? `Per-app totals · ${selectedDay} · Stored`
+              : dailyTotalsSource === 'os_bucket_approx'
+                ? `Per-app totals · ${selectedDay} · Approximate`
+                : `Per-app totals · ${selectedDay}`
+          }
+          caption={
+            dailyTotalsSource === 'stored_events'
+              ? 'Stored day-clipped foreground events in Mirror (OS UsageEvents rolled off), excludes launchers, Mirror, and system installers'
+              : dailyTotalsSource === 'os_bucket_approx'
+                ? 'Approximate OS daily buckets (UsageEvents unavailable; may include adjacent-midnight bleed), excludes launchers, Mirror, and system installers'
+                : 'Day-clipped OS foreground events (matches Digital Wellbeing), excludes launchers, Mirror, and system installers'
+          }
         />
         {dailyTotals.length === 0 ? (
           <EmptyState
             title={`No totals for ${selectedDay}`}
-            body="Use apps that day, then tap Refresh. Totals sum OS foreground intervals clipped strictly to the local day, matching Digital Wellbeing."
+            body={
+              dailyTotalsSource === 'stored_events'
+                ? 'No stored foreground intervals were recorded in Mirror for this older day.'
+                : dailyTotalsSource === 'os_bucket_approx'
+                  ? 'Android’s UsageEvents buffer no longer covers this older day, Mirror has no stored events for it, and no approximate OS daily buckets were returned.'
+                  : 'Use apps that day, then tap Refresh. Totals sum OS foreground intervals clipped strictly to the local day, matching Digital Wellbeing.'
+            }
             theme={theme}
           />
         ) : (

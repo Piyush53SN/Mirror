@@ -664,7 +664,9 @@ function confidenceFor(
 
   // Reconstructed session boundaries should not feed scores as high/medium-confidence exact
   if (input.approximate) {
-    reasons.push('Session boundaries are reconstructed from OS usage events (not scaled); daily totals come from the OS aggregate.');
+    reasons.push(
+      'Session boundaries are reconstructed from OS usage events (not scaled); daily foreground totals clip OS usage events strictly to the local day.',
+    );
     score = Math.min(score, 0.49);
   }
   if (smallSample) {

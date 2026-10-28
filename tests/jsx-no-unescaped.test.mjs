@@ -97,3 +97,30 @@ test('no literal {{ }} double braces in JSX text across apps/mobile', async () =
   }
   assert.equal(issues.length, 0, `Found literal {{ }} in JSX text: ${JSON.stringify(issues)}`);
 });
+
+test('apps/mobile and core-analytics contain no stale "OS aggregate" wording and explicitly label Stored / Approximate older-day sources', async () => {
+  const { globSync } = await import('node:fs');
+  const sourceFiles = [
+    'apps/mobile/App.tsx',
+    ...globSync('apps/mobile/src/**/*.{ts,tsx}', { cwd: ROOT }),
+    ...globSync('packages/core-analytics/src/**/*.ts', { cwd: ROOT }),
+  ];
+  const staleHits = [];
+  for (const rel of sourceFiles) {
+    const text = readFileSync(join(ROOT, rel), 'utf8');
+    if (/os aggregate/i.test(text)) {
+      staleHits.push(rel);
+    }
+  }
+  assert.deepEqual(staleHits, [], `Stale "OS aggregate" copy found in: ${staleHits.join(', ')}`);
+
+  const homeTab = readFileSync(join(ROOT, 'apps/mobile/src/tabs/HomeTab.tsx'), 'utf8');
+  assert.match(homeTab, /Stored · Mirror events/);
+  assert.match(homeTab, /Approximate · OS daily buckets/);
+  assert.match(homeTab, /Day-clipped OS foreground events/);
+
+  const debugView = readFileSync(join(ROOT, 'apps/mobile/src/components/DebugView.tsx'), 'utf8');
+  assert.match(debugView, /pre-00:00 bucket/);
+  assert.match(debugView, /Totals source:/);
+});
+

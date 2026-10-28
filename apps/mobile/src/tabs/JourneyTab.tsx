@@ -35,6 +35,7 @@ export function JourneyTab(): React.ReactElement {
   const theme = useTheme();
   const {
     selectedDay,
+    dailyTotalsSource,
     evolution,
     discovery,
     rabbitHole,
@@ -321,7 +322,17 @@ export function JourneyTab(): React.ReactElement {
               {/* Honest Tier-D standing & label reconciliation */}
               <View style={{ gap: theme.space(1) }}>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Top app by time (${selectedDay}): ${discovery.topAppByTime ? `${discovery.topAppByTime.label} (${formatDuration(discovery.topAppByTime.totalMs)}, OS aggregate)` : 'none recorded'}`}
+                  {`Top app by time (${selectedDay}): ${
+                    discovery.topAppByTime
+                      ? `${discovery.topAppByTime.label} (${formatDuration(discovery.topAppByTime.totalMs)}, ${
+                          dailyTotalsSource === 'stored_events'
+                            ? 'Stored · Mirror events'
+                            : dailyTotalsSource === 'os_bucket_approx'
+                              ? 'Approximate · OS daily buckets'
+                              : 'day-clipped OS foreground'
+                        })`
+                      : 'none recorded'
+                  }`}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {`New topics opened: ${discovery.newTopicsOpened.value} — ${discovery.newTopicsOpened.detail}`}

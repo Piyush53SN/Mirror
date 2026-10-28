@@ -489,7 +489,8 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   // Merge hard-coded ignored (Mirror itself, systemui etc) with dynamic launchers resolved via HOME role.
   // Previously we used only hard-coded list which missed POCO Launcher com.mi.android.globallauncher (10h4m bug).
   // Now launcher detection is dynamic via PackageManager CATEGORY_HOME (needs <queries> for HOME).
-  // For totals, we now use OS aggregate (queryUsageStats) which matches Digital Wellbeing by construction.
+  // For per-app daily totals, computeDayForegroundTotals sums closed intervals from
+  // buildUsageEvents clipped strictly to [dayStart, min(dayEnd, now)], matching Digital Wellbeing.
   // For session timeline (raw events), we keep per-activity tracking but:
   // - Only launchers (HOME role) and Mirror itself close previous app on fg (user went home or opened Mirror)
   // - SystemUI, settings, permissioncontroller etc are ignored WITHOUT closing previous (notification shade should not end game session)
@@ -1133,5 +1134,234 @@ export function filterUsageStatsBucketsForDay(
     .filter(([, totalMs]) => totalMs > 0)
     .map(([packageName, totalMs]) => ({ packageName, totalMs }))
     .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+}
+
+export type DayTotalsSource = 'os_events' | 'stored_events' | 'os_bucket_approx';
+
+export type ResolvedDayForegroundTotals = {
+  totals: OsTotal[];
+  /**
+   * Which data path supplied `totals`:
+   *   - `'os_events'`: live raw `UsageEvents` clipped strictly to `[dayStart, min(dayEnd, now)]`
+   *     (matches Digital Wellbeing).
+   *   - `'stored_events'`: Mirror's own stored day-clipped `app_background` events in SQLite
+   *     after Android's ~7-day `UsageEvents` buffer has rolled past the day (or earlier part of it).
+   *   - `'os_bucket_approx'`: fallback `queryUsageStats(INTERVAL_DAILY)` buckets (midpoint-filtered)
+   *     when neither live `UsageEvents` nor Mirror's stored event log covers the day.
+   */
+  source: DayTotalsSource;
+};
+
+export type RawUsageBucketDiagnostic = {
+  packageName: string;
+  /** Raw unclipped sum of `totalTimeInForeground` returned by `queryUsageStats(INTERVAL_DAILY, from, to)`. */
+  totalMs: number;
+  /**
+   * Portion of `totalMs` coming from `IntervalStats` buckets whose `firstTimeStamp < window.fromMs`
+   * (e.g. yesterday's `[Oct 27 05:30 IST, Oct 28 05:30 IST)` UTC-midnight bucket bleeding into `Oct 28`).
+   */
+  preMidnightBucketMs: number;
+  /** Number of `INTERVAL_DAILY` buckets returned by Android for this package across `[fromMs, toMs)`. */
+  bucketCount: number;
+  earliestBucketStartMs?: number;
+  latestBucketEndMs?: number;
+};
+
+/**
+ * Summarise raw `UsageStatsManager.queryUsageStats(INTERVAL_DAILY, dayFrom, dayTo)`
+ * rows for `DebugView` so overnight / pre-midnight bucket bleed (`firstTimeStamp < dayFrom`)
+ * is explicitly separated and quantified alongside `Day fg`, `Stored`, and `Sittings`.
+ */
+export function summarizeUsageStatsBucketsForDay(
+  buckets: readonly UsageStatsBucketRow[],
+  options: {
+    window: { fromMs: number; toMs: number };
+    ignorePackages?: readonly string[];
+    appLabels?: Readonly<Record<string, string>>;
+  },
+): RawUsageBucketDiagnostic[] {
+  const { window } = options;
+  if (!Number.isFinite(window.fromMs) || !Number.isFinite(window.toMs) || window.toMs <= window.fromMs) {
+    return [];
+  }
+  const launcherSet = new Set<string>(options.ignorePackages ?? []);
+  const appLabels = options.appLabels ?? {};
+  const byPkg = new Map<
+    string,
+    {
+      totalMs: number;
+      preMidnightBucketMs: number;
+      bucketCount: number;
+      earliestBucketStartMs?: number;
+      latestBucketEndMs?: number;
+    }
+  >();
+
+  for (const b of buckets) {
+    if (!b || !b.packageName) continue;
+    const fgMs = b.totalTimeInForeground;
+    if (!Number.isFinite(fgMs) || fgMs <= 0) continue;
+    if (launcherSet.has(b.packageName) || isIgnoredSystemApp(b.packageName, appLabels[b.packageName])) {
+      continue;
+    }
+    const first =
+      typeof b.firstTimeStamp === 'number' && Number.isFinite(b.firstTimeStamp) ? b.firstTimeStamp : undefined;
+    const last =
+      typeof b.lastTimeStamp === 'number' && Number.isFinite(b.lastTimeStamp) ? b.lastTimeStamp : undefined;
+    if (first !== undefined && last !== undefined && last > first) {
+      if (last <= window.fromMs || first >= window.toMs) continue;
+    }
+    const cur = byPkg.get(b.packageName) ?? {
+      totalMs: 0,
+      preMidnightBucketMs: 0,
+      bucketCount: 0,
+    };
+    cur.totalMs += fgMs;
+    cur.bucketCount += 1;
+    if (first !== undefined && first < window.fromMs) {
+      cur.preMidnightBucketMs += fgMs;
+    }
+    if (first !== undefined) {
+      cur.earliestBucketStartMs =
+        cur.earliestBucketStartMs === undefined ? first : Math.min(cur.earliestBucketStartMs, first);
+    }
+    if (last !== undefined) {
+      cur.latestBucketEndMs =
+        cur.latestBucketEndMs === undefined ? last : Math.max(cur.latestBucketEndMs, last);
+    }
+    byPkg.set(b.packageName, cur);
+  }
+
+  return [...byPkg.entries()]
+    .filter(([, diag]) => diag.totalMs > 0)
+    .map(([packageName, diag]) => ({ packageName, ...diag }))
+    .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
+}
+
+/**
+ * Resolve per-app foreground totals for a local day AND report the exact source
+ * (`'os_events'`, `'stored_events'`, or `'os_bucket_approx'`) so older days beyond
+ * Android's rolling `UsageEvents` buffer are explicitly labelled in the UI.
+ *
+ * Edge cases handled explicitly:
+ *   1. Next-day `+6h` lookahead rows (`timeStamp >= effectiveEndMs`) do NOT count as
+ *      live `UsageEvents` coverage for a day whose own events already rolled off.
+ *   2. Boundary-day mid-day rolloff: if Android pruned the morning of day ~`t-7` so
+ *      the earliest raw event inside `[fromMs, effectiveEndMs)` is later than an
+ *      earlier stored foreground interval and `sum(storedTotals) > sum(osTotals)`,
+ *      Mirror serves the complete `storedTotals` (`source: 'stored_events'`) rather
+ *      than silently under-reporting the morning.
+ *   3. Older quiet days after `earliestStoredEventMs <= window.fromMs` stay labelled
+ *      `'stored_events'` when stored history covers the full day, while pre-install
+ *      days fall back to midpoint-filtered `INTERVAL_DAILY` buckets labelled
+ *      `'os_bucket_approx'`.
+ */
+export function resolveDayForegroundTotals(input: {
+  rawEvents?: readonly UsageRow[];
+  storedEvents?: readonly Pick<UsageEvent, 'kind' | 'app' | 'at' | 'duration_ms'>[];
+  bucketRows?: readonly UsageStatsBucketRow[];
+  earliestStoredEventMs?: number | null;
+  hasPermission?: boolean;
+  options: DayForegroundTotalsOptions;
+}): ResolvedDayForegroundTotals {
+  const { options } = input;
+  const { window } = options;
+  const effectiveEndMs =
+    options.nowMs !== undefined ? Math.min(window.toMs, options.nowMs) : window.toMs;
+  if (
+    !Number.isFinite(window.fromMs) ||
+    !Number.isFinite(effectiveEndMs) ||
+    effectiveEndMs <= window.fromMs
+  ) {
+    return { totals: [], source: 'os_events' };
+  }
+
+  const rawEvents = input.hasPermission === false ? [] : (input.rawEvents ?? []);
+  const storedEvents = input.storedEvents ?? [];
+  const bucketRows = input.bucketRows ?? [];
+
+  // Only raw events strictly before `effectiveEndMs` prove Android's UsageEvents
+  // buffer still reaches into `window`; events >= `effectiveEndMs` belong solely
+  // to the +6h next-day lookahead.
+  const rawInOrBeforeDay = rawEvents.filter(
+    (r) => r && typeof r.timeStamp === 'number' && Number.isFinite(r.timeStamp) && r.timeStamp < effectiveEndMs,
+  );
+  const storedTotals = computeDayForegroundTotalsFromStoredEvents(storedEvents, options);
+
+  if (rawInOrBeforeDay.length > 0) {
+    const osTotals = computeDayForegroundTotals(rawEvents, options);
+    // Check whether Android's rolling ~7-day UsageEvents buffer partially pruned the
+    // start of this day while Mirror's SQLite store still retains the earlier hours.
+    let earliestRawMs = Infinity;
+    for (const r of rawInOrBeforeDay) {
+      if (r.timeStamp < earliestRawMs) earliestRawMs = r.timeStamp;
+    }
+    let earliestStoredOverlapStartMs = Infinity;
+    const launcherSet = new Set<string>(options.ignorePackages ?? []);
+    const appLabels = options.appLabels ?? {};
+    for (const ev of storedEvents) {
+      if (!ev || ev.kind !== 'app_background') continue;
+      const dur = ev.duration_ms ?? 0;
+      if (!Number.isFinite(dur) || dur <= 0) continue;
+      if (launcherSet.has(ev.app) || isIgnoredSystemApp(ev.app, appLabels[ev.app])) continue;
+      const endMs = Date.parse(ev.at);
+      if (!Number.isFinite(endMs) || endMs <= window.fromMs) continue;
+      const startMs = Math.max(window.fromMs, endMs - dur);
+      if (startMs < effectiveEndMs && startMs < earliestStoredOverlapStartMs) {
+        earliestStoredOverlapStartMs = startMs;
+      }
+    }
+    const osSum = osTotals.reduce((s, r) => s + r.totalMs, 0);
+    const storedSum = storedTotals.reduce((s, r) => s + r.totalMs, 0);
+    if (
+      earliestRawMs > window.fromMs &&
+      earliestStoredOverlapStartMs < earliestRawMs &&
+      storedSum > osSum
+    ) {
+      return { totals: storedTotals, source: 'stored_events' };
+    }
+    return { totals: osTotals, source: 'os_events' };
+  }
+
+  // Current day still within 24h of `nowMs` when permission is granted and the phone
+  // simply has no recent raw/stored/bucket events yet (e.g. fresh morning boot).
+  if (
+    input.hasPermission !== false &&
+    options.nowMs !== undefined &&
+    effectiveEndMs > options.nowMs - 86_400_000 &&
+    storedTotals.length === 0
+  ) {
+    const bucketCheck = filterUsageStatsBucketsForDay(bucketRows, {
+      window,
+      ignorePackages: options.ignorePackages,
+      appLabels: options.appLabels,
+    });
+    if (bucketCheck.length === 0) {
+      return { totals: [], source: 'os_events' };
+    }
+  }
+
+  if (storedTotals.length > 0) {
+    return { totals: storedTotals, source: 'stored_events' };
+  }
+
+  const bucketTotals = filterUsageStatsBucketsForDay(bucketRows, {
+    window,
+    ignorePackages: options.ignorePackages,
+    appLabels: options.appLabels,
+  });
+  if (bucketTotals.length > 0) {
+    return { totals: bucketTotals, source: 'os_bucket_approx' };
+  }
+
+  if (
+    typeof input.earliestStoredEventMs === 'number' &&
+    Number.isFinite(input.earliestStoredEventMs) &&
+    input.earliestStoredEventMs <= window.fromMs
+  ) {
+    return { totals: [], source: 'stored_events' };
+  }
+
+  return { totals: [], source: 'os_bucket_approx' };
 }
 

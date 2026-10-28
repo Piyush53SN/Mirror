@@ -12,7 +12,7 @@
  *      unmeasured and are listed explicitly rather than imputed or guessed.
  *      Only explicit user `intent_label`s feed Deliberate share (never duration hints).
  *   4. Every scenario states its exact assumptions (e.g. zero cross-app
- *      substitution, per-sitting truncation vs OS daily aggregate, no evening
+ *      substitution, per-sitting truncation vs day-clipped foreground totals, no evening
  *      displacement before quiet hours).
  */
 import {
@@ -27,7 +27,7 @@ import {
   type ScoredSession,
 } from './scoring';
 import { SHORT_SESSION_MS } from './sessionize';
-import { isIgnoredSystemApp } from './usage';
+import { isIgnoredSystemApp, type DayTotalsSource } from './usage';
 
 export const DEFAULT_WHATIF_CAP_MINUTES = 10;
 export const DEFAULT_WHATIF_QUIET_START_HOUR = 23;
@@ -94,6 +94,8 @@ export type WhatIfInput = {
   window: { fromMs: number; toMs: number };
   sessions: readonly ScoredSession[];
   osTotals?: readonly WhatIfOsTotal[];
+  /** Optional source for `osTotals` so older days label `stored` or `approx.` screen time accurately. */
+  totalsSource?: DayTotalsSource;
   labels?: readonly IntentLabel[] | Readonly<Record<string, IntentLabel['label']>>;
   appLabels?: Readonly<Record<string, string>>;
   ignorePackages?: readonly string[];
@@ -360,9 +362,15 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     const deltaTimeMs = estimatedTimeMs - scenarioBaselineMs;
     const deltaTimePct =
       scenarioBaselineMs > 0 ? Math.max(-1, Math.min(0, deltaTimeMs / scenarioBaselineMs)) : 0;
+    const screenTimeKind =
+      input.totalsSource === 'stored_events'
+        ? 'stored screen time'
+        : input.totalsSource === 'os_bucket_approx'
+          ? 'approx. screen time'
+          : 'OS screen time';
     const baselineLabel =
       params.scenarioTimeSource === 'os_aggregate'
-        ? `${fmtDurationShort(scenarioBaselineMs)} OS screen time`
+        ? `${fmtDurationShort(scenarioBaselineMs)} ${screenTimeKind}`
         : `${fmtDurationShort(scenarioBaselineMs)} sitting spans`;
 
     const timeEstimateLabel =
@@ -456,7 +464,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     };
   };
 
-  // Resolve top app by OS aggregate total when present, else by session duration sum
+  // Resolve top app by day-clipped foreground total when present, else by session duration sum
   let topApp: { app: string; label: string; removedMs: number; source: 'os_aggregate' | 'sessions' } | null = null;
   if (validOsTotals.length > 0) {
     const first = validOsTotals[0]!;

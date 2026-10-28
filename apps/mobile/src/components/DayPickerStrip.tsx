@@ -11,7 +11,7 @@ export function DayPickerStrip(): React.ReactElement {
   return (
     <View style={{ gap: theme.space(1) }}>
       <Text role="micro" tone="muted" theme={theme}>
-        Day (last 7 days)
+        {`Day (last ${dayOptions.length} days)`}
       </Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', gap: theme.space(1.5), paddingVertical: theme.space(0.5) }}>

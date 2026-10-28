@@ -1762,3 +1762,18 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Renders a calm, explicit empty state reporting `distinctDays / 21` and cells at `5+` sittings until met; uses purely descriptive timing language with a unit-tested ban on clinical/diagnostic/chronotype wording.
 - Added unit + `fast-check` property tests in `packages/core-analytics/tests/focuswindows.test.mjs` and updated `scoring.test.mjs`, `metrics-doc.test.mjs`, and `whatif.test.mjs`. Stopping for review.
 
+### v0.1 Release Steps (1)–(4) & Digital Wellbeing Parity Follow-up (2026-10-25 – 2026-10-28)
+
+- **Step (1) (`3ec2772`):** Flipped `TIERS.B` (`Your export`) unavailable for v0.1, removed double negatives, hid OAuth claims until P5 connectors exist, and styled `You` tab two-step Local Data & Privacy controls.
+- **Step (2) (`50d41e8`):** Stripped `android.permission.INTERNET` from release merged `AndroidManifest.xml` via `tools:node="remove"`, documented `ACCESS_NETWORK_STATE` for `WorkManager`, and verified on Gradle (`Android build + manifest gate` run `40339124165`).
+- **Step (3) (`de85378`):** Hardened reset/ingest history backfill, recorded plaintext store-reset audit metadata shown on `You`, and wired external env/Gradle-property upload signing (`with-release-signing.js` + `docs/RELEASE_SIGNING.md`).
+- **Digital Wellbeing parity + sitting-spans reconciliation (`f1f5848`) & follow-ups:**
+  - Replaced `INTERVAL_DAILY` totals with `computeDayForegroundTotals` (day-clipped `UsageEvents` with symmetric 6h lookaround + `CONTINUE_PREVIOUS_DAY` handling), matching Digital Wellbeing within `max(10%, 60s)`.
+  - Replaced all remaining `"OS aggregate"` UI/Why-sheet strings across `MirrorTabShell`, `HomeTab`, `InsightsTab`, `JourneyTab`, `SessionsTab`, `YouTab`, `scoring.ts`, and `whatif.ts`.
+  - Added `summarizeUsageStatsBucketsForDay` (`preMidnightBucketMs`, `bucketCount`, `earliestBucketStartMs`) in `DebugView` alongside `Day fg`, `Stored`, `Sittings`, and `Raw INTERVAL_DAILY` to prove overnight/pre-midnight `INTERVAL_DAILY` bucket bleed (`firstTimeStamp < 00:00` local).
+  - Added `resolveDayForegroundTotals` (`'os_events' | 'stored_events' | 'os_bucket_approx'`) and extended day picker to 14 days so older days beyond Android's `UsageEvents` buffer are explicitly badged as **Stored** (`Stored · Mirror events`) or **Approximate** (`Approximate · OS daily buckets`).
+- **Step (4) (Release preparation — stopping before Step 5):**
+  - Added `scripts/release/bump-version.mjs` (`--check` + offline lockstep bump across manifests, `build.gradle`, and `package-lock.json`); verified `v0.1.0` (`versionCode: 1`).
+  - Updated `scripts/release/changelog.mjs`, regenerated `CHANGELOG.md` for `v0.1.0`, updated `docs/deployment.md` and `infra/workflows/release.yml`, and verified `npm run verify` + `make release-stage1` (`check-ota-guard.mjs`, `check-offline.mjs`, `release-preflight.mjs`). Stopping for review before Step (5) (signed-APK privacy canary & release tag).
+
+

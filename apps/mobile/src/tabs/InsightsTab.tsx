@@ -44,6 +44,7 @@ export function InsightsTab(): React.ReactElement {
     depthBands,
     dayScoredSessions,
     sittingSpanMs,
+    dailyTotalsSource,
     whatIf,
     whatIfCapMin,
     setWhatIfCapMin,
@@ -168,8 +169,24 @@ export function InsightsTab(): React.ReactElement {
                   <View style={{ flex: 1, minWidth: 120 }}>
                     <Stat
                       value={formatDuration(whatIf.baselineTimeMs)}
-                      label={whatIf.timeSource === 'os_aggregate' ? 'OS screen time' : 'Recorded time'}
-                      hint="Active foreground"
+                      label={
+                        whatIf.timeSource === 'os_aggregate'
+                          ? dailyTotalsSource === 'stored_events'
+                            ? 'Stored screen time'
+                            : dailyTotalsSource === 'os_bucket_approx'
+                              ? 'Approx. screen time'
+                              : 'OS screen time'
+                          : 'Recorded time'
+                      }
+                      hint={
+                        whatIf.timeSource === 'os_aggregate'
+                          ? dailyTotalsSource === 'stored_events'
+                            ? 'Stored · Mirror events'
+                            : dailyTotalsSource === 'os_bucket_approx'
+                              ? 'Approximate · OS buckets'
+                              : 'Day-clipped OS events'
+                          : 'Sitting spans'
+                      }
                       theme={theme}
                     />
                   </View>

@@ -180,7 +180,7 @@ export function SessionsTab(): React.ReactElement {
 
         <Callout theme={theme} tone="neutral">
           {
-            'Daily foreground totals on Home come from the OS aggregate. Labeling is optional feedback — only your explicit intentional or mindless labels feed Deliberate share (never guessed). Duration alone does not indicate intent, so hints never count.'
+            'Daily foreground totals on Home sum day-clipped OS usage events (or show Stored / Approximate on older days beyond Android’s UsageEvents buffer). Labeling is optional feedback — only your explicit intentional or mindless labels feed Deliberate share (never guessed). Duration alone does not indicate intent, so hints never count.'
           }
         </Callout>
 
@@ -245,7 +245,7 @@ export function SessionsTab(): React.ReactElement {
         {visibleSessions.length === 0 ? (
           <EmptyState
             title={`No opens for ${selectedDay}`}
-            body="App open times appear here as soon as Android records foreground usage events on this day. Per-app totals on Home come from the OS aggregate."
+            body="App open times appear here as soon as Android records foreground usage events on this day. Per-app totals on Home sum day-clipped OS foreground events (or Stored / Approximate fallback on older days)."
             theme={theme}
           />
         ) : (

@@ -5,7 +5,7 @@
  */
 
 export const BUILD_SHORT = [
-  'Per-app totals from day-clipped OS foreground events (matches Digital Wellbeing)',
+  'Per-app totals from day-clipped OS foreground events (matches Digital Wellbeing; older days beyond OS UsageEvents buffer labelled Stored or Approximate)',
   'App opens only – no durations, no scaling',
   'IQS out of measured factors (/55 before labels, /75 with 5+ labels; minimum-activity floor enforced, never rescaled)',
   'Labeling optional, only explicit labels count',
@@ -13,7 +13,7 @@ export const BUILD_SHORT = [
 ].join('\n');
 
 export const BUILD_FULL = [
-  'Per-app totals from day-clipped OS UsageEvents foreground intervals (6h pre-midnight lookback, clipped strictly to [00:00, min(now, 24:00)]), matching Digital Wellbeing within max(10%, 60s) without INTERVAL_DAILY pre-midnight bucket bleed; excludes launchers (HOME role), Mirror, Play Store/Services, Settings, and all Package installers',
+  'Per-app totals from day-clipped OS UsageEvents foreground intervals (6h lookaround, clipped strictly to [00:00, min(now, 24:00)]), matching Digital Wellbeing within max(10%, 60s) without INTERVAL_DAILY pre-midnight bucket bleed; older days beyond Android’s UsageEvents buffer are explicitly badged as Stored (Mirror SQLite foreground events) or Approximate (OS daily bucket fallback); excludes launchers (HOME role), Mirror, Play Store/Services, Settings, and all Package installers',
   'App opens from raw events, open times only, no durations, no scaling (60s recent-close honest + 1h overlap + per-class persisted map; in-app Activity A->B STOPPED(A) no longer kills B, delayed PAUSED->STOPPED on closed apps and PAUSED+STOPPED pairs no longer inflate orphans)',
   'Zero-length unmatched OS events are reported as point-in-time boundary events (with per-app and per-eventType breakdown), never as “collection gaps (0 min unmeasured)” or lost usage time',
   'IQS v2: Tier-D usage-pattern score out of measured parts (/55 without 5 labels, /75 with 5+ labels, /100 with topic vectors; never rescaled), minimum-activity floors (session length ≥5 sittings, switching ≥3 sittings & ≥15 min / 0.25 active hours, late-night ≥15 min sitting spans), 0.49 confidence cap on reconstructed boundaries, only explicit labels feed Deliberate share',

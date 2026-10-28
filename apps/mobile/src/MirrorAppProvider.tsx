@@ -4,12 +4,14 @@ import { AppState, Share } from 'react-native';
 import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
 import type {
   CuriositySplit,
+  DayTotalsSource,
   DepthBand,
   DiscoveryJourneyResult,
   FocusWindowsResult,
   InterestEvolutionResult,
   OrphanDiagnosticSummary,
   RabbitHoleResult,
+  RawUsageBucketDiagnostic,
   Score,
   ScoreGap,
   ScoredSession,
@@ -55,6 +57,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [permission, setPermission] = React.useState<PermissionState>('checking');
   const [sessions, setSessions] = React.useState<SessionRow[]>([]);
   const [dailyTotals, setDailyTotals] = React.useState<DailyTotal[]>([]);
+  const [dailyTotalsSource, setDailyTotalsSource] = React.useState<DayTotalsSource>('os_events');
   const [labels, setLabels] = React.useState<Record<string, string>>({});
   const [quality, setQuality] = React.useState<DataQuality | null>(null);
   const [validation, setValidation] = React.useState<ValidationResult | null>(null);
@@ -141,7 +144,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           const dayFrom = dayStartMs(targetDay);
           const dayTo = dayEndMs(targetDay);
           const q = await runtime.dataQuality({ fromMs: dayFrom, toMs: dayTo });
-          const osRows = await runtime.osTotals({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
+          const resolvedOs = await runtime
+            .osTotalsWithSource({ fromMs: dayFrom, toMs: dayTo })
+            .catch(() => ({ totals: [], source: 'os_events' as const }));
+          const osRows = resolvedOs.totals;
           let launcherPkgs: string[] = [];
           try {
             launcherPkgs = await usage.getLauncherPackages();
@@ -162,6 +168,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           if (!isCurrent()) return;
           setQuality(q);
           setDailyTotals(totals);
+          setDailyTotalsSource(resolvedOs.source);
           setLabels(resolved);
         } catch {}
         return;
@@ -217,7 +224,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       try {
         const dayFrom = dayStartMs(targetDay);
         const dayTo = dayEndMs(targetDay);
-        const osRows = await runtime.osTotals({ fromMs: dayFrom, toMs: dayTo });
+        const resolvedOs = await runtime.osTotalsWithSource({ fromMs: dayFrom, toMs: dayTo });
+        const osRows = resolvedOs.totals;
         let launcherPkgs: string[] = [];
         try {
           launcherPkgs = await usage.getLauncherPackages();
@@ -295,6 +303,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setLauncherPackages(launcherPkgs);
         setLabels((prev) => ({ ...prev, ...allLabelsForDay }));
         setDailyTotals(totals);
+        setDailyTotalsSource(resolvedOs.source);
         setSessions(canonicalSessionRows);
         setScaledSessions(openOnly);
         setIntentLabels(loadedLabels);
@@ -389,8 +398,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           ]);
           const storedMap = new Map<string, number>();
           for (const r of storedFg) storedMap.set(r.packageName, r.totalMs);
-          const rawBucketMap = new Map<string, number>();
-          for (const r of rawBuckets) rawBucketMap.set(r.packageName, r.totalMs);
+          const rawBucketMap = new Map<string, RawUsageBucketDiagnostic>();
+          for (const r of rawBuckets) rawBucketMap.set(r.packageName, r);
           const sittingMap = new Map<string, number>();
           for (const s of canonicalSittings) {
             sittingMap.set(s.app, (sittingMap.get(s.app) ?? 0) + (s.endMs - s.startMs));
@@ -408,7 +417,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             .map((app) => {
               const mirrorMs = storedMap.get(app) ?? 0;
               const osMs = osMap.get(app) ?? 0;
-              const rawBucketMs = rawBucketMap.get(app) ?? 0;
+              const rawDiag = rawBucketMap.get(app);
+              const rawBucketMs = rawDiag?.totalMs ?? 0;
               const appSittingSpanMs = sittingMap.get(app) ?? 0;
               const diff = osMs > 0 ? ((mirrorMs - osMs) / osMs) * 100 : 0;
               const status =
@@ -423,6 +433,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
                 mirrorMs,
                 osMs,
                 rawBucketMs,
+                preMidnightBucketMs: rawDiag?.preMidnightBucketMs ?? 0,
+                bucketCount: rawDiag?.bucketCount ?? 0,
+                earliestBucketStartMs: rawDiag?.earliestBucketStartMs,
+                latestBucketEndMs: rawDiag?.latestBucketEndMs,
                 sittingSpanMs: appSittingSpanMs,
                 diffPct: diff,
                 status,
@@ -645,6 +659,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setError(null);
           setSessions([]);
           setDailyTotals([]);
+          setDailyTotalsSource('os_events');
           setScaledSessions([]);
           setDayScoredSessions([]);
           setDayScoreGaps([]);
@@ -708,6 +723,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
         sessions: dayScoredSessions,
         osTotals: dailyTotals,
+        totalsSource: dailyTotalsSource,
         labels: intentLabels,
         appLabels: labels,
         ignorePackages: launcherPackages,
@@ -725,6 +741,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     dayWindow,
     dayScoredSessions,
     dailyTotals,
+    dailyTotalsSource,
     intentLabels,
     labels,
     launcherPackages,
@@ -792,7 +809,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     setTimeout(() => setBuildTapCount(0), 3000);
   }, [buildTapCount]);
 
-  const dayOptions = React.useMemo(() => lastNDays(7), [selectedDay]);
+  const dayOptions = React.useMemo(() => lastNDays(14), [selectedDay]);
   const storedOrphanCount = quality?.byReason?.orphan_background ?? 0;
   const storedTotalGaps = quality?.count ?? 0;
   const isTodaySelected = selectedDay === toDayStr(Date.now());
@@ -823,6 +840,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       dayOptions,
       sessions,
       dailyTotals,
+      dailyTotalsSource,
       labels,
       quality,
       validation,
@@ -886,6 +904,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       dayOptions,
       sessions,
       dailyTotals,
+      dailyTotalsSource,
       labels,
       quality,
       validation,

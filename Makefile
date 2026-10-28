@@ -56,7 +56,10 @@ android-build:
 	bash scripts/android/build-and-gate.sh
 
 release-stage1:
+	$(NODE) scripts/release/bump-version.mjs --check
 	$(NODE) scripts/android/release-preflight.mjs
+	$(NODE) scripts/android/check-ota-guard.mjs
+	$(NODE) scripts/android/check-offline.mjs
 
 ota-guard:
 	$(NODE) scripts/android/check-ota-guard.mjs

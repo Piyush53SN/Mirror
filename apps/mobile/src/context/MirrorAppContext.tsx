@@ -3,6 +3,7 @@ import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/stor
 import {
   formatDurationShort,
   type CuriositySplit,
+  type DayTotalsSource,
   type DepthBand,
   type DiscoveryJourneyResult,
   type FocusWindowsResult,
@@ -17,6 +18,7 @@ import {
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 
+export type { DayTotalsSource };
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
 export type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -28,6 +30,10 @@ export type SingleDayRow = {
   mirrorMs: number;
   osMs: number;
   rawBucketMs?: number;
+  preMidnightBucketMs?: number;
+  bucketCount?: number;
+  earliestBucketStartMs?: number;
+  latestBucketEndMs?: number;
   sittingSpanMs?: number;
   diffPct: number;
   status: string;
@@ -131,6 +137,7 @@ export type MirrorAppContextValue = {
 
   sessions: SessionRow[];
   dailyTotals: DailyTotal[];
+  dailyTotalsSource: DayTotalsSource;
   labels: Record<string, string>;
   quality: DataQuality | null;
   validation: ValidationResult | null;

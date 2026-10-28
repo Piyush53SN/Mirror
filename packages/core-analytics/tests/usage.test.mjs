@@ -22,6 +22,8 @@ const {
   computeDayForegroundTotals,
   computeDayForegroundTotalsFromStoredEvents,
   filterUsageStatsBucketsForDay,
+  resolveDayForegroundTotals,
+  summarizeUsageStatsBucketsForDay,
   validateDailyTotals,
   sessionize,
   buildCanonicalDaySittings,
@@ -746,6 +748,147 @@ test('compares active foreground total (47m) vs 15-min-merged sitting span (1h 9
     { window: { fromMs: dayStart, toMs: dayEnd } },
   );
   assert.deepEqual(sanitizedBuckets, [{ packageName: CHATGPT, totalMs: 47 * MIN }]);
+});
+
+test('summarizeUsageStatsBucketsForDay isolates pre-midnight INTERVAL_DAILY bucket bleed (+31m -> 1h 18m vs 47m Day fg) in DebugView', () => {
+  // 2026-10-28 in Asia/Calcutta (UTC+05:30): local midnight = Oct 27 18:30Z, UTC bucket rollover = Oct 28 00:00Z (05:30 IST)
+  const dayStart = Date.parse('2026-10-27T18:30:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  const rollover0530 = Date.parse('2026-10-28T00:00:00.000Z');
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const MI_DOC = 'cn.wps.moffice_eng.xiaomi.lite';
+  const WHATSAPP = 'com.whatsapp';
+
+  const bucketDiags = summarizeUsageStatsBucketsForDay(
+    [
+      // Pre-midnight bucket [Oct 27 05:30 IST, Oct 28 05:30 IST) overlapping 2026-10-28 00:00 IST:
+      // ChatGPT had 31m on Oct 27 evening; Mi Doc Viewer and WhatsApp had 0m in that bucket.
+      {
+        packageName: CHATGPT,
+        totalTimeInForeground: 31 * MIN,
+        firstTimeStamp: rollover0530 - 86_400_000,
+        lastTimeStamp: rollover0530,
+      },
+      // Today's bucket [Oct 28 05:30 IST, Oct 29 05:30 IST):
+      {
+        packageName: CHATGPT,
+        totalTimeInForeground: 47 * MIN,
+        firstTimeStamp: rollover0530,
+        lastTimeStamp: rollover0530 + 8 * 3_600_000,
+      },
+      {
+        packageName: MI_DOC,
+        totalTimeInForeground: 25 * MIN,
+        firstTimeStamp: rollover0530,
+        lastTimeStamp: rollover0530 + 8 * 3_600_000,
+      },
+      {
+        packageName: WHATSAPP,
+        totalTimeInForeground: 22 * MIN,
+        firstTimeStamp: rollover0530,
+        lastTimeStamp: rollover0530 + 8 * 3_600_000,
+      },
+    ],
+    { window: { fromMs: dayStart, toMs: dayEnd } },
+  );
+
+  const chatGptDiag = bucketDiags.find((d) => d.packageName === CHATGPT);
+  assert.ok(chatGptDiag);
+  assert.equal(chatGptDiag.totalMs, 78 * MIN, 'Raw INTERVAL_DAILY sums to 1h 18m (78m)');
+  assert.equal(chatGptDiag.preMidnightBucketMs, 31 * MIN, '31m comes from bucket starting before local midnight');
+  assert.equal(chatGptDiag.bucketCount, 2);
+  assert.equal(chatGptDiag.earliestBucketStartMs, rollover0530 - 86_400_000);
+
+  const miDocDiag = bucketDiags.find((d) => d.packageName === MI_DOC);
+  assert.equal(miDocDiag?.totalMs, 25 * MIN);
+  assert.equal(miDocDiag?.preMidnightBucketMs, 0);
+  assert.equal(miDocDiag?.bucketCount, 1);
+
+  const whatsappDiag = bucketDiags.find((d) => d.packageName === WHATSAPP);
+  assert.equal(whatsappDiag?.totalMs, 22 * MIN);
+  assert.equal(whatsappDiag?.preMidnightBucketMs, 0);
+});
+
+test('resolveDayForegroundTotals explicitly labels os_events, stored_events (including +6h next-day lookahead & mid-day rolloff), and os_bucket_approx', () => {
+  const MIN = 60_000;
+  const CHATGPT = 'com.openai.chatgpt';
+  const dayStart = Date.parse('2026-10-18T18:30:00.000Z'); // older day ~10 days ago
+  const dayEnd = dayStart + 86_400_000;
+  const nowMs = dayStart + 10 * 86_400_000;
+
+  // 1) Live day within Android's UsageEvents buffer -> source === 'os_events'
+  const liveRaw = [
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: dayStart + 2 * 3_600_000 },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayStart + 2 * 3_600_000 + 25 * MIN },
+  ];
+  const liveRes = resolveDayForegroundTotals({
+    rawEvents: liveRaw,
+    storedEvents: [],
+    bucketRows: [],
+    hasPermission: true,
+    options: { window: { fromMs: dayStart, toMs: dayEnd }, nowMs },
+  });
+  assert.equal(liveRes.source, 'os_events');
+  assert.deepEqual(liveRes.totals, [{ packageName: CHATGPT, totalMs: 25 * MIN }]);
+
+  // 2) Older day where OS UsageEvents rolled off (even when +6h next-day lookahead returns Day+1 rows!),
+  //    but Mirror SQLite stored events exist -> source === 'stored_events'
+  const storedBuilt = buildUsageEvents(liveRaw, { sinceMs: dayStart, untilMs: dayEnd });
+  const nextDayLookaheadOnly = [
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: dayEnd + 2 * 3_600_000 },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayEnd + 2 * 3_600_000 + 10 * MIN },
+  ];
+  const storedRes = resolveDayForegroundTotals({
+    rawEvents: nextDayLookaheadOnly,
+    storedEvents: storedBuilt.events,
+    bucketRows: [],
+    earliestStoredEventMs: dayStart - 86_400_000,
+    hasPermission: true,
+    options: { window: { fromMs: dayStart, toMs: dayEnd }, nowMs },
+  });
+  assert.equal(storedRes.source, 'stored_events');
+  assert.deepEqual(storedRes.totals, [{ packageName: CHATGPT, totalMs: 25 * MIN }]);
+
+  // 3) Boundary day (~day 7) where Android pruned morning UsageEvents (09:00) and only afternoon (16:00) remains,
+  //    while Mirror's SQLite store retains both morning (25m) and afternoon (15m) -> prefers complete 'stored_events' (40m)
+  const boundaryMorningAndAfternoon = [
+    ...liveRaw,
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_RESUMED, timeStamp: dayStart + 16 * 3_600_000 },
+    { packageName: CHATGPT, eventType: USAGE_EVENT_TYPE.ACTIVITY_PAUSED, timeStamp: dayStart + 16 * 3_600_000 + 15 * MIN },
+  ];
+  const fullDayStored = buildUsageEvents(boundaryMorningAndAfternoon, { sinceMs: dayStart, untilMs: dayEnd });
+  const truncatedAfternoonRawOnly = boundaryMorningAndAfternoon.slice(2);
+  const partialRolloffRes = resolveDayForegroundTotals({
+    rawEvents: truncatedAfternoonRawOnly,
+    storedEvents: fullDayStored.events,
+    bucketRows: [],
+    earliestStoredEventMs: dayStart - 86_400_000,
+    hasPermission: true,
+    options: { window: { fromMs: dayStart, toMs: dayEnd }, nowMs },
+  });
+  assert.equal(partialRolloffRes.source, 'stored_events');
+  assert.deepEqual(partialRolloffRes.totals, [{ packageName: CHATGPT, totalMs: 40 * MIN }]);
+
+  // 4) Pre-Mirror older day: neither OS UsageEvents nor Mirror stored events exist -> falls back to
+  //    INTERVAL_DAILY buckets and explicitly labels source === 'os_bucket_approx'
+  const approxRes = resolveDayForegroundTotals({
+    rawEvents: [],
+    storedEvents: [],
+    bucketRows: [
+      {
+        packageName: CHATGPT,
+        totalTimeInForeground: 34 * MIN,
+        firstTimeStamp: dayStart + 5.5 * 3_600_000,
+        lastTimeStamp: dayStart + 20 * 3_600_000,
+      },
+    ],
+    earliestStoredEventMs: dayStart + 3 * 86_400_000, // Mirror installed 3 days later
+    hasPermission: true,
+    options: { window: { fromMs: dayStart, toMs: dayEnd }, nowMs },
+  });
+  assert.equal(approxRes.source, 'os_bucket_approx');
+  assert.deepEqual(approxRes.totals, [{ packageName: CHATGPT, totalMs: 34 * MIN }]);
 });
 
 

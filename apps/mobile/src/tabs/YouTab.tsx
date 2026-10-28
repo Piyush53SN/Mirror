@@ -479,7 +479,7 @@ export function YouTab(): React.ReactElement {
                 </Text>
                 <Callout theme={theme} tone="limit">
                   {
-                    'Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from OS aggregate are authoritative. Labeling optional, only explicit labels count, hint never counts.'
+                    'Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from day-clipped OS foreground events remain available on Home. Labeling optional, only explicit labels count, hint never counts.'
                   }
                 </Callout>
               </>

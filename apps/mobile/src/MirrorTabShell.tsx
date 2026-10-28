@@ -21,6 +21,7 @@ export function MirrorTabShell(): React.ReactElement {
     openSettings,
     quality,
     dailyTotals,
+    dailyTotalsSource,
     selectedDay,
     showDebug,
   } = useMirrorApp();
@@ -103,8 +104,20 @@ export function MirrorTabShell(): React.ReactElement {
           <Card theme={theme}>
             <SectionHeader
               theme={theme}
-              title={`Per-app totals - ${selectedDay} (OS)`}
-              caption="from OS aggregate, matches Digital Wellbeing"
+              title={
+                dailyTotalsSource === 'stored_events'
+                  ? `Per-app totals - ${selectedDay} (Stored)`
+                  : dailyTotalsSource === 'os_bucket_approx'
+                    ? `Per-app totals - ${selectedDay} (Approximate)`
+                    : `Per-app totals - ${selectedDay} (OS)`
+              }
+              caption={
+                dailyTotalsSource === 'stored_events'
+                  ? 'stored day-clipped foreground events in Mirror (OS UsageEvents rolled off)'
+                  : dailyTotalsSource === 'os_bucket_approx'
+                    ? 'approximate OS daily buckets (UsageEvents unavailable)'
+                    : 'day-clipped OS foreground events, matches Digital Wellbeing'
+              }
             />
             {dailyTotals.map((t) => (
               <View key={t.app} style={{ paddingVertical: theme.space(1) }}>

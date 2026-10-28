@@ -18,6 +18,7 @@ export function DebugView(): React.ReactElement {
     selectedDay,
     setSelectedDay,
     setShowDebug,
+    dailyTotalsSource,
     validation,
     labels,
     collectingSince,
@@ -33,6 +34,13 @@ export function DebugView(): React.ReactElement {
     orphanCount,
     lastReset,
   } = useMirrorApp();
+
+  const sourceSummary =
+    dailyTotalsSource === 'stored_events'
+      ? 'Stored (Mirror SQLite day-clipped events — OS UsageEvents buffer rolled off)'
+      : dailyTotalsSource === 'os_bucket_approx'
+        ? 'Approximate (OS INTERVAL_DAILY bucket fallback — no UsageEvents or stored events)'
+        : 'OS UsageEvents (live, clipped strictly to local day)';
 
   const topInset =
     Platform.OS === 'android' ? (StatusBar.currentHeight ?? 28) + theme.space(1.5) : theme.space(6);
@@ -85,7 +93,7 @@ export function DebugView(): React.ReactElement {
                 {`OS vs Mirror validation (max(10%,60s)): max diff ${validation.maxAbsPct.toFixed(1)}% / ${formatDuration(validation.maxAbsMs)}, ${validation.ok ? 'OK' : `FAIL ${validation.overThreshold.length} apps`}`}
               </Text>
               <Text role="micro" tone="muted" theme={theme}>
-                {`Period: ${selectedDay} local day, OS from day-clipped UsageEvents, Mirror from stored foreground events (same period).`}
+                {`Period: ${selectedDay} local day · Totals source: ${sourceSummary}.`}
               </Text>
               {validation.rows.slice(0, 20).map((r) => (
                 <Text key={r.app} role="micro" tone="muted" theme={theme}>
@@ -104,10 +112,15 @@ export function DebugView(): React.ReactElement {
           <SectionHeader
             theme={theme}
             title={`Single-day OS vs Mirror – ${selectedDay}`}
-            caption={`Mirror vs OS same day, last sync cursor ${collectingSince ?? 'unknown'}`}
+            caption={`Source: ${dailyTotalsSource} · last sync cursor ${collectingSince ?? 'unknown'}`}
           />
+          <Text role="micro" tone="muted" theme={theme} style={{ marginBottom: theme.space(1.5) }}>
+            {
+              'Column key: Day fg = live/fallback day-clipped foreground; Stored = Mirror SQLite foreground clipped to [00:00, 24:00); Sittings = merged ≤15m sitting spans; Raw INTERVAL_DAILY = unclipped OS daily buckets (shows pre-00:00 bucket bleed when firstTimeStamp precedes local midnight).'
+            }
+          </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1), marginBottom: theme.space(2) }}>
-            {lastNDays(7).map((day) => (
+            {lastNDays(14).map((day) => (
               <Pill key={day} theme={theme} onPress={() => setSelectedDay(day)}>
                 {day === selectedDay ? `● ${day}` : day}
               </Pill>
@@ -118,16 +131,33 @@ export function DebugView(): React.ReactElement {
               {`No data for ${selectedDay}`}
             </Text>
           ) : (
-            singleDayRows.slice(0, 30).map((r) => (
-              <View key={r.app} style={{ paddingVertical: theme.space(1) }}>
-                <Text role="micro" theme={theme}>
-                  {`${r.label} – Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}` : ''}`}
-                </Text>
-                <Text role="micro" tone="muted" theme={theme}>
-                  {r.app}
-                </Text>
-              </View>
-            ))
+            singleDayRows.slice(0, 30).map((r) => {
+              const bucketStartNote =
+                typeof r.earliestBucketStartMs === 'number'
+                  ? `from ${new Date(r.earliestBucketStartMs).toLocaleString([], {
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}`
+                  : '';
+              const bleedNote =
+                typeof r.preMidnightBucketMs === 'number' && r.preMidnightBucketMs > 0
+                  ? ` (pre-00:00 bucket +${formatDuration(r.preMidnightBucketMs)}${bucketStartNote ? `, ${bucketStartNote}` : ''}${typeof r.bucketCount === 'number' && r.bucketCount > 0 ? `, ${r.bucketCount} buckets` : ''})`
+                  : typeof r.bucketCount === 'number' && r.bucketCount > 0
+                    ? ` (${r.bucketCount} bucket${r.bucketCount === 1 ? '' : 's'}${bucketStartNote ? `, ${bucketStartNote}` : ''})`
+                    : '';
+              return (
+                <View key={r.app} style={{ paddingVertical: theme.space(1) }}>
+                  <Text role="micro" theme={theme}>
+                    {`${r.label} – Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}${bleedNote}` : ''}`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {r.app}
+                  </Text>
+                </View>
+              );
+            })
           )}
         </Card>
 

@@ -40,7 +40,9 @@
     "test:store": "node --test packages/store/tests/*.test.mjs",
     "test:android": "node --test tests/android-manifest.test.mjs",
     "android:manifest": "node scripts/android/check-merged-manifest.mjs",
-    "test:release": "node --test tests/release-stage1.test.mjs"
+    "test:release": "node --test tests/release-stage1.test.mjs",
+    "release:check-version": "node scripts/release/bump-version.mjs --check",
+    "release:changelog": "node scripts/release/changelog.mjs"
   },
   "keywords": [
     "privacy",

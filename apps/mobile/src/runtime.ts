@@ -16,13 +16,17 @@ import {
   DEFAULT_MAX_INTERVAL_MS,
   buildUsageEvents,
   collectUsage,
-  computeDayForegroundTotals,
   computeDayForegroundTotalsFromStoredEvents,
   describeGapSummary,
-  filterUsageStatsBucketsForDay,
+  resolveDayForegroundTotals,
+  summarizeUsageStatsBucketsForDay,
   validateDailyTotals,
 } from '@mirror/core-analytics';
-import type { OsTotal } from '@mirror/core-analytics';
+import type {
+  OsTotal,
+  RawUsageBucketDiagnostic,
+  ResolvedDayForegroundTotals,
+} from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
 import { ingestDay, ingestRecentDays, localDayKey } from './collector/ingest';
@@ -46,12 +50,14 @@ export type MirrorRuntime = {
   ingestRecent(now?: number): ReturnType<typeof ingestRecentDays>;
   /** What Mirror could not measure, in words and numbers. */
   dataQuality(range?: { fromMs?: number; toMs?: number }): Promise<DataQuality>;
-  /** OS-reported day-clipped foreground totals (matches Digital Wellbeing) */
+  /** Day-clipped foreground totals plus explicit source ('os_events' | 'stored_events' | 'os_bucket_approx') */
+  osTotalsWithSource(range: { fromMs: number; toMs: number }): Promise<ResolvedDayForegroundTotals>;
+  /** OS-reported day-clipped foreground totals (matches Digital Wellbeing on live days) */
   osTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Mirror's stored day-clipped foreground totals from `events` */
   storedForegroundTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
-  /** Raw unclipped `queryUsageStats(INTERVAL_DAILY)` totals for debug comparison */
-  rawBucketTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
+  /** Raw unclipped `queryUsageStats(INTERVAL_DAILY)` bucket diagnostics for debug comparison */
+  rawBucketTotals(range: { fromMs: number; toMs: number }): Promise<RawUsageBucketDiagnostic[]>;
   /** Validate Mirror vs OS totals */
   validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
   /** Cursor state – where collection started, for "collecting since" line */
@@ -223,53 +229,84 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       rawBucketTotals: async (range) => {
         try {
-          const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
-          const byPkg = new Map<string, number>();
-          for (const r of rows) {
-            if (!r.packageName || r.totalTimeInForeground <= 0) continue;
-            byPkg.set(r.packageName, (byPkg.get(r.packageName) ?? 0) + r.totalTimeInForeground);
-          }
-          return [...byPkg.entries()]
-            .map(([packageName, totalMs]) => ({ packageName, totalMs }))
-            .sort((a, b) => b.totalMs - a.totalMs || a.packageName.localeCompare(b.packageName));
-        } catch {
-          return [];
-        }
-      },
-      osTotals: async (range) => {
-        try {
-          const now = Date.now();
-          const effectiveToMs = Math.min(range.toMs, now);
-          if (effectiveToMs <= range.fromMs) return [];
           let launcherPkgs: string[] = [];
           try {
             launcherPkgs = await usage.getLauncherPackages();
           } catch {}
-          if (await usage.hasPermission()) {
-            const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
-            const rawRows = await usage.queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs);
-            if (rawRows.length > 0) {
-              return computeDayForegroundTotals(rawRows, {
-                window: range,
-                nowMs: now,
-                lookbackMs: DEFAULT_MAX_INTERVAL_MS,
-                ignorePackages: launcherPkgs,
-              });
-            }
-          }
-          // Fallback for days older than Android's ~7-day UsageEvents buffer:
-          // prefer Mirror's stored day-clipped foreground intervals, falling back
-          // to midpoint-filtered INTERVAL_DAILY buckets only for pre-install days.
-          const fromStored = await singleton!.storedForegroundTotals(range);
-          if (fromStored.length > 0) return fromStored;
-          const bucketRows = await usage.queryUsageStats(range.fromMs, effectiveToMs);
-          return filterUsageStatsBucketsForDay(bucketRows, {
+          const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
+          return summarizeUsageStatsBucketsForDay(rows, {
             window: range,
             ignorePackages: launcherPkgs,
           });
         } catch {
           return [];
         }
+      },
+      osTotalsWithSource: async (range) => {
+        try {
+          const now = Date.now();
+          const effectiveToMs = Math.min(range.toMs, now);
+          if (effectiveToMs <= range.fromMs) {
+            return { totals: [], source: 'os_events' };
+          }
+          let launcherPkgs: string[] = [];
+          try {
+            launcherPkgs = await usage.getLauncherPackages();
+          } catch {}
+          const hasPerm = await usage.hasPermission().catch(() => false);
+          const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
+          const [rawRows, storedRows, earliestStoredEventMs] = await Promise.all([
+            hasPerm
+              ? usage.queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs).catch(() => [])
+              : Promise.resolve([]),
+            store
+              .events({
+                from: range.fromMs - DEFAULT_MAX_INTERVAL_MS,
+                to: effectiveToMs + DEFAULT_MAX_INTERVAL_MS,
+              })
+              .catch(() => []),
+            store.earliestEventAt().catch(() => null),
+          ]);
+          const storedEvents = storedRows
+            .map(
+              (r) =>
+                r.payload as unknown as {
+                  kind: 'app_foreground' | 'app_background';
+                  app: string;
+                  at: string;
+                  duration_ms?: number;
+                },
+            )
+            .filter((e) => e.kind === 'app_background' && typeof e.duration_ms === 'number');
+
+          const hasLiveRawInDay = rawRows.some(
+            (r) => r && typeof r.timeStamp === 'number' && r.timeStamp < effectiveToMs,
+          );
+          const bucketRows =
+            !hasLiveRawInDay && hasPerm
+              ? await usage.queryUsageStats(range.fromMs, effectiveToMs).catch(() => [])
+              : [];
+
+          return resolveDayForegroundTotals({
+            rawEvents: rawRows,
+            storedEvents,
+            bucketRows,
+            earliestStoredEventMs,
+            hasPermission: hasPerm,
+            options: {
+              window: range,
+              nowMs: now,
+              lookbackMs: DEFAULT_MAX_INTERVAL_MS,
+              ignorePackages: launcherPkgs,
+            },
+          });
+        } catch {
+          return { totals: [], source: 'os_events' };
+        }
+      },
+      osTotals: async (range) => {
+        const resolved = await singleton!.osTotalsWithSource(range);
+        return resolved.totals;
       },
       validate: async (range) => {
         try {

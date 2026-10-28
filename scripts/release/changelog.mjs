@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * Generate CHANGELOG.md delta since previous tag.
+ * Generate CHANGELOG.md for a Mirror release tag (or upcoming release from HEAD).
  * Usage: node scripts/release/changelog.mjs [tag]
- * If tag not provided, uses HEAD.
  */
 
 import { execSync } from 'node:child_process';
@@ -13,72 +12,77 @@ const ROOT = resolve(import.meta.dirname, '..', '..');
 
 function sh(cmd) {
   try {
-    return execSync(cmd, { cwd: ROOT, encoding: 'utf8' }).trim();
+    return execSync(cmd, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
   } catch {
     return '';
   }
 }
 
-const currentTag = process.argv[2] || sh('git describe --tags --abbrev=0 HEAD') || 'v0.1.0';
-const prevTag = sh(`git describe --tags --abbrev=0 ${currentTag}^ 2>/dev/null`) || sh('git tag --sort=-v:refname | head -n 2 | tail -n 1') || '';
-
-console.log(`Changelog: ${prevTag}..${currentTag}`);
-
-let logRange = '';
-if (prevTag) {
-  logRange = `${prevTag}..${currentTag}`;
-} else {
-  logRange = currentTag;
+function refExists(ref) {
+  if (!ref) return false;
+  return Boolean(sh(`git rev-parse --verify --quiet "${ref}^{commit}"`));
 }
 
-const commits = sh(`git log ${logRange} --pretty=format:"- %s (%h) %ad" --date=short`);
+const releaseTags = sh('git tag --sort=-v:refname')
+  .split('\n')
+  .map((t) => t.trim())
+  .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
+
+const requestedTag = process.argv[2] || releaseTags[0] || 'v0.1.0';
+const endRef = refExists(requestedTag) ? requestedTag : 'HEAD';
+
+let prevTag = '';
+for (const candidate of releaseTags) {
+  if (candidate === requestedTag) continue;
+  if (refExists(candidate) && sh(`git merge-base --is-ancestor "${candidate}" "${endRef}" && echo yes`) === 'yes') {
+    prevTag = candidate;
+    break;
+  }
+}
+
+const logRange = prevTag ? `${prevTag}..${endRef}` : endRef;
+console.log(`Changelog: ${prevTag || 'initial'}..${requestedTag} (git range: ${logRange})`);
+
+const commits = sh(`git log ${logRange} --no-merges --max-count=40 --pretty=format:"- %s (%h) %ad" --date=short`);
 const shortlog = commits || '- Initial release';
+const generatedDate = sh('git log -1 --format=%ad --date=short HEAD') || new Date().toISOString().split('T')[0];
 
-const changelog = `# Changelog ${currentTag}
+const changelog = `# Changelog ${requestedTag}
 
-Generated: ${new Date().toISOString().split('T')[0]}
-Range: ${prevTag || 'initial'}..${currentTag}
+Generated: ${generatedDate}
+Range: ${prevTag || 'initial'}..${requestedTag}
 
-## Highlights (P2)
+## Highlights (v0.1 — Android On-Device Tier D)
 
-- Per-app daily totals from OS aggregate queryUsageStats (INTERVAL_DAILY) – matches Digital Wellbeing by construction, excludes launchers (HOME role) and Mirror itself and system UI (Settings rule consistent)
-- App opens only – no durations, no scaling (P2 fix: orphans 319, Genshin orig 22s shown as 8m54s, Security orig 7m20s shown as 16s) – avoids inventing durations
-- J3 dashboard (Frosted Horizon design) wired to real data: IQS tier-D only, Based on usage patterns only chip, data-tier chip (D), Why sheet with parts summing to score, confidence 0.49 cap when approximate
-- Release Stage 1: tag-triggered pipeline (v*), GitHub Release, changelog, OTA guard (updates disabled/narrow-only), offline test (works with backend off), deployment.md + 30-min quickstart
-- Privacy canary: self-test ok, addon ok, manifest gate ok (SYSTEM_ALERT_WINDOW + ACCESS_LOCAL_NETWORK blocked)
+- **Day-clipped OS foreground totals (Digital Wellbeing parity):** Per-app daily totals sum raw \`UsageEvents\` foreground intervals clipped strictly to \`[00:00 local, min(now, 24:00 local)]\` with symmetric 6h lookaround and \`CONTINUE_PREVIOUS_DAY\` handling — eliminating \`INTERVAL_DAILY\` pre-midnight bucket bleed while matching Digital Wellbeing within \`max(10%, 60s)\`. Excludes launchers (\`CATEGORY_HOME\`), Mirror itself, Settings, Play Store/Services, and Android/OEM Package installers.
+- **Explicit older-day source labels (\`Stored\` vs \`Approximate\`):** Days beyond Android’s rolling ~7-day \`UsageEvents\` buffer are explicitly badged as **Stored** (when served from Mirror’s encrypted local event log) or **Approximate** (when served from fallback \`INTERVAL_DAILY\` OS buckets).
+- **Reconciled 5-tab Frosted Horizon shell (\`Home · Insights · Journey · Sessions · You\`):** Unified canonical day sittings across \`Home\`, \`Insights\`, \`IQS\`, and \`Sessions\`; reconciled active foreground screen time vs merged \`<= 15 min\` sitting spans; honest \`IQS v2\` out of measured parts only (\`/55\` before 5 explicit labels, \`/75\` with 5+ explicit labels, minimum-activity floors enforced, never rescaled to 100).
+- **P3 multi-day & counterfactual on-device analytics:** Shipped \`J4 Interest Evolution\`, \`J9 Discovery Journey\`, \`J11 Rabbit Hole\`, \`J18 What-if Simulator\` (every output explicitly labelled \`Estimate\`), and \`J20 Focus Windows\` (requires \`>= 21\` local days and \`>= 5\` sittings/cell; zero diagnostic language) behind the honest \`orphans <= 50\` and \`gaps <= 100\` reliability gate.
+- **Degraded-tier & local-storage honesty:** \`TIERS.B\` (\`Your export\`) marked unavailable for v0.1, OAuth claims hidden until P5 connectors exist, AEAD-encrypted local \`MirrorStore\` (\`expo-sqlite\` + \`SecureStore\`, \`allowBackup: false\`), full \`Delete all data\` wipe with reset audit timestamp on \`You\`.
+- **Release hardening (Steps 1–4):** \`INTERNET\` stripped from release merged \`AndroidManifest.xml\` via \`tools:node="remove"\`, \`ACCESS_NETWORK_STATE\` scoped and documented for \`WorkManager\`, external env-var upload signing (\`with-release-signing.js\`), OTA disabled/narrow-only guard, offline guard, and privacy canary self-tests.
 
 ## Commits
 
 ${shortlog}
 
-## P2 Checklist vs Spec
+## v0.1 Checklist vs Spec
 
-- J3 Dashboard: ✅ wired to real data, Frosted Horizon, IQS /75, chips, Why sheet
-- J17 Why drawer: ✅ parts add up, caveat, confidence reasons, tier-D only note
-- J5 Depth, J6 Curiosity, J7 IQS, J8 Sessions, J24 Persona picker: ✅ engine ready, J8 fixed to open-times only
-- X1 Import: ✅ preview real, frozen fixture test-checked
-- Release Stage 1: ✅ tag pipeline, GitHub Release, changelog, OTA guard, offline test, deployment.md quickstart, DEBUG_KEYSTORE_BASE64 stable sig, mirror-test.apk phone-testable
-- Privacy canary: ✅ self-test ok, addon ok, manifest gate ok, secret scan ok, bundle 721 modules
-- Data tier + Based on usage patterns only chips: ✅ TierBadge D, ConfidenceChip D, Chip label
-- Per-app totals OS: ✅ matches Digital Wellbeing, excludes launchers+Mirror+system UI
-- Session timeline: ✅ open times only, no durations, no scaling, orphans 319 explained in debug
-- Hidden debug 7x tap: ✅ validation same period, OS vs Mirror, Honkai raw, Share JSON
-- Settings rule consistent: ✅ DEFAULT_IGNORED everywhere, only launchers+Mirror close previous
-- Fixture README: ✅ synthetic honkai-day-raw will be replaced via debug Share
-
-P3 on hold – interest evolution, discovery, rabbit-hole, what-if, focus windows remain mockups.
+- **5-tab shell & J3/J5/J6/J7/J8/J17:** ✅ Frosted Horizon dark-first UI, dynamic \`IQS v2\` max (\`/55\` / \`/75\`), \`WhyScoreSheet\` factor sum & label-count parity, open-times-only session list with optional explicit intent labels (\`neverCounts\` duration hints)
+- **P3 J4 / J9 / J11 / J18 / J20:** ✅ Wired to real local history with progress empty states on short history (\`< 3\` days / \`< 21\` days for J20) and \`limited history\` caveats below 14 days
+- **Digital Wellbeing parity & older-day source badges:** ✅ Day-clipped \`UsageEvents\` foreground totals within \`max(10%, 60s)\`, \`Stored\` / \`Approximate\` badges on older days, 7-tap \`DebugView\` with \`Day fg\`, \`Stored\`, \`Sittings\`, and \`Raw INTERVAL_DAILY\` pre-midnight bucket diagnostics
+- **Merged release manifest gate:** ✅ \`INTERNET\` removed in release variant; \`SYSTEM_ALERT_WINDOW\`, \`ACCESS_LOCAL_NETWORK\`, \`QUERY_ALL_PACKAGES\`, and \`AD_ID\` blocked and verified on Gradle
+- **Release signing & Stage-1 preflight:** ✅ External upload keystore env-var/property signing (\`docs/RELEASE_SIGNING.md\`), zero keystores or secrets in repo, \`make release-stage1\` green
+- **OTA, offline & privacy guards:** ✅ \`check-ota-guard.mjs\`, \`check-offline.mjs\`, \`secret-scan.mjs\`, \`bundle-check.mjs\`, and \`npm run test:privacy\` green (Step 5 signed-APK emulator privacy canary next)
 
 ## Verification
 
-- npm run verify: tokens, typechecks, lint, 251 tests, secret scan, bundle
-- make android-build: Gradle debug + release manifest gate, BUILD SUCCESSFUL, no forbidden permissions
-- make release-stage1: preflight ok, no keystore in tree
-- make privacy: self-test ok, addon ok
-- OTA guard: node scripts/android/check-ota-guard.mjs – PASSED
-- Offline test: node scripts/android/check-offline.mjs – PASSED
+- \`npm run verify\`: tokens, lockfile, typechecks, ESLint, unit/property/UI/config/manifest/release/privacy/security tests, secret scan, Metro bundle check
+- \`node scripts/release/bump-version.mjs --check\`: \`v0.1.0\` (\`versionCode 1\`) aligned across manifests, \`build.gradle\`, and \`package-lock.json\`
+- \`make release-stage1\`: preflight passed, no keystore in tree
+- \`node scripts/android/check-ota-guard.mjs\`: PASSED
+- \`node scripts/android/check-offline.mjs\`: PASSED
 `;
 
 const outPath = resolve(ROOT, 'CHANGELOG.md');
 writeFileSync(outPath, changelog, 'utf8');
 console.log(`Wrote ${outPath}`);
-console.log(changelog);

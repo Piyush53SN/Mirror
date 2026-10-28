@@ -47,6 +47,15 @@ jobs:
       - name: Install deps
         run: npm ci
 
+      - name: Verify manifest versions match git tag
+        run: |
+          node scripts/release/bump-version.mjs --check
+          APP_VER=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/mobile/app.json","utf8")).expo.version)')
+          if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "v$APP_VER" != "${{ github.ref_name }}" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match app.json version v$APP_VER"
+            exit 1
+          fi
+
       - name: Verify (tokens, typecheck, tests, secret scan, bundle)
         run: npm run verify
 
@@ -62,9 +71,12 @@ jobs:
       - name: Expo prebuild
         run: |
           cd apps/mobile
-          npx expo prebuild --platform android --clean --non-interactive
+          CI=1 EXPO_NO_GIT_STATUS=1 npx expo prebuild --platform android --no-install
           chmod +x android/gradlew
           cd ../..
+
+      - name: Release Stage 1 preflight (before keystore materialization)
+        run: make release-stage1
 
       - name: Restore stable debug keystore
         run: |
@@ -90,20 +102,36 @@ jobs:
           cd ../..
           npm run android:manifest -- --variant release --json .reports/merged-manifest-release.json
 
-      - name: Build phone-testable APK (mirror-test.apk)
+      - name: Build release APK / AAB (upload-signed when secrets exist, else debug-signed mirror-test.apk)
+        env:
+          MIRROR_UPLOAD_KEYSTORE_BASE64: ${{ secrets.MIRROR_UPLOAD_KEYSTORE_BASE64 }}
+          MIRROR_UPLOAD_STORE_PASSWORD: ${{ secrets.MIRROR_UPLOAD_STORE_PASSWORD }}
+          MIRROR_UPLOAD_KEY_ALIAS: ${{ secrets.MIRROR_UPLOAD_KEY_ALIAS }}
+          MIRROR_UPLOAD_KEY_PASSWORD: ${{ secrets.MIRROR_UPLOAD_KEY_PASSWORD }}
         run: |
           cd apps/mobile/android
-          ./gradlew :app:assembleRelease --no-daemon \
-            -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore" \
-            -Pandroid.injected.signing.store.password=android \
-            -Pandroid.injected.signing.key.alias=androiddebugkey \
-            -Pandroid.injected.signing.key.password=android 2>&1 | tee ../../.reports/gradle-assembleRelease.log
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/.reports/mirror-test.apk" || true
-          ls -lh "$GITHUB_WORKSPACE/mirror-test.apk"
-
-      - name: Release Stage 1 preflight
-        run: make release-stage1
+          if [ -n "$MIRROR_UPLOAD_KEYSTORE_BASE64" ] && [ -n "$MIRROR_UPLOAD_STORE_PASSWORD" ] && [ -n "$MIRROR_UPLOAD_KEY_ALIAS" ]; then
+            UPLOAD_KS=$(mktemp /tmp/mirror-upload-XXXXXX.keystore)
+            trap 'rm -f "$UPLOAD_KS"' EXIT
+            echo "$MIRROR_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$UPLOAD_KS"
+            export MIRROR_UPLOAD_STORE_FILE="$UPLOAD_KS"
+            export MIRROR_UPLOAD_KEY_PASSWORD="${MIRROR_UPLOAD_KEY_PASSWORD:-$MIRROR_UPLOAD_STORE_PASSWORD}"
+            ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon 2>&1 | tee ../../.reports/gradle-assembleRelease.log
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.apk"
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
+            cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.aab"
+            rm -f "$UPLOAD_KS"
+          else
+            echo "::warning::MIRROR_UPLOAD_KEYSTORE_* not configured - building debug-signed mirror-test.apk"
+            ./gradlew :app:assembleRelease --no-daemon \
+              -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore" \
+              -Pandroid.injected.signing.store.password=android \
+              -Pandroid.injected.signing.key.alias=androiddebugkey \
+              -Pandroid.injected.signing.key.password=android 2>&1 | tee ../../.reports/gradle-assembleRelease.log
+            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
+          fi
+          cp "$GITHUB_WORKSPACE/mirror-test.apk" "$GITHUB_WORKSPACE/.reports/mirror-test.apk" || true
+          ls -lh "$GITHUB_WORKSPACE"/mirror*.apk "$GITHUB_WORKSPACE"/mirror*.aab 2>/dev/null || true
 
       - name: Generate changelog
         run: |
@@ -114,11 +142,12 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }} - P2: OS totals, open-times only, J3 dashboard
+          name: ${{ github.ref_name }} - Mirror Android (Tier D on-device)
           body_path: CHANGELOG.md
           files: |
+            mirror-${{ github.ref_name }}-release.apk
+            mirror-${{ github.ref_name }}-release.aab
             mirror-test.apk
-            .reports/mirror-test.apk
             .reports/merged-manifest-debug.json
             .reports/merged-manifest-release.json
             CHANGELOG.md
@@ -131,6 +160,8 @@ jobs:
         with:
           name: release-artifacts-${{ github.ref_name }}
           path: |
+            mirror-${{ github.ref_name }}-release.apk
+            mirror-${{ github.ref_name }}-release.aab
             mirror-test.apk
             .reports/
             CHANGELOG.md
