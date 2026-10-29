@@ -7,12 +7,12 @@
  * over 40px, so a hard drop shadow would be a lie).
  */
 import * as React from 'react';
-import { View, ScrollView } from '../host';
+import { View, ScrollView, Pressable } from '../host';
 import type { StyleProp, ViewStyle } from '../host';
 import { useLiveBlur, useTheme } from '../theme';
 import type { MirrorTheme } from '../tokens';
 import { useWindowDimensions } from '../host';
-import { layoutMetrics } from '../a11y';
+import { a11yTarget, layoutMetrics } from '../a11y';
 import { Text } from './text';
 
 const withTheme = (theme: MirrorTheme | undefined) => theme ?? useTheme();
@@ -266,7 +266,7 @@ export function Toolbar({
         paddingBottom: t.space(2),
       }}
     >
-      <View style={{ flexShrink: 1 }}>
+      <View accessible accessibilityRole="header" style={{ flexShrink: 1 }}>
         <Text role="headline" theme={t}>
           {title}
         </Text>
@@ -284,9 +284,11 @@ export function Toolbar({
 /* ----------------------------------------------------------------- Sheet ---- */
 
 /**
- * A bottom sheet — one of the two surfaces allowed to live-blur, and the only
- * place a modal lives. `dismissible` is always true by construction: the scrim
- * and the handle are both ≥48dp, and reduce-motion removes the slide.
+ * A bottom sheet — uses an opaque `theme.color.card` surface so underlying text
+ * never bleeds through and contrast stays >= 4.5:1 across dark and light themes.
+ * `dismissible` is always true by construction: the scrim and the handle are both
+ * real >= 48dp `Pressable` targets for TalkBack, and `accessibilityViewIsModal`
+ * keeps screen-reader focus inside the open sheet.
  */
 export function Sheet({
   open,
@@ -296,6 +298,7 @@ export function Sheet({
   children,
   theme,
   maxHeight = '86%' as const,
+  bottomInset = 0,
 }: {
   open: boolean;
   title: string;
@@ -304,39 +307,58 @@ export function Sheet({
   children: React.ReactNode;
   theme?: MirrorTheme;
   maxHeight?: `${number}%`;
+  bottomInset?: number;
 }) {
   const t = withTheme(theme);
   const { height } = useWindowDimensions();
   if (!open) return null;
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end' }}>
-      {/* scrim: tapping outside closes, and it is always at least 48dp tall */}
-      <View
-        accessible
-        accessibilityRole="button"
-        accessibilityLabel={`Dismiss ${title}`}
-        onStartShouldSetResponder={() => true}
-        onResponderRelease={onClose}
-        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: t.color.scrim, minHeight: t.size.touchTarget }}
+    <View
+      accessibilityViewIsModal
+      style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'flex-end' }}
+    >
+      {/* scrim: tapping outside closes, and it is always at least 48dp in both dimensions */}
+      <Pressable
+        onPress={onClose}
+        {...a11yTarget(`Dismiss ${title}`)}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: t.color.scrim,
+          minWidth: t.size.touchTarget,
+          minHeight: t.size.touchTarget,
+        }}
       />
-      <GlassSurface
-        layer="sheet"
-        radius="sheet"
-        theme={t}
-        style={{ maxHeight: (height * parseInt(maxHeight, 10)) / 100, paddingBottom: t.space(6) }}
+      <View
+        style={{
+          backgroundColor: t.color.card,
+          borderTopLeftRadius: t.radius.sheet,
+          borderTopRightRadius: t.radius.sheet,
+          borderWidth: 1,
+          borderColor: t.color.borderCard,
+          maxHeight: (height * parseInt(maxHeight, 10)) / 100,
+          paddingBottom: t.space(6) + Math.max(0, bottomInset),
+        }}
       >
-        {/* grab handle: 48dp tall, the visible bar is 4dp */}
-        <View
-          accessible
-          accessibilityRole="button"
-          accessibilityLabel={`Close ${title}`}
-          onStartShouldSetResponder={() => true}
-          onResponderRelease={onClose}
-          style={{ height: t.size.touchTarget, alignItems: 'center', justifyContent: 'center' }}
+        {/* grab handle: 48dp tall Pressable, the visible bar is 4dp */}
+        <Pressable
+          onPress={onClose}
+          {...a11yTarget(`Close ${title}`)}
+          style={{
+            width: '100%',
+            height: t.size.touchTarget,
+            minWidth: t.size.touchTarget,
+            minHeight: t.size.touchTarget,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
         >
           <View style={{ width: 40, height: 4, borderRadius: t.radius.pill, backgroundColor: t.color.borderCard }} />
-        </View>
-        <View style={{ paddingHorizontal: t.space(4), paddingBottom: t.space(2) }}>
+        </Pressable>
+        <View accessible accessibilityRole="header" style={{ paddingHorizontal: t.space(4), paddingBottom: t.space(2) }}>
           <Text role="title-lg" theme={t}>
             {title}
           </Text>
@@ -349,7 +371,7 @@ export function Sheet({
         <ScrollView contentContainerStyle={{ paddingHorizontal: t.space(4) }} showsVerticalScrollIndicator={false}>
           {children}
         </ScrollView>
-      </GlassSurface>
+      </View>
     </View>
   );
 }
@@ -419,15 +441,20 @@ export function HeroCarousel({
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'center', gap: t.space(1), marginTop: t.space(2) }}>
         {slides.map((s, i) => (
-          <View
+          <Pressable
             key={s.id}
-            accessible
+            onPress={() => onIndexChange(i)}
             accessibilityRole="button"
             accessibilityLabel={`Slide ${i + 1} of ${slides.length}: ${s.title}`}
             accessibilityState={{ selected: i === index }}
-            onStartShouldSetResponder={() => true}
-            onResponderRelease={() => onIndexChange(i)}
-            style={{ width: t.size.touchTarget, height: t.size.touchTarget, alignItems: 'center', justifyContent: 'center' }}
+            style={{
+              width: t.size.touchTarget,
+              height: t.size.touchTarget,
+              minWidth: t.size.touchTarget,
+              minHeight: t.size.touchTarget,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
             <View
               style={{
@@ -437,7 +464,7 @@ export function HeroCarousel({
                 backgroundColor: i === index ? t.color.ink : t.color.borderCard,
               }}
             />
-          </View>
+          </Pressable>
         ))}
       </View>
       <Text role="micro" tone="muted" theme={t} center>

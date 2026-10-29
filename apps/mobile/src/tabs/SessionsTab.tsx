@@ -1,13 +1,12 @@
 import * as React from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { View } from 'react-native';
+import { isLabelingExcludedApp } from '@mirror/core-analytics';
 import {
-  Callout,
   Card,
   Chip,
   ConfidenceChip,
   Divider,
   EmptyState,
-  LinkButton,
   Meter,
   Pill,
   SectionHeader,
@@ -17,66 +16,50 @@ import {
   TierBadge,
   useTheme,
 } from '@mirror/ui';
-import { isLabelingExcludedApp } from '@mirror/core-analytics';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
-import { formatTime, guessIntent, useMirrorApp } from '../context/MirrorAppContext';
+import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
 
 export function SessionsTab(): React.ReactElement {
   const theme = useTheme();
   const {
     selectedDay,
+    lastSyncedAt,
     scaledSessions,
+    sittingSpanMs,
     dailyTotals,
     hasEventsWithoutSittings,
+    labels,
     intentLabels,
-    labelSaving,
     expandedSessionId,
     setExpandedSessionId,
-    labelOptIn,
-    setLabelOptIn,
     saveSessionLabel,
-    clearStoredLabels,
     checkPermissionAndCollect,
   } = useMirrorApp();
-  const [appFilter, setAppFilter] = React.useState<string>('all');
 
-  React.useEffect(() => {
-    setAppFilter('all');
-  }, [selectedDay]);
-
-  const uniqueApps = React.useMemo(() => {
-    const map = new Map<string, { app: string; label: string; count: number }>();
-    for (const s of scaledSessions) {
-      const existing = map.get(s.app);
-      if (existing) existing.count += 1;
-      else map.set(s.app, { app: s.app, label: s.label, count: 1 });
+  const explicitLabelStats = React.useMemo(() => {
+    let intentional = 0;
+    let mindless = 0;
+    let unsure = 0;
+    for (const row of scaledSessions) {
+      if (isLabelingExcludedApp(row.app)) continue;
+      const lbl = intentLabels[row.id];
+      if (lbl === 'intentional') intentional += 1;
+      else if (lbl === 'mindless') mindless += 1;
+      else if (lbl === 'unsure') unsure += 1;
     }
-    return [...map.values()].sort((a, b) => b.count - a.count);
-  }, [scaledSessions]);
-
-  const visibleSessions = React.useMemo(
-    () => (appFilter === 'all' ? scaledSessions : scaledSessions.filter((s) => s.app === appFilter)),
-    [scaledSessions, appFilter],
-  );
-
-  const dayDecisiveCount = React.useMemo(() => {
-    let count = 0;
-    for (const s of scaledSessions) {
-      if (isLabelingExcludedApp(s.app, s.label)) continue;
-      const lbl = intentLabels[s.id];
-      if (lbl === 'intentional' || lbl === 'mindless') count += 1;
-    }
-    return count;
+    const totalExplicit = intentional + mindless;
+    return { intentional, mindless, unsure, totalExplicit };
   }, [scaledSessions, intentLabels]);
 
-  const longSessions = scaledSessions.filter((s) => s.duration_ms >= 5 * 60_000);
-  const storedCount = Object.keys(intentLabels).length;
+  const labelTargetRatio = Math.min(1, explicitLabelStats.totalExplicit / 5);
+  const isEmptyDay =
+    scaledSessions.length === 0 && !hasEventsWithoutSittings && dailyTotals.length === 0;
 
   return (
     <AppShell
       title="Sessions"
-      subtitle={`${selectedDay} · ${scaledSessions.length} sitting${scaledSessions.length === 1 ? '' : 's'}`}
+      subtitle={`Open times & explicit intent labels (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
@@ -85,291 +68,254 @@ export function SessionsTab(): React.ReactElement {
     >
       <DayPickerStrip />
 
-      {/* Frosted glass per-app filter strip */}
-      {uniqueApps.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          <View style={{ flexDirection: 'row', gap: theme.space(1.5), paddingVertical: theme.space(0.5) }}>
-            <Pill
-              theme={theme}
-              variant={appFilter === 'all' ? 'primary' : 'secondary'}
-              onPress={() => setAppFilter('all')}
-            >
-              {`All (${scaledSessions.length})`}
-            </Pill>
-            {uniqueApps.map((item) => (
-              <Pill
-                key={item.app}
-                theme={theme}
-                variant={appFilter === item.app ? 'primary' : 'secondary'}
-                onPress={() => setAppFilter(item.app)}
-              >
-                {`${item.label} (${item.count})`}
-              </Pill>
-            ))}
-          </View>
-        </ScrollView>
-      ) : null}
-
-      {/* Frosted Horizon Hero — Chronological log standing & explicit labeling threshold */}
-      <Surface
-        radius="hero"
-        theme={theme}
-        style={{
-          padding: theme.space(4),
-          borderWidth: 1,
-          borderColor: theme.color.borderHairline,
-          gap: theme.space(3),
-        }}
-      >
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
-          <View style={{ flex: 1, gap: theme.space(0.5) }}>
-            <Text role="micro" tone="muted" theme={theme}>
-              CHRONOLOGICAL LOG · TIER D
-            </Text>
-            <Text role="title-lg" theme={theme}>
-              {`App opens · ${selectedDay}`}
-            </Text>
-            <Text role="label" tone="muted" theme={theme}>
-              Open times only — tap any sitting below to record optional intent
-            </Text>
-          </View>
-          <TierBadge tier="D" theme={theme} />
-        </View>
-
-        <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-          <Chip static label="Open times only" theme={theme} />
-          <Chip static label="Hints never count" theme={theme} />
-          <ConfidenceChip tiers={['D']} label="Explicit labels stay on device" theme={theme} />
-        </View>
-
-        <View
+      {isEmptyDay ? (
+        <Surface
+          radius="hero"
+          theme={theme}
           style={{
-            borderRadius: theme.radius.md,
-            backgroundColor: theme.glass.card.fill,
+            padding: theme.space(4),
             borderWidth: 1,
-            borderColor: theme.color.borderCard,
-            padding: theme.space(3),
-            gap: theme.space(2),
+            borderColor: theme.color.borderHairline,
+            gap: theme.space(3),
           }}
         >
-          <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Stat
-                value={String(visibleSessions.length)}
-                label={visibleSessions.length === 1 ? 'Sitting shown' : 'Sittings shown'}
-                hint={appFilter === 'all' ? 'Matches Home & Insights' : 'Filtered by app'}
-                theme={theme}
-              />
-            </View>
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Stat
-                value={`${dayDecisiveCount} / 5`}
-                label="Decisive labels today"
-                hint={dayDecisiveCount >= 5 ? 'Deliberate share active' : 'Needs 5 to measure'}
-                theme={theme}
-              />
-            </View>
-          </View>
-          <Divider theme={theme} />
-          <Meter
+          <EmptyState
+            title="Coming with more data"
+            body={`No app opens are recorded for ${selectedDay} yet. Chronological open times and optional intent labels appear here automatically once app activity is collected for this day.`}
+            action={
+              <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
+                Refresh
+              </Pill>
+            }
             theme={theme}
-            value={Math.min(1, dayDecisiveCount / 5)}
-            label="Deliberate share threshold"
-            caption={`${dayDecisiveCount} of 5 explicit`}
-            tone={dayDecisiveCount >= 5 ? 'anchor' : 'muted'}
           />
-        </View>
-
-        <Callout theme={theme} tone="neutral">
-          {
-            'Daily foreground totals on Home sum day-clipped OS usage events (or show Stored / Approximate on older days beyond Android’s UsageEvents buffer). Labeling is optional feedback — only your explicit intentional or mindless labels feed Deliberate share (never guessed). Duration alone does not indicate intent, so hints never count.'
-          }
-        </Callout>
-
-        {storedCount > 0 ? (
-          <View
+        </Surface>
+      ) : (
+        <>
+          {/* Hero summary of sittings & explicit label progress */}
+          <Surface
+            radius="hero"
+            theme={theme}
             style={{
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.glass.card.fill,
+              padding: theme.space(4),
               borderWidth: 1,
-              borderColor: theme.color.borderCard,
-              padding: theme.space(2.5),
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              flexWrap: 'wrap',
-              gap: theme.space(2),
+              borderColor: theme.color.borderHairline,
+              gap: theme.space(3),
             }}
           >
-            <Text role="micro" tone="muted" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 160 }}>
-              {`Stored manual labels across all days: ${storedCount}. Clearing removes only manual labels, never usage history.`}
-            </Text>
-            <LinkButton theme={theme} onPress={clearStoredLabels}>
-              Clear stored labels
-            </LinkButton>
-          </View>
-        ) : null}
-
-        {longSessions.length >= 2 && storedCount === 0 && !labelOptIn ? (
-          <View
-            style={{
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.glass.card.fill,
-              borderWidth: 1,
-              borderColor: theme.color.borderCard,
-              padding: theme.space(3),
-              gap: theme.space(1.5),
-            }}
-          >
-            <Text role="label" theme={theme}>
-              Help improve Deliberate share? (optional)
-            </Text>
-            <Text role="micro" tone="muted" theme={theme}>
-              {`You had ${longSessions.length} longer sittings today. Labeling 5 or more sittings as intentional or mindless unlocks Deliberate share on Home and Insights. Tap any sitting below to label, or dismiss.`}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
-              <LinkButton theme={theme} onPress={() => setLabelOptIn(true)}>
-                Dismiss
-              </LinkButton>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
+              <View style={{ flex: 1, gap: theme.space(0.5) }}>
+                <Text role="micro" tone="muted" theme={theme}>
+                  CHRONOLOGICAL LOG · EXPLICIT LABELS
+                </Text>
+                <Text role="title-lg" theme={theme}>
+                  {`${scaledSessions.length} ${scaledSessions.length === 1 ? 'sitting' : 'sittings'} on ${selectedDay}`}
+                </Text>
+                <Text role="label" tone="muted" theme={theme}>
+                  Tap any non-system sitting to label Intentional, Mindless, or Not sure
+                </Text>
+              </View>
+              <TierBadge tier="D" theme={theme} />
             </View>
-          </View>
-        ) : null}
-      </Surface>
 
-      {/* Frosted Glass Card — Chronological sitting list & expandable explicit-intent tray */}
-      <Card theme={theme} style={{ marginBottom: 0 }}>
-        <SectionHeader
-          theme={theme}
-          title={`Recorded sittings (${visibleSessions.length})`}
-          caption="system and utility apps skip labeling automatically"
-        />
+            <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+              <Chip static label="Hints never count" theme={theme} />
+              <ConfidenceChip tiers={['D']} label="User labels only" theme={theme} />
+            </View>
 
-        {visibleSessions.length === 0 ? (
-          hasEventsWithoutSittings ? (
-            <EmptyState
-              title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
-              body={`${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} recorded foreground time on ${selectedDay}, while derived sittings are empty. Tap Refresh to rebuild sittings from stored events.`}
-              action={
-                <Pill theme={theme} onPress={checkPermissionAndCollect}>
-                  Refresh sittings
-                </Pill>
-              }
-              theme={theme}
-            />
-          ) : (
-            <EmptyState
-              title={`No opens for ${selectedDay}`}
-              body="App open times appear here as soon as Android records foreground usage events on this day. Per-app totals on Home sum day-clipped OS foreground events (or Stored / Approximate fallback on older days)."
-              theme={theme}
-            />
-          )
-        ) : (
-          <View style={{ gap: theme.space(1) }}>
-            {visibleSessions.map((s, idx) => {
-              const isExcluded = isLabelingExcludedApp(s.app, s.label);
-              const currentLabel = isExcluded ? undefined : intentLabels[s.id];
-              const isExpanded = expandedSessionId === s.id;
-              const hintInfo = guessIntent(s.duration_ms, s.app);
-              const showHint = !isExcluded;
-              const statusChipLabel = currentLabel
-                ? `You: ${currentLabel}`
-                : isExcluded
-                  ? 'System skipped'
-                  : 'Optional label';
-              return (
-                <View key={s.id} style={{ paddingVertical: theme.space(2), gap: theme.space(1.5) }}>
-                  {idx > 0 ? <Divider theme={theme} /> : null}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={`${s.label} opened at ${formatTime(s.start_ms)}${currentLabel ? `, labeled ${currentLabel}` : ''}`}
-                    style={{ minHeight: theme.size.touchTarget, justifyContent: 'center' }}
-                    onPress={() => {
-                      if (isExcluded) return;
-                      setExpandedSessionId(isExpanded ? null : s.id);
-                      if (!isExpanded && !labelOptIn) setLabelOptIn(true);
-                    }}
-                  >
-                    <View style={{ gap: theme.space(1) }}>
+            <View
+              style={{
+                borderRadius: theme.radius.md,
+                backgroundColor: theme.color.card,
+                borderWidth: 1,
+                borderColor: theme.color.borderCard,
+                padding: theme.space(3),
+                gap: theme.space(2),
+              }}
+            >
+              <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <Stat
+                    value={`${explicitLabelStats.totalExplicit} / 5`}
+                    label="Explicit labels today"
+                    hint={`${explicitLabelStats.intentional} intentional · ${explicitLabelStats.mindless} mindless${explicitLabelStats.unsure > 0 ? ` · ${explicitLabelStats.unsure} unsure` : ''}`}
+                    theme={theme}
+                  />
+                </View>
+                <View style={{ flex: 1, minWidth: 120 }}>
+                  <Stat
+                    value={scaledSessions.length > 0 ? formatDuration(sittingSpanMs) : '0s'}
+                    label="Sitting spans"
+                    hint="Merges ≤15m reopens"
+                    theme={theme}
+                  />
+                </View>
+              </View>
+              <Divider theme={theme} />
+              <Meter
+                theme={theme}
+                value={labelTargetRatio}
+                label="Deliberate share threshold"
+                caption={
+                  explicitLabelStats.totalExplicit >= 5
+                    ? 'Unlocked (≥5 explicit labels)'
+                    : `${5 - explicitLabelStats.totalExplicit} more to unlock`
+                }
+                tone={explicitLabelStats.totalExplicit >= 5 ? 'anchor' : 'muted'}
+              />
+            </View>
+          </Surface>
+
+          {/* Chronological sitting list */}
+          <Card theme={theme} style={{ marginBottom: 0 }}>
+            <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
+              <Text role="micro" tone="muted" theme={theme}>
+                {`OPEN TIMES · ${selectedDay}`}
+              </Text>
+              <SectionHeader
+                theme={theme}
+                title={`Sittings (${scaledSessions.length})`}
+                caption="duration hints never count toward score — only your explicit labels do"
+              />
+            </View>
+            {scaledSessions.length === 0 ? (
+              hasEventsWithoutSittings ? (
+                <EmptyState
+                  title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+                  body={`${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} recorded foreground time on Home for ${selectedDay}, while derived sittings are empty. Tap Refresh to rebuild sittings from stored events.`}
+                  action={
+                    <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                      Refresh sittings
+                    </Pill>
+                  }
+                  theme={theme}
+                />
+              ) : (
+                <EmptyState
+                  title="Coming with more data"
+                  body="Open an app or two, then tap Refresh. Mirror builds sittings from your phone's foreground usage events."
+                  theme={theme}
+                />
+              )
+            ) : (
+              <View style={{ gap: theme.space(2) }}>
+                {scaledSessions.map((s) => {
+                  const utilityExcluded = isLabelingExcludedApp(s.app);
+                  const explicitLabel = intentLabels[s.id];
+                  const isExpanded = expandedSessionId === s.id;
+                  const displayMs = s.scaled_duration_ms > 0 ? s.scaled_duration_ms : s.duration_ms;
+                  const hintLabel = s.duration_ms >= 5 * 60_000 ? 'long sitting (≥5m)' : 'brief sitting (<5m)';
+                  const startClock = new Date(s.start_ms).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  const endClock = new Date(s.end_ms).toLocaleTimeString([], {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+                  const appName = s.label || labels[s.app] || s.app;
+                  return (
+                    <View
+                      key={s.id}
+                      style={{
+                        borderRadius: theme.radius.md,
+                        backgroundColor: theme.color.card,
+                        borderWidth: 1,
+                        borderColor: isExpanded ? theme.color.anchor : theme.color.borderCard,
+                        padding: theme.space(2.5),
+                        gap: theme.space(1.5),
+                      }}
+                    >
                       <View
                         style={{
                           flexDirection: 'row',
                           justifyContent: 'space-between',
-                          alignItems: 'flex-start',
-                          flexWrap: 'wrap',
+                          alignItems: 'center',
                           gap: theme.space(2),
                         }}
                       >
-                        <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 150 }}>
-                          {`${s.label} · ${formatTime(s.start_ms)}`}
-                        </Text>
-                        <Chip static label={statusChipLabel} theme={theme} />
+                        <View style={{ flex: 1 }}>
+                          <Text role="label" theme={theme}>
+                            {appName}
+                          </Text>
+                          <Text role="micro" tone="muted" theme={theme}>
+                            {`${startClock}–${endClock} · ${
+                              utilityExcluded
+                                ? 'labeling skipped (system/utility)'
+                                : explicitLabel
+                                  ? `user label: ${explicitLabel}`
+                                  : `unlabeled · hint: ${hintLabel}`
+                            }`}
+                          </Text>
+                        </View>
+                        <View style={{ alignItems: 'flex-end', gap: theme.space(1) }}>
+                          <Text role="label" theme={theme}>
+                            {formatDuration(displayMs)}
+                          </Text>
+                          {!utilityExcluded ? (
+                            <Pill
+                              theme={theme}
+                              variant={explicitLabel ? 'primary' : 'secondary'}
+                              accessibilityLabel={
+                                explicitLabel
+                                  ? `${appName} at ${startClock}, labeled ${explicitLabel}. Activate to edit label`
+                                  : `Label ${appName} sitting at ${startClock}`
+                              }
+                              onPress={() => setExpandedSessionId(isExpanded ? null : s.id)}
+                            >
+                              {explicitLabel ? explicitLabel : 'Label'}
+                            </Pill>
+                          ) : null}
+                        </View>
                       </View>
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {`${s.app}${currentLabel ? ` • explicit (${currentLabel})` : ''}${isExcluded ? ' • labeling skipped (system/utility)' : ''}`}
-                      </Text>
-                      {showHint ? (
-                        <Text role="micro" tone="muted" theme={theme}>
-                          {`Hint (not counted, duration doesn't indicate intent): ${hintInfo.hint}`}
-                        </Text>
-                      ) : null}
-                      {currentLabel ? (
-                        <Text role="micro" tone="muted" theme={theme}>
-                          {`You labeled: ${currentLabel} — only explicit labels feed Deliberate share. Tap to change.`}
-                        </Text>
+                      {isExpanded && !utilityExcluded ? (
+                        <View style={{ gap: theme.space(1.5), paddingTop: theme.space(1) }}>
+                          <Divider theme={theme} />
+                          <Text role="micro" tone="muted" theme={theme}>
+                            Was this sitting intentional or mindless? (Unsure stays excluded from deliberate share.)
+                          </Text>
+                          <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+                            <Pill
+                              theme={theme}
+                              variant={explicitLabel === 'intentional' ? 'primary' : 'secondary'}
+                              accessibilityLabel={
+                                explicitLabel === 'intentional' ? 'Intentional, selected' : 'Intentional'
+                              }
+                              onPress={() => saveSessionLabel(s.id, 'intentional')}
+                            >
+                              Intentional
+                            </Pill>
+                            <Pill
+                              theme={theme}
+                              variant={explicitLabel === 'mindless' ? 'primary' : 'secondary'}
+                              accessibilityLabel={
+                                explicitLabel === 'mindless' ? 'Mindless, selected' : 'Mindless'
+                              }
+                              onPress={() => saveSessionLabel(s.id, 'mindless')}
+                            >
+                              Mindless
+                            </Pill>
+                            <Pill
+                              theme={theme}
+                              variant={explicitLabel === 'unsure' ? 'primary' : 'secondary'}
+                              accessibilityLabel={
+                                explicitLabel === 'unsure' ? 'Not sure, selected' : 'Not sure'
+                              }
+                              onPress={() => saveSessionLabel(s.id, 'unsure')}
+                            >
+                              Not sure
+                            </Pill>
+                          </View>
+                        </View>
                       ) : null}
                     </View>
-                  </Pressable>
-
-                  {isExpanded && !isExcluded ? (
-                    <View
-                      style={{
-                        gap: theme.space(2),
-                        marginTop: theme.space(1),
-                        backgroundColor: theme.glass.card.fill,
-                        borderWidth: 1,
-                        borderColor: theme.color.borderCard,
-                        padding: theme.space(3),
-                        borderRadius: theme.radius.md,
-                      }}
-                    >
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {
-                          'Optional feedback — stays on device. Only your explicit labels feed Deliberate share (needs 5). Duration alone does not indicate intent — this hint never counts.'
-                        }
-                      </Text>
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {`Hint (not counted): ${hintInfo.hint}`}
-                      </Text>
-                      <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
-                        {(['intentional', 'mindless', 'unsure'] as const).map((lbl) => (
-                          <Pill
-                            key={lbl}
-                            theme={theme}
-                            variant={lbl === currentLabel ? 'primary' : 'secondary'}
-                            onPress={() => saveSessionLabel(s.id, lbl)}
-                          >
-                            {`${lbl === currentLabel ? `✓ ${lbl}` : lbl}${labelSaving === s.id ? '…' : ''}`}
-                          </Pill>
-                        ))}
-                      </View>
-                      <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
-                        <LinkButton theme={theme} onPress={() => setExpandedSessionId(null)}>
-                          Collapse
-                        </LinkButton>
-                        {currentLabel ? (
-                          <LinkButton theme={theme} onPress={() => saveSessionLabel(s.id, 'unsure')}>
-                            Clear to unsure
-                          </LinkButton>
-                        ) : null}
-                      </View>
-                    </View>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </Card>
+                  );
+                })}
+              </View>
+            )}
+          </Card>
+        </>
+      )}
     </AppShell>
   );
 }

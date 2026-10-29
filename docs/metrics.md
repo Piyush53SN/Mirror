@@ -50,16 +50,18 @@ raises it to 0.5. Sessions under 8 s with under 15 % completion contribute zero.
 ### 2.2 What the engine computes
 
 ```
-IQS = Σ points(f)  over measurable factors f
-max = Σ max(f)     over measurable factors f
+IQS         = Σ points(f)  over measurable factors f
+max         = 100          (fixed composite scale; unmeasured parts shown separately)
+measuredMax = Σ max(f)     over measurable factors f
+unmeasured  = 100 − measuredMax
 ```
 
 | engine factor | max | one-line formula |
 | --- | --- | --- |
 | `session_length` | 25 | `25 × (1 − shortSessions / sessions)`; needs ≥ 5 sittings |
 | `deliberate_share` | 20 | `20 × intentional / (intentional + mindless)`; needs ≥ 5 decisive labels |
-| `switching` | 15 | `15 × 20 / (switchesPerHour + 20)`; needs ≥ 3 non-system sittings and ≥ 15 min (`0.25 h`) active time |
-| `late_night` | 15 | `15 × (1 − lateMs / totalMs)`; late = 23:00–05:00 local; needs ≥ 15 min sitting time |
+| `switching` | 15 | `15 × (1 − perSitting)` where `perSitting = switches / sustainedNonUtilitySittings`; needs ≥ 3 sustained non-utility sittings |
+| `late_night` | 15 | `15 × (1 − clamp01(lateMs / 60 min))`; late = 23:00–05:00 local; needs ≥ 15 min sitting time or ≥ 5 sustained sittings |
 | `topic_depth` | 25 | `25 × mean pairwise cosine` of up to 120 scorable session vectors; needs ≥ 5 |
 
 ### 2.3 Crosswalk — spec component → engine factor
@@ -188,40 +190,49 @@ excluded, fast-check.
 
 ### `switching` — 15 points, tier D
 
-**Formula.** `points = round1(15 × 20 / (perHour + 20))`, where
-`perHour = switches / activeHours`. A **switch** is a consecutive pair of
-different-app sessions whose gap is ≤ 5 minutes (`SWITCH_GAP_MS`).
-`activeHours = total session ms / 3 600 000`.
+**Formula.** `points = round1(15 × (1 − perSitting))`, where
+`perSitting = switches / sittings` over sustained (`≥ 8 s`) non-utility sittings.
+A **switch** is a consecutive pair of different-app sustained sittings whose gap
+is ≤ 5 minutes (`SWITCH_GAP_MS`). Because `0 ≤ switches ≤ sittings − 1`,
+`perSitting` lies strictly in `[0, 1)`. Shortening any sitting's duration widens
+gaps without shrinking `sittings`, so using less never lowers `switching` points.
 
 **Inputs.** Session app ids and timings. App identity is metadata, sealed at rest.
 
-**Measurable when.** ≥ 3 non-system sittings (`MIN_SWITCHING_SITTINGS`) **and** ≥ 15 minutes (`0.25` active hours, `MIN_SWITCHING_ACTIVE_MS`) of non-system sitting time. Dividing switches by a tiny denominator (e.g. `0.1` active hours = 6 min) inflates noisy rates, so small-activity windows stay unmeasured (`null`) and 15 points leave `max`.
+**Measurable when.** ≥ 3 sustained (`≥ 8 s`) non-system, non-utility sittings
+(`MIN_SWITCHING_SITTINGS`). Below 3 sittings, switching pressure stays unmeasured
+(`null`) and its 15 points are shown under unmeasured factors rather than scored
+as zero.
 
 **Caveats.**
-- Smooth by design: 0/h scores 15, 20/h scores 7.5, 100/h scores 2.5, and it never
-  reaches zero. A cliff would punish one unusual hour; a population benchmark
-  would be the comparison the product promises not to make.
+- Bounded and linear per sitting: 0 switches scores 15.0, switching on half of
+  sittings (`0.50`/sitting) scores 7.5, and every sitting being a rapid cross-app
+  hop approaches `15 / sittings`.
 - Switching is not inherently bad (some tasks need two apps). The factor is
   "pressure", not "failure".
 - Sessions are per app, so scrolling within one feed is invisible here.
 - A gap over 5 minutes starts a new sitting and is not a switch.
 
-**Worked example.** Ananya: 113 switches / 8.3 active hours = 13.6/h →
-`15 × 20 / 33.6 = 8.9`.
+**Worked example.** Ananya: 113 switches across 260 sustained non-utility sittings
+(`0.43` per sitting) → `15 × (1 − 0.4346) = 8.5`.
 
-**Tests.** monotonic decrease, bounded (0, 15], never divides by zero, < 3
-sittings unmeasured.
+**Tests.** monotonic non-decrease under reduced usage, bounded `(0, 15]`, never
+divides by zero, < 3 sustained sittings unmeasured.
 
 ### `late_night` — 15 points, tier D
 
-**Formula.** `points = round1(15 × (1 − lateMs / totalMs))`, where `lateMs` is the
-part of each session inside **23:00–05:00 local**, computed by walking local days
-so a session crossing midnight is counted on both sides. Local time comes from
-`utcOffsetMinutes` supplied by the caller.
+**Formula.** `points = round1(15 × (1 − clamp01(lateMs / lateBudgetMs)))`, where
+`lateMs` is the part of each session inside **23:00–05:00 local** and
+`lateBudgetMs = 60 min` (`LATE_NIGHT_SATURATION_MS`). Scoring quiet-hours duration
+against a fixed 60-minute budget rather than dividing by `totalMs` ensures that
+using the phone **less during the day** never shrinks the denominator or lowers
+the score.
 
 **Inputs.** Session start/end and the device's UTC offset. No content.
 
-**Measurable when.** `totalMs ≥ 15 min` (`MIN_LATE_NIGHT_ACTIVE_MS`). Computing a daily late-night share on a 2-minute day produces `0 %` or `100 %` noise, so windows under 15 minutes of sitting time stay unmeasured (`null`) and 15 points leave `max`.
+**Measurable when.** `totalMs ≥ 15 min` (`MIN_LATE_NIGHT_ACTIVE_MS`) **or** at
+least 5 sustained (`≥ 8 s`) sittings (`MIN_SESSION_MIX_SITTINGS`), so shortening
+sittings on a 5+ sitting day never drops `late_night` out of measured factors.
 
 **Caveats.**
 - **Time zone is an input.** A wrong offset shifts the window; the engine never
@@ -232,10 +243,10 @@ so a session crossing midnight is counted on both sides. Local time comes from
 - It measures *when* time was spent, not sleep and not focus. The brief's Focus
   component is only partly covered (D-P2-01).
 
-**Worked example.** Ananya: 43 % late → `15 × 0.57 = 8.5`.
+**Worked example.** 30 min between 23:00 and 05:00 local → `15 × (1 − 30 / 60) = 7.5`.
 
-**Tests.** wrapped window, session spanning midnight, share lowers the part
-proportionally.
+**Tests.** wrapped window, session spanning midnight, quiet-hours duration lowers
+the part proportionally, daytime reduction never lowers score.
 
 ### `topic_depth` — 25 points, tier A
 
@@ -271,17 +282,22 @@ unmeasured.
 ## 4. The composite
 
 ```
-value = null                                   if no factor is measurable
-      = round1(Σ points of measurable factors) otherwise
-max   = Σ max of measurable factors            (100, 75, or less)
-band  = "not measured" | "usage-only band" | "full band"
+value         = null                                   if no factor is measurable
+              = round1(Σ points of measurable factors) otherwise
+max           = 100                                    (fixed composite scale)
+measuredMax   = Σ max of measurable factors            (0..100)
+unmeasuredMax = 100 − measuredMax                      (shown separately, never 0-scored)
+band          = "not measured" | "usage-only band" | "full band"
 ```
 
-- **Never rescaled.** `value/max` is the score; the UI prints `/ 75` when topic
-  depth is missing.
+- **Fixed scale, never rescaled.** The score is always shown on the fixed `/ 100`
+  scale with `measuredMax` and `unmeasuredMax` reported explicitly beside it (for
+  example `48 / 100` · `55 pts measured, 45 pts unmeasured`). Unmeasured parts
+  never count as zero and measured parts are never inflated to 100.
 - **Never zero for unknown.** `value === null` and `band === "not measured"`.
 - **Parts close.** `Σ points` is asserted equal to `value` in the suite.
-- **Stable arithmetic.** One decimal; no floating drift in the sum beyond `round1`.
+- **Using less never lowers the score.** Shortening sittings, removing `< 8 s`
+  bounces, widening gaps, or trimming quiet-hours time never lowers `value`.
 
 ## 5. Confidence
 
@@ -368,4 +384,4 @@ gaps and vectors are all retained, so a re-score does not need the old payload �
 but the UI must not compare scores computed under different versions without
 saying so.
 
-Current version: **2** (P3 minimum-activity floors: `session_length` ≥ 5 sittings, `switching` ≥ 3 sittings & ≥ 15 min / 0.25 active hours, `late_night` ≥ 15 min sitting time; v1 shipped in P2).
+Current version: **3** (v0.1 polish: per-sitting switching pressure `15 × (1 − perSitting)`, quiet-hours 60-min budget `15 × (1 − clamp01(lateMs / 60m))` so using less never lowers score, fixed `/ 100` composite scale with `measuredMax`/`unmeasuredMax` shown separately, and plain-language `confidence.explanation`; v2 added P3 minimum-activity floors; v1 shipped in P2).

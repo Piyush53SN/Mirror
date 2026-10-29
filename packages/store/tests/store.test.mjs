@@ -969,4 +969,91 @@ test('(c) one-time non-destructive session repair restores 4f27118 sub-second tr
   }
 });
 
+test('keystore invalidation recovery: verifyKeyIntegrity detects rotated key before append, recoverFromKeyInvalidation wipes unreadable ciphertext and logs audit without crashing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-keystore-'));
+  const file = join(dir, 'mirror.db');
+  const IST_OFFSET = 330;
+  const oct25Start = Date.parse('2026-10-25T05:00:00Z');
+  const oct30Now = Date.parse('2026-10-30T08:00:00Z');
+
+  try {
+    // 1. Store sealed under original Android Keystore key
+    const s1 = new MirrorStore({
+      driver: NodeSqliteDriver.file(file),
+      keys,
+      random: counterRandom(),
+      clock: () => oct25Start,
+    });
+    await s1.open();
+    await s1.appendEvents([
+      foreground({ id: 'evt_fg_ks01', at: new Date(oct25Start).toISOString(), app: 'org.wikipedia' }),
+      {
+        schema_version: 1,
+        id: 'evt_bg_ks01',
+        kind: 'app_background',
+        at: new Date(oct25Start + 120_000).toISOString(),
+        tier: 'D',
+        origin: 'os',
+        content: 'metadata',
+        app: 'org.wikipedia',
+        duration_ms: 120_000,
+      },
+    ]);
+    await s1.applySessions({
+      window: { fromMs: oct25Start - 1_000, toMs: oct25Start + 200_000 },
+      sessions: [{ id: 'ses_ks01', app: 'org.wikipedia', start_ms: oct25Start, end_ms: oct25Start + 120_000, duration_ms: 120_000 }],
+      assignments: [],
+    });
+    assert.deepEqual(await s1.verifyKeyIntegrity(), { ok: true, currentKeyId: 'test-key-1' });
+
+    // 2. Simulate Android Keystore invalidation: device provisions a new key (`rotated-key-2`)
+    const rotatedKeyBytes = new Uint8Array(32).fill(0xab);
+    const rotatedKeys = {
+      async keyId() { return 'rotated-key-2'; },
+      async rootKey() { return new Uint8Array(rotatedKeyBytes); },
+    };
+    const s2 = new MirrorStore({
+      driver: NodeSqliteDriver.file(file),
+      keys: rotatedKeys,
+      random: counterRandom(),
+      clock: () => oct30Now,
+    });
+    await s2.open();
+
+    const integrity = await s2.verifyKeyIntegrity();
+    assert.equal(integrity.ok, false);
+    assert.equal(integrity.reason, 'key_mismatch');
+    assert.equal(integrity.currentKeyId, 'rotated-key-2');
+
+    // Recover BEFORE appending new events so newKey rows never mix with oldKey rows
+    const audit = await s2.recoverFromKeyInvalidation({
+      day: '2026-10-30',
+      at: oct30Now,
+      reason: 'keystore_invalidated',
+      detail: 'Android Keystore invalidated previous hardware key; encrypted history reset.',
+      utcOffsetMinutes: IST_OFFSET,
+    });
+    assert.equal(audit.day, '2026-10-30');
+    assert.equal(audit.reason, 'keystore_invalidated');
+    assert.equal(audit.previousHistoryStartDay, '2026-10-25');
+    assert.deepEqual(await s2.lastResetAudit(), audit);
+    assert.deepEqual(await s2.verifyKeyIntegrity(), { ok: true, currentKeyId: 'rotated-key-2' });
+
+    // 3. Subsequent overlapping syncs append cleanly and deduplicate by event.id without SQLite constraint errors
+    const res1 = await s2.appendEvents([
+      foreground({ id: 'evt_fg_post_ks', at: new Date(oct30Now).toISOString(), app: 'org.wikipedia' }),
+    ]);
+    const res2 = await s2.appendEvents([
+      foreground({ id: 'evt_fg_post_ks', at: new Date(oct30Now).toISOString(), app: 'org.wikipedia' }),
+    ]);
+    assert.equal(res1.inserted, 1);
+    assert.equal(res2.inserted, 0);
+    assert.equal(res2.duplicate, 1);
+    assert.equal((await s2.events()).length, 1);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 

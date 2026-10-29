@@ -15,6 +15,8 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- feat(polish): complete 8-part v0.1 polish across analytics, store, ui, and mobile (b7c2d93) 2026-10-29
+- test(release): enforce YAML parse validation on infra/workflows/release.yml (6084008) 2026-10-29
 - feat(release): enforce fail-loud release signing, tag lockstep check, and one-time idempotent session repair (9c555f3) 2026-10-29
 - fix(mobile): non-destructively repair missing sittings and add per-day/interval diagnostics (7a6f520) 2026-10-29
 - fix(analytics,store,mobile): fix ChatGPT 78m vs 47m lifecycle/store inflation and flag >max(10%,60s) OS discrepancies in DebugView (4f27118) 2026-10-28
@@ -53,8 +55,6 @@ Range: initial..v0.1.0
 - round9: Settings rule consistent (exclude Settings everywhere, only launchers+Mirror close), UI clearly says sessions approximate scaled to daily totals, add fixture README for real Honkai capture via debug Share, scores not exact from approximate (approximate flag caps confidence low) (257434c) 2026-10-21
 - round8: OS aggregate for per-app daily totals (matches Digital Wellbeing by construction), raw events only for timeline approximate scaled to daily totals, hidden debug screen tap 7x build, fix validation same period, capture Honkai raw events fixture explaining 99% loss (systemui fg closing, className mismatch, 2s overlap) (aefba63) 2026-10-21
 - Update android-build.yml (5ca1a67) 2026-10-21
-- lint: allow require in plugins, allow any in store, disable no-console in App.tsx for debug logs (1e119f8) 2026-10-21
-- round7: dynamic HOME launcher detection via CATEGORY_HOME, exclude POCO launcher com.mi.android.globallauncher, single-day view with day picker OS vs Mirror, collecting since line (first sync 1d back), readable fallback for com.flow.mobile, exclude Mirror itself, Honkai raw events logging and time-lost analysis (73ab439) 2026-10-21
 
 ## v0.1 Checklist vs Spec
 

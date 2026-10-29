@@ -101,6 +101,21 @@ test('an accessibility service fails even when no permission is declared', () =>
   assert.ok(result.problems.some((problem) => problem.includes('forbidden capability')));
 });
 
+test('a NotificationListenerService or BIND_NOTIFICATION_LISTENER_SERVICE is strictly rejected (Principle 2)', () => {
+  const xml = `
+    <manifest>
+      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+      <application>
+        <service android:name="dev.mirror.ForbiddenListener" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+          <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+        </service>
+      </application>
+    </manifest>`;
+  const result = auditManifest(xml, { variant: 'release' });
+  assert.equal(result.ok, false);
+  assert.ok(result.badServices.length >= 1);
+});
+
 test('a missing usage-access permission fails: the app would collect nothing', () => {
   const result = auditManifest(fixture('merged-missing.xml'));
   assert.equal(result.ok, false);

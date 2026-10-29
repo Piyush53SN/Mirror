@@ -7,7 +7,13 @@
  * no usage to show.
  */
 import type { UsageSourcePort } from '@mirror/core-analytics';
-import { getUsageStatsModule, type NativeUsageRow, type UsageStatsRow, type DebugUsageRow } from '../../modules/mirror-usage-stats';
+import {
+  getUsageStatsModule,
+  type NativeUsageRow,
+  type UsageStatsRow,
+  type DebugUsageRow,
+  type NativeWindowInsets,
+} from '../../modules/mirror-usage-stats';
 
 export type UsageSource = UsageSourcePort & {
   available: boolean;
@@ -15,6 +21,7 @@ export type UsageSource = UsageSourcePort & {
   queryUsageStats(sinceMs: number, untilMs: number): Promise<UsageStatsRow[]>;
   queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]>;
   getLauncherPackages(): Promise<string[]>;
+  getWindowInsets(): NativeWindowInsets | null;
 };
 
 export function nativeUsageSource(): UsageSource {
@@ -22,7 +29,11 @@ export function nativeUsageSource(): UsageSource {
   return {
     available: native !== null,
     async hasPermission() {
-      return native ? native.hasPermission() : false;
+      try {
+        return native ? native.hasPermission() : false;
+      } catch {
+        return false;
+      }
     },
     async queryEvents(sinceMs: number, untilMs: number): Promise<NativeUsageRow[]> {
       return native ? native.queryEvents(sinceMs, untilMs) : [];
@@ -40,8 +51,19 @@ export function nativeUsageSource(): UsageSource {
         return [];
       }
     },
+    getWindowInsets(): NativeWindowInsets | null {
+      try {
+        return native && typeof native.getWindowInsets === 'function' ? native.getWindowInsets() : null;
+      } catch {
+        return null;
+      }
+    },
     openSettings() {
-      native?.openSettings();
+      try {
+        native?.openSettings();
+      } catch {
+        // Ignore missing activity / settings screen on headless test devices
+      }
     },
   };
 }

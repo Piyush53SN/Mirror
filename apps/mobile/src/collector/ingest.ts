@@ -46,7 +46,12 @@ export function localDayKey(ms: number, utcOffsetMinutes: number): string {
   return new Date(ms + utcOffsetMinutes * 60_000).toISOString().slice(0, 10);
 }
 
-export async function ingestDay(store: MirrorStore, day: string, utcOffsetMinutes: number): Promise<IngestDayResult> {
+export async function ingestDay(
+  store: MirrorStore,
+  day: string,
+  utcOffsetMinutes: number,
+  ignorePackages?: readonly string[],
+): Promise<IngestDayResult> {
   const fromMs = dayStartMs(day, utcOffsetMinutes);
   const toMs = fromMs + DAY_MS;
 
@@ -65,7 +70,7 @@ export async function ingestDay(store: MirrorStore, day: string, utcOffsetMinute
     toMs: gap.to_ms ?? undefined,
   }));
 
-  const result = ingest({ events, gaps, window: { fromMs, toMs } }, { utcOffsetMinutes });
+  const result = ingest({ events, gaps, window: { fromMs, toMs } }, { utcOffsetMinutes, ignorePackages });
 
   // Only sessions that overlap the day are written. The look-around events that
   // belong to a session entirely outside it are still assigned by `ingest`, but
@@ -107,6 +112,7 @@ export async function repairSessionsFromStoredEvents(
   store: MirrorStore,
   now: number,
   utcOffsetMinutes: number,
+  ignorePackages?: readonly string[],
 ): Promise<SessionRepairSnapshot> {
   const existing = await store.lastSessionRepairSnapshot();
   if (existing) return existing;
@@ -137,7 +143,7 @@ export async function repairSessionsFromStoredEvents(
   let rebuiltDays = 0;
   for (const row of afterRecover) {
     if (row.fgEvents > 0 || row.bgEvents > 0 || row.otherEvents > 0) {
-      await ingestDay(store, row.day, utcOffsetMinutes);
+      await ingestDay(store, row.day, utcOffsetMinutes, ignorePackages);
       rebuiltDays += 1;
     }
   }
@@ -164,7 +170,12 @@ export async function repairSessionsFromStoredEvents(
  * events without matching `app_foreground` events, missing `app_foreground`
  * rows are appended non-destructively before session derivation.
  */
-export async function ingestRecentDays(store: MirrorStore, now: number, utcOffsetMinutes: number): Promise<IngestDayResult[]> {
+export async function ingestRecentDays(
+  store: MirrorStore,
+  now: number,
+  utcOffsetMinutes: number,
+  ignorePackages?: readonly string[],
+): Promise<IngestDayResult[]> {
   const today = localDayKey(now, utcOffsetMinutes);
   const yesterday = localDayKey(now - DAY_MS, utcOffsetMinutes);
   const dayBefore = localDayKey(now - 2 * DAY_MS, utcOffsetMinutes);
@@ -172,22 +183,22 @@ export async function ingestRecentDays(store: MirrorStore, now: number, utcOffse
   const results: IngestDayResult[] = [];
   try {
     // Strictly one-time, idempotent repair gated by `session_repair_v29` in `meta`.
-    await repairSessionsFromStoredEvents(store, now, utcOffsetMinutes);
+    await repairSessionsFromStoredEvents(store, now, utcOffsetMinutes, ignorePackages);
 
     const dayCounts = await store.dayRowCounts(utcOffsetMinutes);
     for (const row of dayCounts) {
       if (row.day >= dayBefore) continue;
       const hasUsageEvents = row.fgEvents > 0 || row.bgEvents > 0 || row.otherEvents > 0;
       if (hasUsageEvents && row.sessions === 0) {
-        results.push(await ingestDay(store, row.day, utcOffsetMinutes));
+        results.push(await ingestDay(store, row.day, utcOffsetMinutes, ignorePackages));
       }
     }
   } catch {
     // Non-fatal; standard 3-day window still runs below.
   }
 
-  results.push(await ingestDay(store, dayBefore, utcOffsetMinutes));
-  results.push(await ingestDay(store, yesterday, utcOffsetMinutes));
-  results.push(await ingestDay(store, today, utcOffsetMinutes));
+  results.push(await ingestDay(store, dayBefore, utcOffsetMinutes, ignorePackages));
+  results.push(await ingestDay(store, yesterday, utcOffsetMinutes, ignorePackages));
+  results.push(await ingestDay(store, today, utcOffsetMinutes, ignorePackages));
   return results;
 }

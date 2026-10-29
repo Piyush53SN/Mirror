@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { ScrollView, View } from 'react-native';
 import { Pill, Text, useTheme } from '@mirror/ui';
-import { toDayStr, useMirrorApp } from '../context/MirrorAppContext';
+import { formatSpokenDay, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 
 export function DayPickerStrip(): React.ReactElement {
   const theme = useTheme();
@@ -24,12 +24,13 @@ export function DayPickerStrip(): React.ReactElement {
                 key={day}
                 theme={theme}
                 variant={isSelected ? 'primary' : 'secondary'}
+                accessibilityLabel={formatSpokenDay(day, isToday, isSelected)}
                 onPress={() => {
                   setSelectedDay(day);
                   setExpandedSessionId(null);
                 }}
               >
-                {isSelected ? `● ${shortLabel}` : shortLabel}
+                {shortLabel}
               </Pill>
             );
           })}

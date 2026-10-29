@@ -30,6 +30,7 @@
     "app": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)+$" },
     "activity": { "type": "string" },
     "duration_ms": { "type": "number", "minimum": 0, "maximum": 86400000 },
+    "close_reason": { "enum": ["screen_off", "device_lock", "shutdown"] },
     "host": { "type": "string", "pattern": "^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$" },
     "scroll_depth": { "type": "number", "minimum": 0, "maximum": 1 },
     "query": { "type": "string", "maxLength": 512 },

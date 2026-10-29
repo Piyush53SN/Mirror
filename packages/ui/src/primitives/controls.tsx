@@ -7,12 +7,12 @@
  * `size` prop only ever changes what you *see*, never what you can hit.
  */
 import * as React from 'react';
-import { Pressable, View } from '../host';
+import { Pressable, TextInput, View } from '../host';
 import type { StyleProp, ViewStyle } from '../host';
 import { useTheme } from '../theme';
 import type { MirrorTheme } from '../tokens';
 import type { DataTier } from '../tiers';
-import { a11yTarget, hitSlopFor } from '../a11y';
+import { a11yTarget, coerceLabel, hitSlopFor } from '../a11y';
 import { Text, TierBadge } from './text';
 
 type ControlBase = {
@@ -45,6 +45,8 @@ export type PillProps = ControlBase & {
   icon?: React.ReactNode;
   /** Visual height; the hit area is padded up to 48dp automatically. */
   size?: number;
+  /** Optional spoken override for TalkBack (e.g. spoken dates instead of MM-DD). */
+  accessibilityLabel?: string;
 };
 
 /**
@@ -52,14 +54,26 @@ export type PillProps = ControlBase & {
  * Primary pills are for the single most likely intent on a screen, never for
  * encouragement.
  */
-export function Pill({ children, variant = 'primary', onPress, disabled, icon, theme, style, size, testID }: PillProps) {
+export function Pill({
+  children,
+  variant = 'primary',
+  onPress,
+  disabled,
+  icon,
+  theme,
+  style,
+  size,
+  accessibilityLabel,
+  testID,
+}: PillProps) {
   const t = withTheme(theme);
   const height = size ?? 44;
   const press = usePressableBase(t, height, onPress, disabled);
-  const background = variant === 'primary' ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
-  const colour = variant === 'primary' ? t.color.onAnchor : t.color.ink;
+  const baseBackground = variant === 'primary' ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
+  const background = disabled ? t.glass.chip.fill : baseBackground;
+  const colour = disabled ? t.color.inkMuted : variant === 'primary' ? t.color.onAnchor : t.color.ink;
   // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array at runtime
-  const rawChildren: unknown = children;
+  const rawChildren: unknown = accessibilityLabel ?? children;
   const labelForA11y = typeof rawChildren === 'string' ? rawChildren : Array.isArray(rawChildren) ? rawChildren.join(' ') : String(rawChildren ?? '');
 
   return (
@@ -88,7 +102,7 @@ export function Pill({ children, variant = 'primary', onPress, disabled, icon, t
           paddingHorizontal: t.space(4),
           borderRadius: t.radius.pill,
           backgroundColor: background,
-          borderWidth: variant === 'quiet' ? 1 : 0,
+          borderWidth: disabled || variant === 'quiet' ? 1 : 0,
           borderColor: t.color.borderCard,
         }}
       >
@@ -365,6 +379,7 @@ export function TabBar({
   items,
   active,
   onChange,
+  bottomOffset,
   theme,
 }: {
   items: TabItem[];
@@ -372,6 +387,8 @@ export function TabBar({
   onChange: (id: string) => void;
   /** Granted by useLiveBlur(); false paints the pre-composited fill instead. */
   liveBlur?: boolean;
+  /** Distance from the bottom edge in dp (defaults to 16dp, or safe-area bottom + 8dp on device). */
+  bottomOffset?: number;
   theme?: MirrorTheme;
 }) {
   const t = withTheme(theme);
@@ -383,7 +400,7 @@ export function TabBar({
         position: 'absolute',
         left: t.space(4),
         right: t.space(4),
-        bottom: t.space(4),
+        bottom: bottomOffset ?? t.space(4),
         height: t.size.tabBar,
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -497,5 +514,61 @@ export function TierAction({
         {label}
       </LinkButton>
     </View>
+  );
+}
+
+/* ----------------------------------------------------------- TextField ----- */
+
+export type TextFieldProps = {
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder?: string;
+  accessibilityLabel: string;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  editable?: boolean;
+  testID?: string;
+  theme?: MirrorTheme;
+};
+
+/**
+ * Single-line text input with >= 48dp touch height, opaque `theme.color.card`
+ * surface for >= 4.5:1 ink/placeholder contrast, and explicit TalkBack label.
+ */
+export function TextField({
+  value,
+  onChangeText,
+  placeholder,
+  accessibilityLabel,
+  autoCapitalize = 'characters',
+  editable = true,
+  testID,
+  theme,
+}: TextFieldProps) {
+  const t = withTheme(theme);
+  const type = t.type('body');
+  return (
+    <TextInput
+      testID={testID}
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={t.color.inkMuted}
+      autoCapitalize={autoCapitalize}
+      autoCorrect={false}
+      editable={editable}
+      accessibilityLabel={coerceLabel(accessibilityLabel)}
+      style={{
+        minHeight: t.size.touchTarget,
+        paddingHorizontal: t.space(3),
+        paddingVertical: t.space(2),
+        borderRadius: t.radius.md,
+        backgroundColor: t.color.card,
+        borderWidth: 1,
+        borderColor: t.color.borderCard,
+        color: t.color.ink,
+        fontSize: type.fontSize,
+        fontWeight: '600',
+      }}
+    />
   );
 }

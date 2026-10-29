@@ -45,6 +45,10 @@ export type Origin = (typeof ORIGINS)[number];
 export const CONTENT_CLASSES = ['metadata', 'content'] as const;
 export type ContentClass = (typeof CONTENT_CLASSES)[number];
 
+/** Explicit system lifecycle event that closed an app's foreground sitting. */
+export const CLOSE_REASONS = ['screen_off', 'device_lock', 'shutdown'] as const;
+export type CloseReason = (typeof CLOSE_REASONS)[number];
+
 export type EventKind =
   | 'app_foreground'
   | 'app_background'
@@ -96,6 +100,8 @@ export type AppBackgroundEvent = Base<'app_background'> & {
   app: string;
   /** Milliseconds the app was in the foreground. Derived, then checked. */
   duration_ms: number;
+  /** Present when screen-off, lockscreen, or shutdown closed or terminated this sitting. */
+  close_reason?: CloseReason;
 };
 
 export type DeviceUnlockEvent = Base<'device_unlock'>;

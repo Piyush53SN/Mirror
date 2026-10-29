@@ -54,6 +54,8 @@ export type WhatIfIqsEstimate = {
   badge: 'Estimate';
   value: number | null;
   max: number;
+  measuredMax: number;
+  unmeasuredMax: number;
   sameDenominator: boolean;
   deltaPoints: number | null;
   measuredFactors: WhatIfMeasuredFactorEstimate[];
@@ -297,7 +299,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     .map((f) => `${f.label}: ${f.detail}`);
 
   const disclaimer =
-    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores include only measured factors and are never rescaled to 100.';
+    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores use the fixed 100-point scale with unmeasured parts shown separately (never counted as zero and never rescaled to 100).';
 
   const smallSampleBaseline = baselineIqs.value === null || baselineIqs.confidence.smallSample;
   const minimumActivityNote =
@@ -379,7 +381,9 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         : `Estimate: ${fmtDurationShort(estimatedTimeMs)} (−${fmtDurationShort(Math.abs(deltaTimeMs))}, ${Math.round(deltaTimePct * 100)}% vs ${baselineLabel})`;
 
     const sameDenominator =
-      cfScore.value !== null && baselineIqs.value !== null && cfScore.max === baselineIqs.max;
+      cfScore.value !== null &&
+      baselineIqs.value !== null &&
+      cfScore.measuredMax === baselineIqs.measuredMax;
     const deltaPoints =
       sameDenominator && cfScore.value !== null && baselineIqs.value !== null
         ? round1(cfScore.value - baselineIqs.value)
@@ -407,20 +411,20 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
 
     const unmeasuredFactors = cfScore.factors
       .filter((f) => !f.measurable)
-      .map((f) => `${f.label} (not measured)`);
+      .map((f) => `${f.label} (${f.max} pts not measured)`);
 
     let iqsEstimateLabel: string;
-    if (cfScore.value === null || cfScore.max === 0) {
+    if (cfScore.value === null || cfScore.measuredMax === 0) {
       iqsEstimateLabel =
         params.cfSessions.length === 0
           ? 'Estimate: IQS not measurable (0 remaining sittings in window; not rescaled to 100)'
           : 'Estimate: IQS not measurable (remaining activity below minimum-activity threshold; not rescaled to 100)';
     } else if (baselineIqs.value === null) {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (baseline below minimum activity; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${cfScore.measuredMax} pts measured, ${cfScore.unmeasuredMax} pts unmeasured; baseline below minimum activity; not rescaled to 100)`;
     } else if (sameDenominator && deltaPoints !== null) {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${fmtSignedPoints(deltaPoints)} across ${measuredFactors.length} measured factor${measuredFactors.length === 1 ? '' : 's'}; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${fmtSignedPoints(deltaPoints)} across ${measuredFactors.length} measured factor${measuredFactors.length === 1 ? '' : 's'}, ${cfScore.measuredMax} pts measured / ${cfScore.unmeasuredMax} pts unmeasured; not rescaled to 100)`;
     } else {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (measured max changed from /${baselineIqs.max} to /${cfScore.max}; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (measured share changed from ${baselineIqs.measuredMax} to ${cfScore.measuredMax} of ${cfScore.max} pts; not rescaled to 100)`;
     }
 
     let noChangeReason: string | null = null;
@@ -430,7 +434,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       noChangeReason =
         params.cfSessions.length === 0
           ? 'After this scenario, 0 sittings remain in the window, so counterfactual IQS is hidden rather than guessed.'
-          : 'After this scenario, remaining activity falls below the minimum-activity threshold (needs at least 5 sittings or 15 min), so counterfactual IQS is hidden rather than computed on a tiny sample.';
+          : 'After this scenario, remaining activity falls below the minimum-activity threshold (needs at least 3 non-utility sittings, 5 sittings, or 15 min), so counterfactual IQS is hidden rather than computed on a tiny sample.';
     } else if (sameDenominator && deltaPoints === 0) {
       noChangeReason =
         params.zeroIqsDeltaReason ??
@@ -453,6 +457,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         badge: 'Estimate',
         value: cfScore.value,
         max: cfScore.max,
+        measuredMax: cfScore.measuredMax,
+        unmeasuredMax: cfScore.unmeasuredMax,
         sameDenominator,
         deltaPoints,
         measuredFactors,

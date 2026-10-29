@@ -47,8 +47,12 @@ export function defineUsageTask(): void {
         ? await runtime.collectNow(now)
         : await collectUsage(nativeUsageSource(), runtime.store, { now });
       // A missing permission is not a failure: the person may simply not have
-      // granted it, and the OS should not retry with backoff for that.
-      if (result.status === 'permission-required') return BackgroundTask.BackgroundTaskResult.Success;
+      // granted it (or revoked it in Settings), so unregister periodic collection
+      // until re-granted and avoid backoff retries.
+      if (result.status === 'permission-required') {
+        await unregisterUsageTask().catch(() => {});
+        return BackgroundTask.BackgroundTaskResult.Success;
+      }
 
       // Derive sessions and rollups for the days the pass just touched. Both are
       // idempotent, so a retry rewrites the same rows; a partial day is skipped by

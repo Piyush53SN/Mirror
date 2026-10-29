@@ -43,8 +43,11 @@ import { isIgnoredSystemApp, isLabelingExcludedApp } from './usage';
 
 export const MIN_RABBIT_HOLE_DAYS = 3;
 export const FULL_RABBIT_HOLE_DAYS = 14;
-export const DEFAULT_RABBIT_MIN_CONSECUTIVE = 3;
-export const DEFAULT_RABBIT_MAX_SITTING_MS = 5 * 60_000;
+/** Spec bar: at least 4 returns to the same app (5+ sittings total). */
+export const DEFAULT_RABBIT_MIN_RETURNS = 4;
+export const DEFAULT_RABBIT_MIN_CONSECUTIVE = DEFAULT_RABBIT_MIN_RETURNS + 1;
+/** Spec bar: combined session time across the cluster must exceed 30 minutes. */
+export const DEFAULT_RABBIT_MIN_SESSION_MS = 30 * 60_000;
 export const DEFAULT_RABBIT_MAX_GAP_MS = 60 * 60_000;
 
 export type RabbitHoleCluster = {
@@ -55,6 +58,8 @@ export type RabbitHoleCluster = {
   startMs: number;
   endMs: number;
   sittingCount: number;
+  /** Number of returns after the initial sitting (`sittingCount - 1 >= 4`). */
+  returnCount: number;
   totalSittingMs: number;
   lateNightMs: number;
   explicitLabels: ExplicitLabelCounts;
@@ -74,9 +79,12 @@ export type RabbitHoleInput = {
   ignorePackages?: readonly string[];
   utcOffsetMinutes?: number;
   minDays?: number;
+  /** Minimum returns to the same app after the initial open (default 4 -> 5+ sittings). */
+  minReturns?: number;
+  /** Minimum combined sitting duration in ms (strictly `>`, default 30 min). */
+  minTotalSessionMs?: number;
   minConsecutive?: number;
   minSittingMs?: number;
-  maxSittingMs?: number;
   maxGapMs?: number;
   clusterLimit?: number;
 };
@@ -105,34 +113,41 @@ export type RabbitHoleResult = {
 
 const CAPABILITIES: RabbitHoleCapabilities = {
   tierDCanDetect: [
-    '3+ consecutive short sittings (8 s to under 5 min) on the same app within 60 min, with no other app in between',
+    '4+ returns to the same app (5+ consecutive sittings within 60 min) totalling over 30 min of active sitting time',
     'Share of those sittings falling between 23:00 and 05:00 local',
     'Any explicit intentional or mindless labels you added to those sittings',
   ],
   tierDCannotDetect: [
-    'Whether a visit started from a search or resulted in a save (needs Tier A/B/C)',
-    'Feed scrolling vs purposeful quick checks such as messages, transit, or docs (needs Tier A/B/C)',
+    'Whether a visit started from a search or resulted in a save (needs content or connector sources)',
+    'Feed scrolling vs purposeful work or messaging inside an app (needs content sources)',
     'Intent without your explicit label (duration and repeat opens never imply mindless use)',
   ],
   whatMirrorWillNotDo:
-    'Mirror does not block apps, send unprompted nudges, penalise IQS for this count, or include it on any public profile.',
+    'Mirror does not block apps, send unprompted nudges, penalise your score for this count, or include it on any public profile.',
 };
 
 export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   const utcOffsetMinutes = input.utcOffsetMinutes ?? 0;
   const minDays = Math.max(2, input.minDays ?? MIN_RABBIT_HOLE_DAYS);
-  const minConsecutive = Math.max(2, Math.floor(input.minConsecutive ?? DEFAULT_RABBIT_MIN_CONSECUTIVE));
+  const minReturns = Math.max(
+    1,
+    Math.floor(
+      input.minReturns ??
+        (input.minConsecutive !== undefined ? input.minConsecutive - 1 : DEFAULT_RABBIT_MIN_RETURNS),
+    ),
+  );
+  const minConsecutive = minReturns + 1;
   const minSittingMs = Math.max(1, input.minSittingMs ?? SHORT_SESSION_MS);
-  const maxSittingMs = Math.max(minSittingMs + 1, input.maxSittingMs ?? DEFAULT_RABBIT_MAX_SITTING_MS);
+  const minTotalSessionMs = Math.max(0, input.minTotalSessionMs ?? DEFAULT_RABBIT_MIN_SESSION_MS);
   const maxGapMs = Math.max(1_000, input.maxGapMs ?? DEFAULT_RABBIT_MAX_GAP_MS);
   const clusterLimit = Math.max(1, input.clusterLimit ?? 5);
   const launcherSet = new Set<string>(input.ignorePackages ?? []);
   const labels = input.labels ?? {};
 
-  const maxMinLabel = Math.round(maxSittingMs / 60_000);
+  const minSessionMinLabel = Math.round(minTotalSessionMs / 60_000);
   const maxGapMinLabel = Math.round(maxGapMs / 60_000);
   const minSecLabel = Math.round(minSittingMs / 1_000);
-  const definitionText = `${minConsecutive}+ consecutive short sittings (${minSecLabel} s to under ${maxMinLabel} min each, within ${maxGapMinLabel} min) on the same app with no other app opened in between. Search and save signals are unavailable on Tier D.`;
+  const definitionText = `${minReturns}+ returns (${minConsecutive}+ consecutive sittings of ${minSecLabel} s or longer, within ${maxGapMinLabel} min) to the same app totalling over ${minSessionMinLabel} min, with no other app opened in between. Search and save signals are unavailable on OS usage timing alone.`;
 
   // Exclude launchers, system/installer packages, and utility apps (dialer, camera, clock, calculator, etc.)
   const valid = input.sessions.filter((s) => {
@@ -192,35 +207,31 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
         totalSittingMs += Math.max(0, s.endMs - s.startMs);
         nightMs += lateNightMs(s.startMs, s.endMs, utcOffsetMinutes);
       }
-      const explicit = countExplicitLabels(run, input.intentLabels, {
-        ignorePackages: input.ignorePackages,
-        appLabels: labels,
-      });
-      allClusters.push({
-        id: `rh_${first.id}_${run.length}`,
-        app: first.app,
-        label: labels[first.app] ?? first.app,
-        day: localDay(first.startMs, utcOffsetMinutes),
-        startMs: first.startMs,
-        endMs: last.endMs,
-        sittingCount: run.length,
-        totalSittingMs,
-        lateNightMs: nightMs,
-        explicitLabels: explicit,
-        tier: 'D',
-      });
+      if (totalSittingMs > minTotalSessionMs) {
+        const explicit = countExplicitLabels(run, input.intentLabels, {
+          ignorePackages: input.ignorePackages,
+          appLabels: labels,
+        });
+        allClusters.push({
+          id: `rh_${first.id}_${run.length}`,
+          app: first.app,
+          label: labels[first.app] ?? first.app,
+          day: localDay(first.startMs, utcOffsetMinutes),
+          startMs: first.startMs,
+          endMs: last.endMs,
+          sittingCount: run.length,
+          returnCount: run.length - 1,
+          totalSittingMs,
+          lateNightMs: nightMs,
+          explicitLabels: explicit,
+          tier: 'D',
+        });
+      }
     }
     run = [];
   };
 
   for (const s of sustained) {
-    const dur = s.endMs - s.startMs;
-    const isShort = dur >= minSittingMs && dur < maxSittingMs;
-    if (!isShort) {
-      // A longer (>= maxSittingMs) sitting breaks any short-return run
-      flushRun();
-      continue;
-    }
     if (run.length === 0) {
       run.push(s);
       continue;

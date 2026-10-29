@@ -34,12 +34,14 @@ const MIN_MS = 60_000;
 
 /* ----------------------------------------------------- 4 standing edge cases --- */
 
-test('edge 1: empty sessions returns hasBaseline false, no scenarios, never rescaled to 100, no NaN', () => {
+test('edge 1: empty sessions returns hasBaseline false, no scenarios, fixed 100 scale with 0 measuredMax, no NaN', () => {
   const res = computeWhatIf({ window: WINDOW, sessions: [] });
   assert.equal(res.hasBaseline, false);
   assert.equal(res.baselineSessionCount, 0);
   assert.equal(res.baselineIqs.value, null);
-  assert.equal(res.baselineIqs.max, 0);
+  assert.equal(res.baselineIqs.max, 100);
+  assert.equal(res.baselineIqs.measuredMax, 0);
+  assert.equal(res.baselineIqs.unmeasuredMax, 100);
   assert.deepEqual(res.scenarios, []);
 });
 
@@ -54,7 +56,7 @@ test('edge 2: zero-duration sessions are ignored and produce hasBaseline false',
   assert.deepEqual(res.scenarios, []);
 });
 
-test('edge 3: single-event (1 sitting of 25m -> only late_night /15 meets minimum-activity floor, never rescaled to 100)', () => {
+test('edge 3: single-event (1 sitting of 25m -> only late_night 15 of 100 meets minimum-activity floor, never rescaled to 100)', () => {
   const res = computeWhatIf({
     window: WINDOW,
     sessions: [
@@ -71,7 +73,9 @@ test('edge 3: single-event (1 sitting of 25m -> only late_night /15 meets minimu
 
   assert.equal(res.hasBaseline, true);
   assert.equal(res.smallSampleBaseline, true);
-  assert.equal(res.baselineIqs.max, 15, 'only late_night (15) meets minimum activity on 1 sitting of 25 min');
+  assert.equal(res.baselineIqs.max, 100);
+  assert.equal(res.baselineIqs.measuredMax, 15, 'only late_night (15) meets minimum activity on 1 sitting of 25 min');
+  assert.equal(res.baselineIqs.unmeasuredMax, 85);
   assert.equal(res.scenarios.length, 4);
 
   for (const sc of res.scenarios) {
@@ -79,18 +83,20 @@ test('edge 3: single-event (1 sitting of 25m -> only late_night /15 meets minimu
     assert.ok(sc.timeEstimateLabel.startsWith('Estimate:'));
     assert.ok(sc.iqsEstimateLabel.startsWith('Estimate:'));
     assert.ok(sc.assumption.length > 20);
-    assert.ok(sc.estimatedIqs.max <= 15, 'never rescaled to 100');
+    assert.equal(sc.estimatedIqs.max, 100);
+    assert.ok(sc.estimatedIqs.measuredMax <= 15, 'never rescaled to 100');
   }
 
-  // Pausing the only app leaves 0 sittings -> IQS not measurable (max 0, value null)
+  // Pausing the only app leaves 0 sittings -> IQS not measurable (measuredMax 0, value null)
   const paused = res.scenarios.find((s) => s.id === 'pause_top_app');
   assert.equal(paused.estimatedIqs.value, null);
-  assert.equal(paused.estimatedIqs.max, 0);
+  assert.equal(paused.estimatedIqs.max, 100);
+  assert.equal(paused.estimatedIqs.measuredMax, 0);
   assert.ok(paused.iqsEstimateLabel.includes('not rescaled to 100'));
   assert.match(paused.noChangeReason, /0 sittings remain/);
 });
 
-test('edge 4: all-sessions-under-8s (>=5 opens, <15m total) measures session_length (/25) only and flags small sample', () => {
+test('edge 4: all-sessions-under-8s (>=5 opens, <15m total) measures session_length (25 of 100) only and flags small sample', () => {
   const sessions = [0, 1, 2, 3, 4, 5].map((i) => ({
     id: `b_${i}`,
     app: i % 2 === 0 ? 'com.reddit.frontpage' : 'org.wikipedia',
@@ -100,7 +106,8 @@ test('edge 4: all-sessions-under-8s (>=5 opens, <15m total) measures session_len
   const res = computeWhatIf({ window: WINDOW, sessions, utcOffsetMinutes: 0 });
   assert.equal(res.hasBaseline, true);
   assert.equal(res.smallSampleBaseline, true);
-  assert.equal(res.baselineIqs.max, 25, 'session_length (25) only; switching & late_night hidden on 24s total');
+  assert.equal(res.baselineIqs.max, 100);
+  assert.equal(res.baselineIqs.measuredMax, 25, 'session_length (25) only; switching & late_night hidden on 24s total');
   const skipShort = res.scenarios.find((s) => s.id === 'skip_short_bounces');
   assert.equal(skipShort.remainingSessions, 0);
   assert.equal(skipShort.estimatedIqs.value, null);
@@ -194,7 +201,9 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
     utcOffsetMinutes: 0,
   });
 
-  assert.equal(resNoLabels.baselineIqs.max, 55);
+  assert.equal(resNoLabels.baselineIqs.max, 100);
+  assert.equal(resNoLabels.baselineIqs.measuredMax, 55);
+  assert.equal(resNoLabels.baselineIqs.unmeasuredMax, 45);
   assert.equal(resNoLabels.baselineTimeMs, 120 * MIN_MS);
   assert.equal(resNoLabels.timeSource, 'os_aggregate');
   assert.equal(resNoLabels.unmeasuredFactorSummary.length, 2);
@@ -205,7 +214,9 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
     assert.ok(sc.timeEstimateLabel.startsWith('Estimate:'), `missing Estimate prefix: ${sc.timeEstimateLabel}`);
     assert.ok(sc.iqsEstimateLabel.startsWith('Estimate:'), `missing Estimate prefix: ${sc.iqsEstimateLabel}`);
     assert.ok(sc.iqsEstimateLabel.includes('not rescaled to 100'));
-    assert.equal(sc.estimatedIqs.max, 55, `must stay out of 55 without labels, got ${sc.estimatedIqs.max}`);
+    assert.equal(sc.estimatedIqs.max, 100);
+    assert.equal(sc.estimatedIqs.measuredMax, 55, `must keep 55 measured pts without labels, got ${sc.estimatedIqs.measuredMax}`);
+    assert.equal(sc.estimatedIqs.unmeasuredMax, 45);
     assert.equal(sc.estimatedIqs.measuredFactors.length, 3);
     for (const mf of sc.estimatedIqs.measuredFactors) {
       assert.ok(mf.estimateLabel.startsWith('Estimate:'));
@@ -214,13 +225,13 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
     assert.ok(sc.assumption.startsWith('Assumes '));
   }
 
-  // Quiet hours 23:00–05:00 removes yt_2 (30m late night) -> Late-night share rises to full 15/15!
+  // Quiet hours 23:00–05:00 removes yt_2 (30m late night) -> Late-night quiet hours rises to full 15/15!
   const qh = resNoLabels.scenarios.find((s) => s.id === 'quiet_hours');
   const lnFactor = qh.estimatedIqs.measuredFactors.find((f) => f.id === 'late_night');
   assert.equal(lnFactor.points, 15);
   assert.ok(qh.estimatedIqs.deltaPoints > 0);
 
-  // Case B: 6 decisive explicit labels -> max becomes 75 (4 measured Tier-D factors, Topic depth still unmeasured!)
+  // Case B: 6 decisive explicit labels -> measuredMax becomes 75 (4 measured Tier-D factors, Topic depth 25 still unmeasured!)
   const resWithLabels = computeWhatIf({
     window: WINDOW,
     sessions,
@@ -236,9 +247,13 @@ test('every scenario output is labelled Estimate, never rescaled to 100 (/55 wit
     utcOffsetMinutes: 0,
   });
 
-  assert.equal(resWithLabels.baselineIqs.max, 75);
+  assert.equal(resWithLabels.baselineIqs.max, 100);
+  assert.equal(resWithLabels.baselineIqs.measuredMax, 75);
+  assert.equal(resWithLabels.baselineIqs.unmeasuredMax, 25);
   for (const sc of resWithLabels.scenarios) {
-    assert.equal(sc.estimatedIqs.max, 75, `with >=5 surviving decisive labels, max must be 75 (never 100)`);
+    assert.equal(sc.estimatedIqs.max, 100);
+    assert.equal(sc.estimatedIqs.measuredMax, 75, `with >=5 surviving decisive labels, measuredMax must be 75 (never 100)`);
+    assert.equal(sc.estimatedIqs.unmeasuredMax, 25);
     assert.equal(sc.estimatedIqs.measuredFactors.length, 4);
     assert.equal(sc.estimatedIqs.unmeasuredFactors.length, 1); // Topic depth only
   }
@@ -413,8 +428,10 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
           utcOffsetMinutes: 330,
         });
 
-        assert.ok(res.baselineIqs.max !== 100, 'Tier-D without topic vectors can never have max 100');
-        assert.ok(VALID_TIER_D_MAXIMA.includes(res.baselineIqs.max));
+        assert.equal(res.baselineIqs.max, 100);
+        assert.ok(res.baselineIqs.measuredMax !== 100, 'Tier-D without topic vectors can never have measuredMax 100');
+        assert.ok(VALID_TIER_D_MAXIMA.includes(res.baselineIqs.measuredMax));
+        assert.equal(res.baselineIqs.measuredMax + res.baselineIqs.unmeasuredMax, 100);
 
         const capMs = capMin * MIN_MS;
         const scorableSessions = sessions
@@ -438,7 +455,9 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
           assert.ok(sc.estimatedTimeMs >= 0 && sc.estimatedTimeMs <= sc.baselineTimeMs);
           assert.ok(sc.deltaTimePct >= -1 && sc.deltaTimePct <= 0);
           assert.equal(Number.isNaN(sc.deltaTimePct), false);
-          assert.ok(VALID_TIER_D_MAXIMA.includes(sc.estimatedIqs.max));
+          assert.equal(sc.estimatedIqs.max, 100);
+          assert.ok(VALID_TIER_D_MAXIMA.includes(sc.estimatedIqs.measuredMax));
+          assert.equal(sc.estimatedIqs.measuredMax + sc.estimatedIqs.unmeasuredMax, 100);
           if (sc.id === 'cap_sittings') {
             assert.equal(sc.baselineTimeMs, res.sittingTimeMs);
             assert.ok(

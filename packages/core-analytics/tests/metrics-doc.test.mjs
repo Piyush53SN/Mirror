@@ -20,8 +20,8 @@ const core = await bundleTs(join(HERE, '..', 'src', 'index.ts'), { outfile: join
 const FACTORS = [
   { id: 'session_length', max: 25, formula: /25 × \(1 − nShort \/ nSessions\)/ },
   { id: 'deliberate_share', max: 20, formula: /20 × intentional \/ decisive/ },
-  { id: 'switching', max: 15, formula: /15 × 20 \/ \(perHour \+ 20\)/ },
-  { id: 'late_night', max: 15, formula: /15 × \(1 − lateMs \/ totalMs\)/ },
+  { id: 'switching', max: 15, formula: /15 × \(1 − perSitting\)/ },
+  { id: 'late_night', max: 15, formula: /15 × \(1 − clamp01\(lateMs \/ lateBudgetMs\)\)/ },
   { id: 'topic_depth', max: 25, formula: /25 × meanCosine/ },
 ];
 
@@ -55,7 +55,7 @@ test('the four deviations are recorded as decisions (now approved)', () => {
 });
 
 test('the documented version matches the engine', () => {
-  assert.equal(core.IQS_METRICS_VERSION, 2);
+  assert.equal(core.IQS_METRICS_VERSION, 3);
   assert.ok(DOC.includes(`Current version: **${core.IQS_METRICS_VERSION}**`), 'docs/metrics.md §9 is out of date');
   const score = core.scoreIqs({ window: { fromMs: 0, toMs: 86_400_000 }, sessions: [{ id: 'ses_x', app: 'a', startMs: 1000, endMs: 2000 }] });
   assert.equal(score.metricsVersion, core.IQS_METRICS_VERSION);

@@ -15,7 +15,8 @@
  *
  * Everything is pure: same input, same output, no clock, no storage.
  */
-import type { MirrorEvent } from '@mirror/shared-types';
+import type { CloseReason, MirrorEvent } from '@mirror/shared-types';
+import { isExcludedApp } from './usage';
 
 /** FNV-1a, 32-bit. Only used to keep two apps with identical bounds apart. */
 function fingerprint(value: string): string {
@@ -49,6 +50,8 @@ export type Session = {
   startMs: number;
   endMs: number;
   durationMs: number;
+  /** Present when this sitting ended on screen-off, device lock, or shutdown. */
+  closedBy?: CloseReason;
   /** The foreground/background events that produced this session. */
   eventIds: string[];
 };
@@ -58,12 +61,18 @@ export type SessionizeOptions = {
   mergeGapMs?: number;
   /** Intervals shorter than this are dropped. Default 0: recorded is recorded. */
   minDurationMs?: number;
+  /** Dynamic home-launcher or extra excluded packages merged with `SHARED_EXCLUDED_PACKAGES`. */
+  ignorePackages?: readonly string[];
 };
 
 export type SessionizeResult = {
   sessions: Session[];
   /** Why intervals were dropped, so a collector bug is visible instead of silent. */
-  dropped: { reason: 'unclosed' | 'orphan_background' | 'zero_length' | 'below_minimum'; app?: string; at?: string }[];
+  dropped: {
+    reason: 'unclosed' | 'orphan_background' | 'zero_length' | 'below_minimum' | 'ignored_package';
+    app?: string;
+    at?: string;
+  }[];
 };
 
 const ms = (iso: string) => Date.parse(iso);
@@ -74,16 +83,26 @@ export const DEFAULT_CROSS_APP_LINK_GAP_MS = 3 * 60 * 1000; // 3 min to link cro
 export function sessionize(events: readonly MirrorEvent[], options: SessionizeOptions = {}): SessionizeResult {
   const mergeGapMs = options.mergeGapMs ?? DEFAULT_MERGE_GAP_MS;
   const minDurationMs = options.minDurationMs ?? 0;
+  const extraIgnore = options.ignorePackages ? new Set<string>(options.ignorePackages) : undefined;
 
   const ordered = [...events]
     .filter((e) => e.kind === 'app_foreground' || e.kind === 'app_background')
     .sort((a, b) => ms(a.at) - ms(b.at) || (a.kind === 'app_foreground' ? -1 : 1));
 
   const open = new Map<string, { start: number; at: string; eventId: string }>();
-  const intervals: { app: string; start: number; end: number; eventIds: string[] }[] = [];
+  const intervals: { app: string; start: number; end: number; closeReason?: CloseReason; eventIds: string[] }[] = [];
+  const closeBoundaries: number[] = [];
   const dropped: SessionizeResult['dropped'] = [];
 
   for (const event of ordered) {
+    if (event.kind === 'app_background' && event.close_reason) {
+      const boundaryAt = ms(event.at);
+      if (Number.isFinite(boundaryAt)) closeBoundaries.push(boundaryAt);
+    }
+    if (isExcludedApp(event.app, undefined, extraIgnore)) {
+      dropped.push({ reason: 'ignored_package', app: event.app, at: event.at });
+      continue;
+    }
     if (event.kind === 'app_foreground') {
       // A second foreground without a background means the collector missed an
       // event; keep the earlier start (the sitting did not end) and note nothing,
@@ -111,13 +130,29 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
       dropped.push({ reason: 'below_minimum', app: event.app, at: event.at });
       continue;
     }
-    intervals.push({ app: event.app, start: started.start, end, eventIds: [started.eventId, event.id].filter(Boolean) });
+    intervals.push({
+      app: event.app,
+      start: started.start,
+      end,
+      ...(event.close_reason ? { closeReason: event.close_reason } : {}),
+      eventIds: [started.eventId, event.id].filter(Boolean),
+    });
   }
 
   for (const [app, started] of open) dropped.push({ reason: 'unclosed', app, at: started.at });
 
-  // Merge per app, then order by start.
-  const byApp = new Map<string, { app: string; start: number; end: number; eventIds: string[] }[]>();
+  closeBoundaries.sort((a, b) => a - b);
+  const crossedScreenOrLock = (fromEnd: number, toStart: number): boolean => {
+    for (const boundary of closeBoundaries) {
+      if (boundary < fromEnd) continue;
+      if (boundary <= toStart) return true;
+      break;
+    }
+    return false;
+  };
+
+  // Merge per app, then order by start — NEVER merging across screen-off, lock, or shutdown.
+  const byApp = new Map<string, { app: string; start: number; end: number; closeReason?: CloseReason; eventIds: string[] }[]>();
   for (const interval of intervals) {
     const list = byApp.get(interval.app) ?? [];
     list.push(interval);
@@ -129,8 +164,13 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
     list.sort((a, b) => a.start - b.start);
     let current = { ...list[0]! };
     for (const next of list.slice(1)) {
-      if (next.start - current.end <= mergeGapMs) {
+      if (
+        !current.closeReason &&
+        !crossedScreenOrLock(current.end, next.start) &&
+        next.start - current.end <= mergeGapMs
+      ) {
         current.end = Math.max(current.end, next.end);
+        current.closeReason = next.closeReason;
         current.eventIds = [...current.eventIds, ...next.eventIds];
       } else {
         sessions.push(toSession(current));
@@ -144,7 +184,7 @@ export function sessionize(events: readonly MirrorEvent[], options: SessionizeOp
   return { sessions, dropped };
 }
 
-const toSession = (i: { app: string; start: number; end: number; eventIds: string[] }): Session => ({
+const toSession = (i: { app: string; start: number; end: number; closeReason?: CloseReason; eventIds: string[] }): Session => ({
   id: sessionId(i.app, i.start, i.end),
   app: i.app,
   start: new Date(i.start).toISOString().replace(/\.\\d{3}Z$/, 'Z'),
@@ -152,6 +192,7 @@ const toSession = (i: { app: string; start: number; end: number; eventIds: strin
   startMs: i.start,
   endMs: i.end,
   durationMs: i.end - i.start,
+  ...(i.closeReason ? { closedBy: i.closeReason } : {}),
   // A merge can meet the same event twice only if the OS repeated a row; the
   // store's assignment path is idempotent either way, but a set keeps it honest.
   eventIds: [...new Set(i.eventIds)],
@@ -186,7 +227,7 @@ export function buildJourneys(sessions: readonly Session[], options: JourneyOpti
   for (let i = 1; i < ordered.length; i++) {
     const prev = current[current.length - 1]!;
     const next = ordered[i]!;
-    if (next.startMs - prev.endMs <= crossAppGapMs) {
+    if (!prev.closedBy && next.startMs - prev.endMs <= crossAppGapMs) {
       current.push(next);
     } else {
       journeys.push(toJourney(current));

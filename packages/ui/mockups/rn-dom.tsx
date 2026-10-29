@@ -100,6 +100,7 @@ function ariaFrom(props: Common): Record<string, unknown> {
   }
   if (props.accessibilityValue) aria['aria-valuenow'] = String((props.accessibilityValue as Record<string, unknown>).now ?? '');
   if (props.accessibilityLiveRegion) aria['aria-live'] = String(props.accessibilityLiveRegion);
+  if (props.accessibilityViewIsModal) aria['aria-modal'] = 'true';
   if (props.testID) aria['data-testid'] = props.testID;
   return aria;
 }
@@ -117,6 +118,8 @@ const domProps = (props: Common, { skipStyle = false }: { skipStyle?: boolean } 
   delete dom.accessibilityRole;
   delete dom.accessibilityValue;
   delete dom.accessibilityLiveRegion;
+  delete dom.accessibilityViewIsModal;
+  delete dom.importantForAccessibility;
   delete dom.accessible;
   delete dom.pointerEvents;
   return dom;
@@ -138,6 +141,37 @@ export const Text = ({ children, ...props }: Common) => (
 );
 /** src/host.ts imports `Text as RNText`; keep both names working. */
 export const RNText = Text;
+
+export const TextInput = ({
+  value,
+  placeholder,
+  onChangeText,
+  editable = true,
+  ...props
+}: Common & {
+  value?: string;
+  placeholder?: string;
+  onChangeText?: (text: string) => void;
+  editable?: boolean;
+}) => {
+  const clean = { ...props };
+  delete clean.placeholderTextColor;
+  delete clean.autoCapitalize;
+  delete clean.autoCorrect;
+  delete clean.returnKeyType;
+  const dom = domProps(clean);
+  return (
+    <input
+      type="text"
+      data-input="1"
+      value={typeof value === 'string' ? value : ''}
+      placeholder={typeof placeholder === 'string' ? placeholder : undefined}
+      disabled={editable === false ? true : undefined}
+      onChange={(e) => onChangeText?.(e.currentTarget?.value ?? (e.target as HTMLInputElement | undefined)?.value ?? '')}
+      {...(dom as React.InputHTMLAttributes<HTMLInputElement>)}
+    />
+  );
+};
 
 /**
  * Pressable renders a real <button> with data-tap, which is how every downstream
@@ -183,6 +217,16 @@ export const StyleSheet = {
 
 export const useWindowDimensions = () => ({ width: 390, height: 844, scale: 3, fontScale: 1 });
 
+export const Dimensions = {
+  get: () => ({ width: 390, height: 844, scale: 3, fontScale: 1 }),
+  addEventListener: (_event: string, _handler: () => void) => ({ remove: () => undefined }),
+};
+
+export const AppState = {
+  currentState: 'active' as const,
+  addEventListener: (_event: string, _handler: (state: string) => void) => ({ remove: () => undefined }),
+};
+
 /** Reduce-motion is driven by the renderer, not the OS, in mockups and tests. */
 export const AccessibilityInfo = {
   isReduceMotionEnabled: () => Promise.resolve(false),
@@ -192,3 +236,4 @@ export const AccessibilityInfo = {
 export type ViewStyle = Record<string, unknown>;
 export type TextStyle = Record<string, unknown>;
 export type StyleProp<T> = T | T[] | null | undefined | false;
+export type TextInputProps = Record<string, unknown>;

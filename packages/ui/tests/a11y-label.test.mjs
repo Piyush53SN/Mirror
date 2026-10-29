@@ -1,7 +1,9 @@
 /**
- * a11y-label.test.mjs – ensures accessibilityLabel is always string, never array.
- * Reproduces crash: JSApplicationIllegalArgumentException: Error while updating property 'accessibilityLabel' of a view managed by RCTView, caused by ClassCastException: ReadableNativeArray cannot be cast to java.lang.String
- * Root cause: Pill children as array {a}{b} passed as accessibilityLabel array.
+ * a11y-label.test.mjs – verifies string accessibilityLabels, TalkBack spoken labels,
+ * Frosted Horizon 5-tab layout & safe-area clearance, plain-language UI (zero J-codes / P3 /
+ * debug-tap hints), fixed 0–100 score scale with separate unmeasured parts & confidence explanation,
+ * "Coming with more data" empty tabs, revoked Usage Access banner/dismissal, Keystore invalidation
+ * reset audit, and typed "DELETE" confirmation.
  */
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,7 +36,7 @@ before(async () => {
   const ROOT = join(UI, '../..');
   writeFileSync(
     entry,
-    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext, lastNDays } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\n`,
+    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext, lastNDays, formatSpokenDay } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\n`,
   );
   await esbuild.build({
     entryPoints: [entry],
@@ -76,7 +78,6 @@ test('a11yTarget coerces array to string', () => {
 });
 
 test('Pill with array children does not produce array accessibilityLabel', () => {
-  // This reproduces the crash: {lbl}{saving} as two adjacent JSX expressions = array children
   const renderer = create(React.createElement(ui.Pill, { theme: ui.createTheme() }, ['intentional', '…']));
   const json = renderer.toJSON();
   const labels = collectA11yLabels(json);
@@ -87,14 +88,16 @@ test('Pill with array children does not produce array accessibilityLabel', () =>
   renderer.unmount();
 });
 
-test('Pill with single string children has string accessibilityLabel', () => {
-  const renderer = create(React.createElement(ui.Pill, { theme: ui.createTheme() }, 'intentional'));
-  const json = renderer.toJSON();
-  const labels = collectA11yLabels(json);
-  assert.ok(labels.length > 0, 'should have accessibilityLabel');
-  for (const { label } of labels) {
-    assert.equal(typeof label, 'string');
-  }
+test('Pill with explicit accessibilityLabel overrides glyph/short visual label for TalkBack', () => {
+  const renderer = create(
+    React.createElement(
+      ui.Pill,
+      { theme: ui.createTheme(), accessibilityLabel: 'Today, October 25, 2026, selected' },
+      'Today (10-25)',
+    ),
+  );
+  const btn = renderer.root.find((el) => el.type === 'button');
+  assert.equal(btn.props['aria-label'], 'Today, October 25, 2026, selected');
   renderer.unmount();
 });
 
@@ -147,24 +150,33 @@ function countLiveBlurNodes(node) {
 
 function makeMockMobileContext(overrides = {}) {
   const noopAsync = async () => {};
+  const noopBoolAsync = async () => true;
   return {
     activeTab: 'home',
     setActiveTab: () => {},
     permission: 'granted',
     setPermission: () => {},
+    permissionDismissed: false,
+    dismissPermissionPrimer: () => {},
+    showPermissionPrimer: () => {},
+    insets: { top: 32, bottom: 24, left: 0, right: 0 },
     loading: false,
     error: null,
     lastCollect: 'collect: 12 events (12 new, 0 skipped), 0 unmatched events',
     collectingSince: '2026-10-25 09:00',
+    lastSyncedAt: '09:00',
     keyMismatch: null,
     dismissKeyMismatch: () => {},
     resetStoredData: noopAsync,
+    exportAllData: noopBoolAsync,
     lastReset: null,
     selectedDay: '2026-10-25',
     setSelectedDay: () => {},
     dayOptions: ['2026-10-25', '2026-10-24', '2026-10-23'],
     sessions: [],
     dailyTotals: [],
+    dailyTotalsSource: 'os_events',
+    hasEventsWithoutSittings: false,
     labels: {},
     quality: {
       count: 0,
@@ -175,16 +187,23 @@ function makeMockMobileContext(overrides = {}) {
     validation: null,
     flaggedDiscrepancies: [],
     singleDayRows: [],
+    tracedApp: 'com.openai.chatgpt',
+    tracedAppIntervals: [],
+    storeDayRowCounts: [],
+    sessionRepairSnapshot: null,
     debugEvents: [{ packageName: 'org.wikipedia', typeName: 'ACTIVITY_RESUMED', eventType: 1, timeStamp: 1761364800000 }],
     honkaiDebug: [],
     invalidTop: [],
     copyStatus: null,
     scaledSessions: [],
+    sittingSpanMs: 0,
     iqs: {
       id: 'iqs',
-      metricsVersion: 2,
+      metricsVersion: 3,
       value: null,
-      max: 0,
+      max: 100,
+      measuredMax: 0,
+      unmeasuredMax: 100,
       band: 'not measured',
       factors: [
         { id: 'session_length', label: 'Session length mix', points: 0, max: 25, tier: 'D', detail: 'Needs 5+ sittings.', measurable: false },
@@ -201,9 +220,10 @@ function makeMockMobileContext(overrides = {}) {
         activeMs: 0,
         smallSample: true,
         labels: 0,
+        explanation: 'Confidence is 0% (none): 0 sittings recorded today (at least 5 sittings or 15 min needed to score).',
         reasons: ['No complete sittings in this window.'],
       },
-      caveat: 'Not enough data to score. Mirror will not fill the gap with an estimate.',
+      caveat: 'Not enough data to score on the 0–100 scale. Mirror will not fill the gap with an estimate.',
     },
     curiosity: null,
     depthBands: [],
@@ -213,11 +233,12 @@ function makeMockMobileContext(overrides = {}) {
       hasHistory: false,
       distinctDays: 1,
       minDays: 3,
+      windowDays: 14,
       limitedHistory: true,
       historyStartDay: '2026-10-25',
       lastDay: '2026-10-25',
+      caveat: 'Limited history (1 day).',
       rows: [],
-      summaryLine: 'Needs 3+ distinct local days.',
     },
     discovery: {
       hasHistory: false,
@@ -226,19 +247,12 @@ function makeMockMobileContext(overrides = {}) {
       limitedHistory: true,
       historyStartDay: '2026-10-25',
       lastDay: '2026-10-25',
-      totalHandoffs: 0,
-      sustainedSessionCount: 0,
-      shortBounceCount: 0,
-      routes: [],
-      repeatAppsCount: 0,
-      singleDayAppsCount: 1,
-      totalAppsVisited: 1,
-      repeatSessionShare: 0,
-      repeatShareMeasurable: false,
-      topAppByTime: null,
-      newTopicsOpened: { value: 'unavailable', detail: 'requires Tier A/B/C' },
-      searchesStarted: { value: 'unavailable', detail: 'requires Tier A/B/C' },
-      explicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
+      caveat: 'Limited history (1 day).',
+      topRoutes: [],
+      recentAppearances: [],
+      explicitLabelCount: 0,
+      minExplicitLabels: 5,
+      explicitLabelsReady: false,
     },
     rabbitHole: {
       hasHistory: false,
@@ -247,52 +261,51 @@ function makeMockMobileContext(overrides = {}) {
       limitedHistory: true,
       historyStartDay: '2026-10-25',
       lastDay: '2026-10-25',
-      definitionText: '3+ consecutive short sittings.',
-      clusterCount: 0,
-      totalClusterSittings: 0,
-      totalClusterMs: 0,
-      lateNightShare: 0,
-      lateNightShareMeasurable: false,
-      clusterExplicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
+      caveat: 'Limited history (1 day).',
       clusters: [],
-      capabilities: {
-        tierDCanDetect: ['3+ short sittings'],
-        tierDCannotDetect: ['Search intent'],
-        whatMirrorWillNotDo: 'Never penalises IQS.',
-      },
     },
     focusWindows: {
       ready: false,
       distinctDays: 2,
       minDays: 21,
       minCellSessions: 5,
-      cellsMeetingSampleFloor: 0,
-      totalCells: 42,
+      qualifyingCells: 0,
+      totalCells: 8,
       historyStartDay: '2026-10-24',
       lastDay: '2026-10-25',
-      suggestedWindows: [],
+      windows: [],
+      summary: '',
+      caveat: '',
       emptyStateTitle: 'Needs 3 weeks of data and 5 sittings per cell',
-      emptyStateBody: 'Focus Windows waits for at least 21 distinct local days.',
-      progressLabel: '2 of 21 local days · 0 of 42 cells at 5+ sittings',
-      capabilities: {
-        tierDCanShow: ['Weekday blocks'],
-        tierDCannotShow: ['Topic focus'],
-        nonDiagnosticRule: 'Purely descriptive phone-timing blocks.',
-      },
+      emptyStateDetail: 'Focus Windows waits for at least 21 distinct local days.',
+      progressLabel: '2 of 21 local days · 0 of 8 cells at 5+ sittings',
     },
     whatIf: {
       hasBaseline: false,
       baselineTimeMs: 0,
+      sittingTimeMs: 0,
       timeSource: 'sittings',
       smallSampleBaseline: true,
       baselineIqs: {
         id: 'iqs',
-        metricsVersion: 2,
+        metricsVersion: 3,
         value: null,
-        max: 0,
+        max: 100,
+        measuredMax: 0,
+        unmeasuredMax: 100,
         band: 'not measured',
         factors: [],
-        confidence: { score: 0, level: 'none', coverage: 1, sample: 0, activeMs: 0, smallSample: true, labels: 0, reasons: [] },
+        confidence: {
+          score: 0,
+          level: 'none',
+          coverage: 1,
+          sample: 0,
+          activeMs: 0,
+          smallSample: true,
+          labels: 0,
+          explanation: 'Confidence is 0% (none).',
+          reasons: [],
+        },
         caveat: '',
       },
       measuredFactorSummary: [],
@@ -317,21 +330,20 @@ function makeMockMobileContext(overrides = {}) {
     labelSaving: null,
     expandedSessionId: null,
     setExpandedSessionId: () => {},
-    labelOptIn: false,
-    setLabelOptIn: () => {},
+    saveIntentLabel: noopAsync,
+    clearStoredLabels: noopAsync,
     orphanCount: 0,
     totalGaps: 0,
     p3Reliable: true,
     checkPermissionAndCollect: noopAsync,
     openSettings: () => {},
-    saveSessionLabel: noopAsync,
-    clearStoredLabels: noopAsync,
     copyRawEvents: noopAsync,
+    shareDiagnosticReport: noopAsync,
     ...overrides,
   };
 }
 
-test('mobile 5-tab shell renders string accessibilityLabels, short-history empty states, <=3 live blur layers, and 7-tap debug entry', () => {
+test('mobile 5-tab shell hides empty tabs behind "Coming with more data", removes J-codes / P3 / debug-tap hints, and preserves spoken TalkBack labels', () => {
   const tabs = ['home', 'insights', 'journey', 'sessions', 'you'];
   for (const activeTab of tabs) {
     const ctx = makeMockMobileContext({ activeTab, showWhy: activeTab === 'home' });
@@ -352,6 +364,8 @@ test('mobile 5-tab shell renders string accessibilityLabels, short-history empty
       assert.equal(isArray, false, `${activeTab}: ${nodeType} has array accessibilityLabel`);
       assert.equal(typeof label, 'string', `${activeTab}: ${nodeType} has non-string accessibilityLabel`);
       assert.ok(label.trim().length > 0, `${activeTab}: ${nodeType} has empty accessibilityLabel`);
+      assert.doesNotMatch(label, /●/, `${activeTab}: accessibilityLabel must not contain raw bullet glyph: ${label}`);
+      assert.doesNotMatch(label, /Tap 7 times/i, `${activeTab}: accessibilityLabel must not reveal debug tap hint`);
     }
 
     const blurCount = countLiveBlurNodes(json);
@@ -362,35 +376,48 @@ test('mobile 5-tab shell renders string accessibilityLabels, short-history empty
       assert.ok(fullText.includes(tabLabel), `${activeTab}: TabBar missing ${tabLabel}`);
     }
 
+    // Zero J-codes, zero "P3" / "P3 cards" wording, and zero "Tap 7 times" hints anywhere in user-facing UI
+    assert.doesNotMatch(fullText, /\bJ([1-9]|1[0-9]|2[0-8])\b/, `${activeTab} must not show internal J-codes`);
+    assert.doesNotMatch(fullText, /\bP3\b/, `${activeTab} must not show internal "P3" phase codes`);
+    assert.doesNotMatch(fullText, /Tap 7 times/i, `${activeTab} must not show debug-tap hint`);
+
+    if (activeTab === 'home') {
+      const plainSentence = renderer.root.findAll((el) => el.props?.['data-testid'] === 'home-plain-sentence');
+      assert.equal(plainSentence.length, 1, 'Home must render plain-language summary sentence card');
+      assert.ok(fullText.includes('DAY IN PLAIN WORDS'), 'Home must show plain-language summary heading');
+      // DayPickerStrip spoken label check
+      assert.ok(
+        labels.some((l) => l.label.includes('October 25, 2026, selected')),
+        'DayPickerStrip must provide spoken date accessibilityLabel',
+      );
+    }
+
     if (activeTab === 'journey') {
-      // Short-history (< 3 days) must render explicit empty states, never disappear!
-      assert.ok(fullText.includes('Interest Evolution'), 'Journey must keep Interest Evolution visible on <3d');
-      assert.ok(fullText.includes('Discovery Journey'), 'Journey must keep Discovery Journey visible on <3d');
-      assert.ok(fullText.includes('Rabbit Hole'), 'Journey must keep Rabbit Hole visible on <3d');
-      assert.ok(fullText.includes('Learning arcs is unavailable'), 'Journey must keep Learning Arcs empty state visible');
-      assert.ok(fullText.includes('Needs at least 3 days of local history'), 'Journey must show <3d empty state');
+      assert.ok(fullText.includes('Coming with more data'), 'Empty Journey (<3d) must show "Coming with more data"');
+      assert.ok(fullText.includes('Needs at least 3 days of local history'), 'Journey must explain 3-day requirement');
+      assert.ok(!fullText.includes('Discovery Journey'), 'Empty Journey must hide empty individual sub-cards behind unified card');
     }
 
     if (activeTab === 'insights') {
-      assert.ok(fullText.includes('What-if Simulator'), 'Insights must keep What-if Simulator visible on 0-sitting day');
-      assert.ok(fullText.includes('Curiosity vs Habit'), 'Insights must keep Curiosity vs Habit visible on <5 labels');
-      assert.ok(fullText.includes('Depth & Sitting Length Mix'), 'Insights must keep Depth visible');
+      assert.ok(fullText.includes('Coming with more data'), 'Empty Insights must show "Coming with more data"');
+      assert.ok(!fullText.includes('What-if Simulator'), 'Empty Insights must hide empty What-if card behind unified card');
     }
 
     if (activeTab === 'sessions') {
-      assert.ok(fullText.includes('No opens for 2026-10-25'), 'Sessions must show empty state when 0 opens');
+      assert.ok(fullText.includes('Coming with more data'), 'Empty Sessions must show "Coming with more data"');
     }
 
     if (activeTab === 'you') {
-      assert.ok(fullText.includes('Focus Windows'), 'You must keep Focus Windows visible on <21d');
-      assert.ok(fullText.includes('Needs 3 weeks of data and 5 sittings per cell'), 'You must show <21d empty state');
-      assert.ok(fullText.includes('Tap 7 times for debug – build 3/7'), 'You must preserve 7-tap debug entry');
+      assert.ok(fullText.includes('Focus Windows'), 'You must render Focus Windows card');
+      assert.ok(fullText.includes('Coming with more data'), 'Unready Focus Windows (<21d) must say "Coming with more data"');
+      assert.ok(fullText.includes('Needs 3 weeks of data and 5 sittings per cell'), 'You must show 21d + 5 sittings/cell bar');
+      assert.ok(fullText.includes('What this build is'), 'You must render What this build is card without visible tap hint');
     }
 
     renderer.unmount();
   }
 
-  // Verify Debug view renders cleanly when 7-tap threshold opens showDebug
+  // Verify Debug view still renders cleanly when 7-tap threshold opens showDebug
   const debugRenderer = create(
     React.createElement(
       ui.ThemeProvider,
@@ -413,31 +440,33 @@ test('mobile 5-tab shell renders string accessibilityLabels, short-history empty
   debugRenderer.unmount();
 });
 
-test('mobile 5-tab shell populated cards, expanded session pills, TabBar switching, and 7-tap debug action keep string accessibilityLabels', async () => {
+test('populated 5-tab shell renders fixed 0–100 score scale with separate unmeasured parts, confidence explanation, plain Home sentence, silent 7-tap debug, and typed DELETE confirmation', async () => {
   const switchedTabs = [];
   let buildTaps = 0;
   let resetCalls = 0;
-  let clearLabelCalls = 0;
 
   const populatedCtx = makeMockMobileContext({
     setActiveTab: (t) => switchedTabs.push(t),
     handleBuildTap: () => { buildTaps += 1; },
     resetStoredData: async () => { resetCalls += 1; },
-    clearStoredLabels: async () => { clearLabelCalls += 1; },
     dailyTotals: Array.from({ length: 8 }, (_, i) => ({
       app: `org.example.app${i}`,
       label: `App ${i + 1}`,
       totalMs: (8 - i) * 600_000,
     })),
+    labels: {
+      'org.wikipedia': 'Wikipedia',
+      'org.mozilla.firefox': 'Firefox',
+    },
     scaledSessions: [
       {
         id: 'sess-alpha-01',
         app: 'org.wikipedia',
         label: 'Wikipedia',
         start_ms: 1761364800000,
-        end_ms: 1761364800000,
+        end_ms: 1761365520000,
         duration_ms: 720_000,
-        scaled_duration_ms: 0,
+        scaled_duration_ms: 720_000,
         isScaled: false,
       },
       {
@@ -445,27 +474,30 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
         app: 'org.mozilla.firefox',
         label: 'Firefox',
         start_ms: 1761368400000,
-        end_ms: 1761368400000,
+        end_ms: 1761368880000,
         duration_ms: 480_000,
-        scaled_duration_ms: 0,
+        scaled_duration_ms: 480_000,
         isScaled: false,
       },
     ],
+    sittingSpanMs: 1_200_000,
     intentLabels: { 'sess-alpha-01': 'intentional' },
     labelSaving: 'sess-alpha-01',
     expandedSessionId: 'sess-alpha-01',
     iqs: {
       id: 'iqs',
-      metricsVersion: 2,
+      metricsVersion: 3,
       value: 44.5,
-      max: 55,
+      max: 100,
+      measuredMax: 55,
+      unmeasuredMax: 45,
       band: 'usage-only band',
       factors: [
         { id: 'session_length', label: 'Session length mix', points: 20, max: 25, tier: 'D', detail: '80% sustained.', measurable: true },
-        { id: 'deliberate', label: 'Deliberate share', points: 0, max: 20, tier: 'D', detail: '1 of 5 labels.', measurable: false },
-        { id: 'switching', label: 'Switching pressure', points: 11.5, max: 15, tier: 'D', detail: '3.2/h.', measurable: true },
-        { id: 'late_night', label: 'Late-night share', points: 13, max: 15, tier: 'D', detail: '6% late night.', measurable: true },
-        { id: 'topic', label: 'Topic depth', points: 0, max: 25, tier: 'A', detail: 'No vectors.', measurable: false },
+        { id: 'deliberate', label: 'Deliberate share', points: 0, max: 20, tier: 'D', detail: '1 of 5 explicit labels.', measurable: false },
+        { id: 'switching', label: 'Switching pressure', points: 11.5, max: 15, tier: 'D', detail: '0.22 switches/sitting.', measurable: true },
+        { id: 'late_night', label: 'Late-night share', points: 13, max: 15, tier: 'D', detail: '8 min late night (vs 60 min saturation).', measurable: true },
+        { id: 'topic', label: 'Topic depth', points: 0, max: 25, tier: 'A', detail: 'Needs content or export sources.', measurable: false },
       ],
       confidence: {
         score: 0.49,
@@ -475,15 +507,17 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
         activeMs: 2_400_000,
         smallSample: false,
         labels: 1,
+        explanation: 'Confidence is 49% (low): 100% day coverage across 18 sittings (40m active), and 1 of 5 explicit intent labels provided.',
         reasons: ['18 complete sittings (40 min sitting time).'],
       },
-      caveat: 'Out of 55: deliberate share, topic depth are not measured.',
+      caveat: '44.5 / 100 on the fixed 0–100 scale (55 of 100 pts measured today; 45 pts not measured: deliberate share, topic depth — never counted as 0).',
     },
     curiosity: {
       deepMs: 1_200_000,
       habitMs: 600_000,
       unlabeledMs: 600_000,
       switchesPerHour: 3.2,
+      switchesPerSitting: 0.22,
       labelShare: 0.75,
     },
     dayScoredSessions: [
@@ -504,16 +538,24 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       limitedHistory: true,
       historyStartDay: '2026-10-21',
       lastDay: '2026-10-25',
-      summaryLine: '2 apps across 5 days',
+      growingCount: 1,
+      fadedCount: 0,
+      summaryLine: '1 growing across 5 days',
+      depthBands: [],
       rows: [
         {
           app: 'org.wikipedia',
           label: 'Wikipedia',
+          seenSinceMs: 1761000000000,
+          seenSinceDay: '2026-10-21',
+          seenSinceText: 'Seen since 2026-10-21 (history starts 2026-10-21)',
+          lastSeenDay: '2026-10-25',
           activeDays: 4,
           sessionCount: 9,
+          totalSessionMs: 1_800_000,
           dominantBand: '5 – 20 min',
+          trend: 'growing',
           trendLabel: 'Growing (limited history)',
-          seenSinceText: 'Seen since 2026-10-21 (history starts 2026-10-21)',
         },
       ],
     },
@@ -524,18 +566,29 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       limitedHistory: true,
       historyStartDay: '2026-10-21',
       lastDay: '2026-10-25',
-      totalHandoffs: 3,
+      totalSessions: 10,
       sustainedSessionCount: 9,
       shortBounceCount: 1,
-      routes: [{ fromApp: 'org.mozilla.firefox', toApp: 'org.wikipedia', fromLabel: 'Firefox', toLabel: 'Wikipedia', count: 3, activeDays: 2 }],
+      totalAppsVisited: 3,
       repeatAppsCount: 2,
       singleDayAppsCount: 1,
-      totalAppsVisited: 3,
       repeatSessionShare: 0.78,
       repeatShareMeasurable: true,
-      topAppByTime: { app: 'org.wikipedia', label: 'Wikipedia', totalMs: 1_800_000 },
-      newTopicsOpened: { value: 'unavailable', detail: 'requires Tier A/B/C' },
-      searchesStarted: { value: 'unavailable', detail: 'requires Tier A/B/C' },
+      totalHandoffs: 3,
+      routes: [
+        {
+          fromApp: 'org.mozilla.firefox',
+          toApp: 'org.wikipedia',
+          fromLabel: 'Firefox',
+          toLabel: 'Wikipedia',
+          count: 3,
+          activeDays: 2,
+          tier: 'D',
+        },
+      ],
+      topAppByTime: { app: 'org.wikipedia', label: 'Wikipedia', totalMs: 1_800_000, tier: 'D' },
+      newTopicsOpened: { status: 'unavailable', value: 'unavailable', requiredTiers: ['A', 'B', 'C'], detail: 'requires Tier A/B/C' },
+      searchesStarted: { status: 'unavailable', value: 'unavailable', requiredTiers: ['C'], detail: 'requires Tier C' },
       explicitLabels: { intentional: 1, mindless: 0, unsure: 0, decisive: 1, total: 1 },
     },
     rabbitHole: {
@@ -545,31 +598,63 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       limitedHistory: true,
       historyStartDay: '2026-10-21',
       lastDay: '2026-10-25',
-      definitionText: '3+ consecutive short sittings.',
+      definitionText: '4+ returns to the same app across >30 min of active sitting time.',
       clusterCount: 1,
-      totalClusterSittings: 3,
-      totalClusterMs: 420_000,
+      totalClusterSittings: 5,
+      totalClusterMs: 2_100_000,
       lateNightShare: 0,
       lateNightShareMeasurable: true,
       clusterExplicitLabels: { intentional: 1, mindless: 0, unsure: 0, decisive: 1, total: 1 },
-      clusters: [{ id: 'rh-1', app: 'org.mozilla.firefox', label: 'Firefox', day: '2026-10-25', sittingCount: 3, totalSittingMs: 420_000 }],
+      clusters: [
+        {
+          id: 'rh-1',
+          app: 'org.mozilla.firefox',
+          label: 'Firefox',
+          day: '2026-10-25',
+          startMs: 1761364800000,
+          endMs: 1761367200000,
+          sittingCount: 5,
+          returnCount: 4,
+          totalSittingMs: 2_100_000,
+          lateNightMs: 0,
+          explicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
+          tier: 'D',
+        },
+      ],
       capabilities: {
-        tierDCanDetect: ['3+ short sittings'],
+        tierDCanDetect: ['4+ returns over 30 min'],
         tierDCannotDetect: ['Search intent'],
-        whatMirrorWillNotDo: 'Never penalises IQS.',
+        whatMirrorWillNotDo: 'Mirror does not block apps, send unprompted nudges, or penalise your score.',
       },
     },
     focusWindows: {
+      status: 'ready',
       ready: true,
       distinctDays: 24,
       minDays: 21,
+      daysRemaining: 0,
       minCellSessions: 5,
+      cellsWithAnySessions: 6,
       cellsMeetingSampleFloor: 2,
       totalCells: 42,
       historyStartDay: '2026-10-02',
       lastDay: '2026-10-25',
+      qualifiedCells: [],
       suggestedWindows: [
-        { cellId: 'Mon-08-12', label: 'Mon 08:00–12:00', sessionCount: 8, distinctDays: 4, sustainedShare: 0.88, switchesPerHour: 3.1 },
+        {
+          cellId: 'Mon-08-12',
+          weekdayIndex: 0,
+          weekday: 'Mon',
+          blockIndex: 2,
+          blockLabel: '08:00–12:00',
+          label: 'Mon · 08:00–12:00',
+          sessionCount: 8,
+          distinctDays: 4,
+          totalSittingMs: 2_880_000,
+          sustainedShare: 0.88,
+          switchesPerHour: 3.1,
+          explicitLabels: { intentional: 1, mindless: 0, unsure: 0, decisive: 1, total: 1 },
+        },
       ],
       emptyStateTitle: null,
       emptyStateBody: null,
@@ -588,12 +673,24 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       smallSampleBaseline: false,
       baselineIqs: {
         id: 'iqs',
-        metricsVersion: 2,
+        metricsVersion: 3,
         value: 44.5,
-        max: 55,
+        max: 100,
+        measuredMax: 55,
+        unmeasuredMax: 45,
         band: 'usage-only band',
         factors: [],
-        confidence: { score: 0.49, level: 'low', coverage: 1, sample: 18, activeMs: 2_400_000, smallSample: false, labels: 1, reasons: [] },
+        confidence: {
+          score: 0.49,
+          level: 'low',
+          coverage: 1,
+          sample: 18,
+          activeMs: 2_400_000,
+          smallSample: false,
+          labels: 1,
+          explanation: 'Confidence is 49% (low).',
+          reasons: [],
+        },
         caveat: '',
       },
       measuredFactorSummary: ['Session length mix 20/25', 'Switching pressure 11.5/15', 'Late-night share 13/15'],
@@ -604,8 +701,11 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
           id: 'cap-sitting',
           title: 'Cap individual sittings at 10 min',
           badge: 'Estimate',
+          baselineTimeMs: 2_400_000,
+          estimatedTimeMs: 2_280_000,
+          deltaTimeMs: -120_000,
           timeEstimateLabel: 'Estimate: −2m (40m → 38m)',
-          iqsEstimateLabel: 'Estimate: 44.5 → 44.5 / 55 (0.0 pts)',
+          iqsEstimateLabel: 'Estimate: 44.5 → 44.5 / 100 (0.0 pts, 55 pts measured)',
           noChangeReason: 'Time drops by 2m without changing under-8s bounce share or switching.',
           assumption: 'Assumes sittings longer than 10m end at 10m without extra re-opens.',
           estimatedIqs: { measuredFactors: [{ id: 'session_length', estimateLabel: 'Session length 20/25 (Estimate)' }] },
@@ -622,15 +722,19 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
         { initialTheme: 'dark' },
         React.createElement(
           ui.MirrorAppContext.Provider,
-          { value: { ...populatedCtx, activeTab } },
+          { value: { ...populatedCtx, activeTab, showWhy: activeTab === 'home' } },
           React.createElement(ui.MirrorTabShell),
         ),
       ),
     );
     const json = renderer.toJSON();
     const rawTree = JSON.stringify(json);
+    const fullText = collectText(json).join(' ');
     assert.doesNotMatch(rawTree, /none of which is not/i, `tab ${activeTab} must never render double negative`);
     assert.doesNotMatch(rawTree, /You sign in with OAuth/i, `tab ${activeTab} must hide OAuth copy until a connector exists`);
+    assert.doesNotMatch(fullText, /\bJ([1-9]|1[0-9]|2[0-8])\b/, `populated ${activeTab} must not show internal J-codes`);
+    assert.doesNotMatch(fullText, /\bP3\b/, `populated ${activeTab} must not show internal "P3" phase codes`);
+    assert.doesNotMatch(fullText, /Tap 7 times/i, `populated ${activeTab} must not show debug-tap hint`);
 
     const spacers = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-scroll-bottom-spacer');
     assert.equal(spacers.length, 1, `tab ${activeTab} must render tab-scroll-bottom-spacer inside AppShell ScrollView`);
@@ -649,6 +753,11 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
           String(el.props?.['aria-label'] ?? '').startsWith('Interaction quality score'),
       );
       assert.equal(gauges.length, 1, 'HomeTab must render the Frosted Horizon IQS hero gauge');
+      assert.match(String(gauges[0].props['aria-label']), /out of 100/, 'IQS gauge must announce fixed 100 scale');
+      assert.ok(fullText.includes('mostly in App 1'), 'Home plain sentence must name top app and duration');
+      assert.ok(fullText.includes('Measured today: up to 55 of 100 pts · Not measured: 45 pts'), 'Home must show measured vs unmeasured scale');
+      assert.ok(fullText.includes('Not measured today (45 of 100 pts excluded)'), 'Home must list unmeasured factors separately');
+      assert.ok(fullText.includes('Confidence is 49% (low): 100% day coverage'), 'Home must render plain-language confidence explanation');
       assert.match(rawTree, /OS screen time/i, 'HomeTab must label OS screen time');
       assert.match(rawTree, /Sitting spans/i, 'HomeTab must label Sitting spans');
       assert.match(rawTree, /merge reopens of the same app within 15 min/i, 'HomeTab must explain OS screen time vs sitting spans');
@@ -657,25 +766,22 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     if (activeTab === 'insights') {
       assert.match(rawTree, /COUNTERFACTUAL ARITHMETIC/i, 'InsightsTab must render Frosted Horizon What-if hero');
       assert.match(rawTree, /Sitting-length bands \(2 sittings\)/i, 'InsightsTab sitting-length bands must sum to canonical sitting count');
+      assert.ok(fullText.includes('0.22 switches / sitting'), 'InsightsTab must display per-sitting switching rate');
+      assert.ok(fullText.includes('Not measured today (45 of 100 pts excluded, not counted as 0)'), 'Insights Score Breakdown must separate unmeasured factors');
       const remainingSpanMeters = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
           String(el.props?.['aria-label'] ?? '').startsWith('Remaining span,'),
       );
-      assert.equal(remainingSpanMeters.length, 1, 'J18 scenario must use concise Remaining span Meter label');
+      assert.equal(remainingSpanMeters.length, 1, 'What-if scenario must use concise Remaining span Meter label');
       const meterHeaderRow = remainingSpanMeters[0].children?.[0];
       assert.equal(meterHeaderRow?.props?.style?.flexWrap, 'wrap', 'Meter header row must wrap instead of colliding text');
-      const bandMeters = renderer.root.findAll(
-        (el) =>
-          el.props?.role === 'progressbar' &&
-          (String(el.props?.['aria-label'] ?? '').startsWith('under 8 s,') ||
-            String(el.props?.['aria-label'] ?? '').startsWith('5 – 20 min,')),
-      );
-      assert.equal(bandMeters.length, 2, 'InsightsTab must render Frosted Horizon Meter bars for sitting-length bands');
     }
 
     if (activeTab === 'journey') {
       assert.match(rawTree, /MULTI-DAY RHYTHM/i, 'JourneyTab must render Frosted Horizon Interest Evolution hero');
+      assert.ok(fullText.includes('4+ returns across >30 min'), 'JourneyTab Rabbit Hole must state spec bar (4+ returns, >30 min)');
+      assert.ok(fullText.includes('4×'), 'JourneyTab Rabbit Hole cluster must show 4+ returns');
       const routeMeters = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
@@ -691,7 +797,11 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
           el.props?.role === 'progressbar' &&
           String(el.props?.['aria-label'] ?? '').startsWith('Deliberate share threshold,'),
       );
-      assert.equal(thresholdMeters.length, 1, 'SessionsTab must render Frosted Horizon Deliberate share threshold Meter');
+      assert.equal(thresholdMeters.length, 1, 'SessionsTab must render Deliberate share threshold Meter');
+      const intentionalBtn = renderer.root.findAll(
+        (el) => el.type === 'button' && el.props['aria-label'] === 'Intentional, selected',
+      );
+      assert.equal(intentionalBtn.length, 1, 'Expanded Session label pill must announce selected state cleanly without check glyph');
     }
 
     for (const { label, isArray, nodeType } of collectA11yLabels(json)) {
@@ -702,9 +812,10 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
     if (activeTab === 'you') {
       assert.match(rawTree, /OBSERVED TIMING BLOCKS/i, 'YouTab must render Frosted Horizon Focus Windows hero');
       assert.match(rawTree, /Local Data & Privacy/i, 'YouTab must render Local Data & Privacy card');
-      assert.match(rawTree, /Tiers A\/B\/C unavailable in v0\.1/i, 'YouTab must state Tier B is unavailable in v0.1');
+      assert.match(rawTree, /Manual file import is not enabled in v0\.1 yet/i, 'YouTab must state Tier B is unavailable in v0.1');
 
-      // Two-step Delete all local data flow (must NOT delete on first tap, must cancel cleanly, must delete on confirm)
+      // Typed DELETE confirmation flow:
+      // 1) First tap opens confirmation panel; confirm button starts disabled; wrong text cannot delete
       const deleteTrigger = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-trigger');
       await TestRenderer.act(async () => {
         deleteTrigger.props.onPress();
@@ -713,6 +824,18 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       const deleteConfirmPanel = renderer.root.findAll((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-panel');
       assert.equal(deleteConfirmPanel.length, 1, 'inline delete confirmation panel must be visible');
 
+      const confirmBtnInitial = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-btn');
+      assert.equal(confirmBtnInitial.props['aria-disabled'], 'true', 'Confirm button must be disabled before typing DELETE');
+
+      // Lowercase 'delete' must NOT unlock deletion
+      const deleteInput = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-input');
+      await TestRenderer.act(async () => {
+        deleteInput.props.onChange({ target: { value: 'delete' } });
+      });
+      const confirmBtnLower = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-btn');
+      assert.equal(confirmBtnLower.props['aria-disabled'], 'true', 'Lowercase "delete" must keep confirm button disabled');
+
+      // Cancel clears input and closes panel
       const cancelDeleteBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-cancel-btn');
       await TestRenderer.act(async () => {
         cancelDeleteBtn.props.onPress();
@@ -724,27 +847,21 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
       );
       assert.equal(resetCalls, 0);
 
+      // Reopen, type exact 'DELETE', and confirm deletion
       const deleteTriggerAgain = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-trigger');
       await TestRenderer.act(async () => {
         deleteTriggerAgain.props.onPress();
       });
+      const deleteInputAgain = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-input');
+      await TestRenderer.act(async () => {
+        deleteInputAgain.props.onChange({ target: { value: 'DELETE' } });
+      });
       const confirmDeleteBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'delete-all-data-confirm-btn');
+      assert.equal(Boolean(confirmDeleteBtn.props['aria-disabled']), false, 'Typing exact DELETE must enable confirm button');
       await TestRenderer.act(async () => {
         await confirmDeleteBtn.props.onPress();
       });
-      assert.equal(resetCalls, 1, 'second-step Confirm delete everything must invoke resetStoredData once');
-
-      // Two-step Clear manual labels flow
-      const clearTrigger = renderer.root.find((el) => el.props?.['data-testid'] === 'clear-labels-trigger');
-      await TestRenderer.act(async () => {
-        clearTrigger.props.onPress();
-      });
-      assert.equal(clearLabelCalls, 0, 'first tap on Clear manual labels must only open inline confirmation');
-      const confirmClearBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'clear-labels-confirm-btn');
-      await TestRenderer.act(async () => {
-        await confirmClearBtn.props.onPress();
-      });
-      assert.equal(clearLabelCalls, 1, 'second-step Confirm clear labels must invoke clearStoredLabels once');
+      assert.equal(resetCalls, 1, 'Typed DELETE + Confirm must invoke resetStoredData once');
 
       // Verify all dynamic confirmation accessibilityLabels are plain strings too
       for (const { label, isArray, nodeType } of collectA11yLabels(renderer.toJSON())) {
@@ -752,15 +869,15 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
         assert.equal(typeof label, 'string', `YouTab post-confirm: ${nodeType} non-string label`);
       }
 
-      // Trigger TabBar tabs + 7-tap debug button
+      // Trigger TabBar tabs + silent 7-tap debug button
       const buttons = renderer.root.findAll((el) => el.type === 'button');
       const homeTabBtn = buttons.find((b) => b.props['aria-label'] === 'Home');
       assert.ok(homeTabBtn, 'expected Home tab button');
       TestRenderer.act(() => {
         homeTabBtn.props.onPress();
       });
-      const debugCardBtn = buttons.find((b) => String(b.props['aria-label'] ?? '').startsWith('What this build is'));
-      assert.ok(debugCardBtn, 'expected 7-tap What this build is button');
+      const debugCardBtn = buttons.find((b) => b.props['aria-label'] === 'What this build is');
+      assert.ok(debugCardBtn, 'expected silent 7-tap What this build is button');
       for (let i = 0; i < 7; i += 1) {
         TestRenderer.act(() => {
           debugCardBtn.props.onPress();
@@ -771,105 +888,79 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
   }
 
   assert.deepEqual(switchedTabs, ['home'], 'TabBar click should invoke setActiveTab("home")');
-  assert.equal(buildTaps, 7, '7 taps on What this build is should invoke handleBuildTap 7 times');
+  assert.equal(buildTaps, 7, '7 silent taps on What this build is should invoke handleBuildTap 7 times');
+});
 
-  // Verify YouTab renders "History reset on <date>" when lastReset audit is present
-  const resetCtx = makeMockMobileContext({
-    activeTab: 'you',
-    lastReset: {
-      at: 1761364800000,
-      day: '2026-10-25',
-      reason: 'user_delete_all',
-      previousHistoryStartDay: '2026-10-21',
-    },
-  });
-  const resetRenderer = create(
+test('revoked Usage Access & Keystore invalidation recovery render non-blocking banner, Not-now dismissal, and honest reset audit', async () => {
+  // 1) Brand-new install with permission === 'denied': shows PermissionPrimer, and "Not now" enters the 5-tab shell
+  const freshDeniedRenderer = create(
     React.createElement(
       ui.ThemeProvider,
       { initialTheme: 'dark' },
       React.createElement(
         ui.MirrorAppContext.Provider,
-        { value: resetCtx },
+        { value: makeMockMobileContext({ permission: 'denied', storeDayRowCounts: [], dailyTotals: [] }) },
         React.createElement(ui.MirrorTabShell),
       ),
     ),
   );
-  const resetJson = JSON.stringify(resetRenderer.toJSON());
-  assert.ok(resetJson.includes('History reset on 2026-10-25'), 'YouTab must show "History reset on 2026-10-25"');
-  assert.ok(
-    resetJson.includes('previous history began 2026-10-21'),
-    'YouTab must show previous history start day when recorded',
+  const primerText = collectText(freshDeniedRenderer.toJSON()).join(' ');
+  assert.ok(primerText.includes('Mirror keeps working without it'), 'Fresh denied state must show PermissionPrimer');
+  const notNowBtn = freshDeniedRenderer.root.find(
+    (el) => el.type === 'button' && el.props['aria-label'] === 'Not now',
   );
-  resetRenderer.unmount();
-
-  // Verify DebugView flags any app differing from OS by > max(10%, 60s) with 4-source trace
-  const MIN = 60_000;
-  const debugCtx = makeMockMobileContext({
-    showDebug: true,
-    selectedDay: '2026-10-28',
-    flaggedDiscrepancies: [
-      {
-        app: 'com.openai.chatgpt',
-        label: 'ChatGPT',
-        displayedMs: 78 * MIN,
-        dayFgMs: 47 * MIN,
-        storedMs: 78 * MIN,
-        sittingSpanMs: 47 * MIN,
-        rawBucketMs: 47 * MIN,
-        preMidnightBucketMs: 0,
-        mirrorMs: 78 * MIN,
-        osMs: 47 * MIN,
-        diffMs: 31 * MIN,
-        diffPct: (31 / 47) * 100,
-        toleranceMs: 4.7 * MIN,
-        status: 'over',
-        comparison: 'Home vs OS UsageEvents',
-      },
-    ],
-    singleDayRows: [
-      {
-        app: 'com.openai.chatgpt',
-        label: 'ChatGPT',
-        displayedMs: 78 * MIN,
-        mirrorMs: 78 * MIN,
-        osMs: 47 * MIN,
-        rawBucketMs: 47 * MIN,
-        preMidnightBucketMs: 0,
-        bucketCount: 1,
-        sittingSpanMs: 47 * MIN,
-        diffPct: (31 / 47) * 100,
-        status: 'over',
-        flagged: true,
-        flagReason: 'Home vs OS UsageEvents: +1860s (66.0%)',
-      },
-    ],
+  await TestRenderer.act(async () => {
+    notNowBtn.props.onPress();
   });
-  const debugRenderer = create(
+  const afterNotNowText = collectText(freshDeniedRenderer.toJSON()).join(' ');
+  assert.ok(afterNotNowText.includes('Usage access is turned off'), 'Tapping Not now must open tab shell with calm banner');
+  freshDeniedRenderer.unmount();
+
+  // 2) Usage Access revoked AFTER local history exists: never locks user out of stored data or You delete controls
+  let settingsOpened = 0;
+  const revokedWithHistoryRenderer = create(
     React.createElement(
       ui.ThemeProvider,
       { initialTheme: 'dark' },
       React.createElement(
         ui.MirrorAppContext.Provider,
-        { value: debugCtx },
+        {
+          value: makeMockMobileContext({
+            activeTab: 'you',
+            permission: 'denied',
+            openSettings: () => { settingsOpened += 1; },
+            storeDayRowCounts: [
+              { day: '2026-10-24', events: 20, fgEvents: 10, bgEvents: 10, labelEvents: 0, otherEvents: 0, sessions: 8 },
+            ],
+            lastReset: {
+              at: '2026-10-25T08:30:00.000Z',
+              reason: 'keystore_invalidated',
+              previousHistoryStartDay: '2026-10-21',
+            },
+          }),
+        },
         React.createElement(ui.MirrorTabShell),
       ),
     ),
   );
-  const debugTreeJson = debugRenderer.toJSON();
-  const debugText = collectText(debugTreeJson).join(' ');
-  assert.ok(
-    debugText.includes('FLAGGED 1 app'),
-    'DebugView must display FLAGGED count banner when an app exceeds max(10%, 60s)',
+  const bannerNodes = revokedWithHistoryRenderer.root.findAll(
+    (el) => el.props?.['data-testid'] === 'usage-access-revoked-banner',
   );
-  assert.ok(
-    debugText.includes('[FLAGGED OVER] ChatGPT (com.openai.chatgpt)'),
-    'DebugView must render flagged app label + package name',
+  assert.equal(bannerNodes.length, 1, 'Revoked permission with stored history must show non-blocking banner');
+  const revokedText = collectText(revokedWithHistoryRenderer.toJSON()).join(' ');
+  assert.ok(revokedText.includes('Delete all local data'), 'User must retain access to Delete all local data when Usage Access is off');
+  assert.ok(revokedText.includes('History reset on 2026-10-25'), 'YouTab must show History reset on 2026-10-25');
+  assert.ok(revokedText.includes('Android Keystore key was invalidated'), 'YouTab must explain Keystore invalidation reset honestly');
+  assert.ok(revokedText.includes('previous history began 2026-10-21'), 'YouTab must include previous history start day when present');
+
+  const openSettingsBtn = revokedWithHistoryRenderer.root.find(
+    (el) => el.type === 'button' && el.props['aria-label'] === 'Open Android settings',
   );
-  assert.ok(
-    debugText.includes('4-source trace: Home 1h 18m · Day fg 47m · Stored 1h 18m · Sittings 47m · Raw INTERVAL_DAILY 47m'),
-    'DebugView must render full 4-source trace for flagged app',
-  );
-  debugRenderer.unmount();
+  TestRenderer.act(() => {
+    openSettingsBtn.props.onPress();
+  });
+  assert.equal(settingsOpened, 1, 'Open Android settings CTA in banner must invoke openSettings');
+  revokedWithHistoryRenderer.unmount();
 });
 
 test('day picker defaults to today, events-without-sittings renders plain message (never "—"), and DebugView flags per-app Mirror vs OS > max(10%, 60s)', () => {
@@ -922,6 +1013,25 @@ test('day picker defaults to today, events-without-sittings renders plain messag
     showDebug: true,
     selectedDay: '2026-10-28',
     dayOptions: days,
+    flaggedDiscrepancies: [
+      {
+        app: 'com.openai.chatgpt',
+        label: 'ChatGPT',
+        displayedMs: 78 * MIN,
+        dayFgMs: 47 * MIN,
+        storedMs: 78 * MIN,
+        sittingSpanMs: 47 * MIN,
+        rawBucketMs: 47 * MIN,
+        preMidnightBucketMs: 0,
+        mirrorMs: 78 * MIN,
+        osMs: 47 * MIN,
+        diffMs: 31 * MIN,
+        diffPct: (31 / 47) * 100,
+        toleranceMs: 4.7 * MIN,
+        status: 'over',
+        comparison: 'Home vs OS UsageEvents',
+      },
+    ],
     singleDayRows: [
       {
         app: 'com.openai.chatgpt',
@@ -993,10 +1103,12 @@ test('day picker defaults to today, events-without-sittings renders plain messag
     ),
   );
   const debugText = collectText(debugRenderer.toJSON()).join(' ');
+  assert.ok(debugText.includes('FLAGGED 1 app'));
+  assert.ok(debugText.includes('[FLAGGED OVER] ChatGPT (com.openai.chatgpt)'));
+  assert.ok(debugText.includes('4-source trace: Home 1h 18m · Day fg 47m · Stored 1h 18m · Sittings 47m · Raw INTERVAL_DAILY 47m'));
   assert.ok(debugText.includes('[FLAGGED > max(10%, 60s)] ChatGPT – Mirror 1h 18m vs OS 47m'));
   assert.ok(debugText.includes('[OK] YouTube – Mirror 1h 20m vs OS 1h 20m'));
   assert.ok(debugText.includes('2026-10-28: events=110 (fg=55, bg=55) · sessions=43'));
   assert.ok(debugText.includes('Foreground interval trace on 2026-10-28 (1)'));
   debugRenderer.unmount();
 });
-

@@ -31,6 +31,13 @@ export type UsageStatsRow = {
 
 export type DebugUsageRow = NativeUsageRow & { typeName: string };
 
+export type NativeWindowInsets = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
 export type MirrorUsageStatsModule = {
   /** Whether the person has granted Usage Access in system Settings. */
   hasPermission(): boolean;
@@ -46,6 +53,8 @@ export type MirrorUsageStatsModule = {
   queryEventsDebug(sinceMs: number, untilMs: number): DebugUsageRow[];
   /** Packages that resolve HOME role (launchers) via CATEGORY_HOME intent. */
   getLauncherPackages(): string[];
+  /** System bar + display cutout insets in dp from Android WindowInsets. */
+  getWindowInsets?(): NativeWindowInsets;
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;

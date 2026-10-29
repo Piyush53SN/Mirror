@@ -6,9 +6,11 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Process
 import android.provider.Settings
 import android.util.Log
+import android.view.WindowInsets
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -208,6 +210,49 @@ class UsageStatsModule : Module() {
         Log.d("MirrorUsageStats", "getLauncherPackages failed: ${e.message}")
         emptyList<String>()
       }
+    }
+
+    Function("getWindowInsets") {
+      val context = appContext.reactContext ?: return@Function mapOf(
+        "top" to 24.0,
+        "bottom" to 16.0,
+        "left" to 0.0,
+        "right" to 0.0
+      )
+      val density = context.resources.displayMetrics.density.takeIf { it > 0f } ?: 1f
+      val rootInsets = appContext.currentActivity?.window?.decorView?.rootWindowInsets
+      if (rootInsets != null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+          val bars = rootInsets.getInsets(
+            WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout()
+          )
+          return@Function mapOf(
+            "top" to (bars.top / density).toDouble(),
+            "bottom" to (bars.bottom / density).toDouble(),
+            "left" to (bars.left / density).toDouble(),
+            "right" to (bars.right / density).toDouble()
+          )
+        } else {
+          @Suppress("DEPRECATION")
+          return@Function mapOf(
+            "top" to (rootInsets.systemWindowInsetTop / density).toDouble(),
+            "bottom" to (rootInsets.systemWindowInsetBottom / density).toDouble(),
+            "left" to (rootInsets.systemWindowInsetLeft / density).toDouble(),
+            "right" to (rootInsets.systemWindowInsetRight / density).toDouble()
+          )
+        }
+      }
+      val res = context.resources
+      val statusId = res.getIdentifier("status_bar_height", "dimen", "android")
+      val navId = res.getIdentifier("navigation_bar_height", "dimen", "android")
+      val topDp = if (statusId > 0) (res.getDimensionPixelSize(statusId) / density).toDouble() else 24.0
+      val bottomDp = if (navId > 0) (res.getDimensionPixelSize(navId) / density).toDouble() else 16.0
+      mapOf(
+        "top" to topDp,
+        "bottom" to bottomDp,
+        "left" to 0.0,
+        "right" to 0.0
+      )
     }
   }
 

@@ -118,7 +118,14 @@ export function ConfidenceLine({
   compact = false,
 }: {
   theme: MirrorTheme;
-  confidence: { level: 'high' | 'medium' | 'low' | 'none'; score: number; sample: number; labels: number; coverage: number };
+  confidence: {
+    level: 'high' | 'medium' | 'low' | 'none';
+    score: number;
+    sample: number;
+    labels: number;
+    coverage: number;
+    explanation?: string;
+  };
   compact?: boolean;
 }) {
   const label =
@@ -151,6 +158,11 @@ export function ConfidenceLine({
         caption={compact ? `${Math.round(confidence.score * 100)}%` : undefined}
         tone="muted"
       />
+      {!compact && confidence.explanation ? (
+        <Text role="micro" tone="muted" theme={theme}>
+          {confidence.explanation}
+        </Text>
+      ) : null}
     </View>
   );
 }

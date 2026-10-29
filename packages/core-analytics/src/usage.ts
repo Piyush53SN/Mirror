@@ -37,6 +37,7 @@
  * ACTIVITY_STOPPED = 23, ACTIVITY_DESTROYED = 24 (hide), FLUSH_TO_DISK = 25 (hide),
  * DEVICE_SHUTDOWN = 26, DEVICE_STARTUP = 27.
  */
+import type { CloseReason } from '@mirror/shared-types';
 import type { OsTotal } from './validate';
 
 export const USAGE_EVENT_TYPE = {
@@ -108,6 +109,7 @@ export type UsageEvent = {
   content: 'metadata';
   app: string;
   duration_ms?: number;
+  close_reason?: CloseReason;
   session_id?: string;
 };
 
@@ -325,11 +327,44 @@ export const DEFAULT_MAX_INTERVAL_MS = 6 * 60 * 60 * 1000;
 // dynamically via PackageManager CATEGORY_HOME intent (needs <queries> for HOME) and passed
 // as ignorePackages from native module. This list is minimal fallback for system components
 // that should always close previous app but never be counted, plus Mirror itself (excluded from totals).
-export const DEFAULT_IGNORED_PACKAGES = [
-  'dev.mirror.app', // Mirror itself – excluded from totals (task 4)
+/**
+ * Canonical home-launcher packages across AOSP, Pixel, Xiaomi/MIUI/POCO,
+ * Samsung OneUI, OPPO/ColorOS/OnePlus, Huawei, vivo, Nothing, Lawnchair,
+ * Nova, and Microsoft Launcher. Dynamic `CATEGORY_HOME` resolution adds any
+ * device-specific launcher on top via `ignorePackages`.
+ */
+export const SHARED_HOME_LAUNCHER_PACKAGES = [
+  'com.android.launcher',
+  'com.android.launcher3',
+  'com.google.android.apps.nexuslauncher',
+  'com.mi.android.globallauncher',
+  'com.miui.home',
+  'com.sec.android.app.launcher',
+  'com.oppo.launcher',
+  'com.oneplus.launcher',
+  'com.huawei.android.launcher',
+  'com.vivo.launcher',
+  'com.nothing.launcher',
+  'app.lawnchair',
+  'com.teslacoilsw.launcher',
+  'com.microsoft.launcher',
+] as const;
+
+const SHARED_HOME_LAUNCHER_SET = new Set<string>(SHARED_HOME_LAUNCHER_PACKAGES);
+
+/**
+ * Single shared exclusion list applied identically to sittings AND daily totals:
+ * Mirror itself, Android/OEM system UI, permission & intent resolvers, Android +
+ * OEM Package installers, Settings, Play Store/Services, OEM security/phone
+ * managers, and home launchers.
+ */
+export const SHARED_EXCLUDED_PACKAGES = [
+  'dev.mirror.app',
+  'android',
   'com.android.systemui',
-  // System components that appear as foreground during dialogs, install, resolver, Play Store
+  'com.android.keyguard',
   'com.google.android.permissioncontroller',
+  'com.android.permissioncontroller',
   'com.android.packageinstaller',
   'com.google.android.packageinstaller',
   'com.miui.packageinstaller',
@@ -342,81 +377,122 @@ export const DEFAULT_IGNORED_PACKAGES = [
   'com.android.intentresolver',
   'com.google.android.intentresolver',
   'com.android.settings',
-  'com.android.vending', // Play Store – exclude from totals and switching pressure (user request)
-  'com.google.android.gms', // Play Services – often appears as fg during permission dialogs
-  'com.google.android.gsf', // Play Services Framework
-  'android', // generic system package that sometimes appears
+  'com.android.vending',
+  'com.google.android.gms',
+  'com.google.android.gsf',
+  'com.miui.securitycenter',
+  'com.miui.cleanmaster',
+  'com.samsung.android.lool',
+  'com.coloros.phonemanager',
+  'com.oplus.phonemanager',
+  'com.vivo.imanager',
+  'com.huawei.systemmanager',
+  ...SHARED_HOME_LAUNCHER_PACKAGES,
 ] as const;
 
-const DEFAULT_IGNORED_SET = new Set<string>(DEFAULT_IGNORED_PACKAGES);
+export const DEFAULT_IGNORED_PACKAGES = SHARED_EXCLUDED_PACKAGES;
+
+const SHARED_EXCLUDED_SET = new Set<string>(SHARED_EXCLUDED_PACKAGES);
+
+export type ExcludedAppCheckOptions = {
+  label?: string;
+  ignorePackages?: Iterable<string>;
+};
 
 /**
- * True when a package is Mirror itself, Android/OEM system UI, Play Store/Services,
- * Settings, or any Android/OEM Package Installer (by package pattern or resolved label).
+ * Single shared exclusion predicate used across sittings, daily totals, scoring,
+ * multi-day analytics, and UI surfaces.
  */
-export function isIgnoredSystemApp(packageName: string, label?: string): boolean {
+export function isExcludedApp(
+  packageName: string,
+  labelOrOptions?: string | ExcludedAppCheckOptions,
+  ignorePackages?: Iterable<string>,
+): boolean {
   if (!packageName) return true;
-  if (DEFAULT_IGNORED_SET.has(packageName)) return true;
+  if (SHARED_EXCLUDED_SET.has(packageName)) return true;
   if (/(^|\.)packageinstaller(\.|$)/i.test(packageName)) return true;
+  const label = typeof labelOrOptions === 'string' ? labelOrOptions : labelOrOptions?.label;
+  const extraIgnore =
+    typeof labelOrOptions === 'object' && labelOrOptions !== null
+      ? labelOrOptions.ignorePackages
+      : ignorePackages;
+  if (extraIgnore) {
+    if (extraIgnore instanceof Set) {
+      if (extraIgnore.has(packageName)) return true;
+    } else {
+      for (const pkg of extraIgnore) {
+        if (pkg === packageName) return true;
+      }
+    }
+  }
   if (typeof label === 'string' && /^package\s*installer$/i.test(label.trim())) return true;
   return false;
 }
 
 /**
- * Utility & launcher packages skipped from manual intent labeling and from
- * J11 same-app short-return cluster detection (dialer, camera, clock, calculator,
- * contacts, SMS, documents/downloads, launchers), in addition to `DEFAULT_IGNORED_PACKAGES`.
+ * Backwards-compatible alias for `isExcludedApp` so every caller across the
+ * workspace evaluates the exact same shared exclusion rules.
+ */
+export function isIgnoredSystemApp(
+  packageName: string,
+  label?: string,
+  ignorePackages?: Iterable<string>,
+): boolean {
+  return isExcludedApp(packageName, label, ignorePackages);
+}
+
+/**
+ * Utility packages skipped from manual intent labeling, switching pressure, and
+ * repeated-return Rabbit Hole detection (clocks, calculators, dialer, camera,
+ * contacts, SMS, calendar, file pickers), on top of `SHARED_EXCLUDED_PACKAGES`.
  */
 export const LABELING_EXCLUDED_PACKAGES = [
-  ...DEFAULT_IGNORED_PACKAGES,
+  ...SHARED_EXCLUDED_PACKAGES,
   'com.android.dialer',
   'com.google.android.dialer',
+  'com.samsung.android.dialer',
+  'com.android.incallui',
+  'com.samsung.android.incallui',
   'com.android.camera',
   'com.google.android.camera',
+  'com.google.android.GoogleCamera',
+  'com.sec.android.app.camera',
   'com.android.camera2',
   'com.android.contacts',
   'com.google.android.contacts',
+  'com.samsung.android.app.contacts',
   'com.android.mms',
   'com.google.android.apps.messaging',
   'com.android.calendar',
   'com.google.android.calendar',
   'com.android.deskclock',
   'com.google.android.deskclock',
+  'com.sec.android.app.clockpackage',
+  'com.miui.clock',
+  'com.oneplus.deskclock',
   'com.android.calculator2',
   'com.google.android.calculator',
+  'com.sec.android.app.popupcalculator',
+  'com.miui.calculator',
   'com.android.documentsui',
   'com.google.android.documentsui',
   'com.android.providers.downloads',
   'com.android.providers.downloads.ui',
-  'com.android.keyguard',
-  'com.android.launcher',
-  'com.android.launcher3',
-  'com.mi.android.globallauncher',
-  'com.sec.android.app.launcher',
 ] as const;
 
 const LABELING_EXCLUDED_SET = new Set<string>(LABELING_EXCLUDED_PACKAGES);
 
-export function isLabelingExcludedApp(packageName: string, label?: string): boolean {
-  if (isIgnoredSystemApp(packageName, label)) return true;
+export function isLabelingExcludedApp(
+  packageName: string,
+  label?: string,
+  ignorePackages?: Iterable<string>,
+): boolean {
+  if (isExcludedApp(packageName, label, ignorePackages)) return true;
   return LABELING_EXCLUDED_SET.has(packageName);
 }
 
-// Resolver / installer / permission controller / systemui that should close
-// previous app but never be counted. Includes DEFAULT_IGNORED_PACKAGES plus
-// generic resolver names.
-export const SYSTEM_CLOSER_PACKAGES = new Set<string>([
-  ...DEFAULT_IGNORED_PACKAGES,
-  'android',
-  'com.android.systemui',
-  'com.android.launcher',
-  'com.android.launcher3',
-  'com.google.android.packageinstaller',
-  'com.android.packageinstaller',
-  'com.android.intentresolver',
-  'com.google.android.intentresolver',
-  'com.google.android.permissioncontroller',
-]);
+// Resolver / installer / permission controller / systemui / launchers.
+export const SYSTEM_CLOSER_PACKAGES = new Set<string>(SHARED_EXCLUDED_PACKAGES);
 
 const iso = (ms: number) => new Date(ms).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -429,6 +505,19 @@ function stableId(prefix: string, app: string, startMs: number): string {
     hash = Math.imul(hash, 16777619) >>> 0;
   }
   return `${prefix}_${hash.toString(16).padStart(8, '0')}${startMs.toString(36).slice(-8)}`;
+}
+
+/**
+ * Deterministic deduplication key (`events.id`) for OS usage events so overlapping
+ * incremental sync windows (`overlapMs = 1h`) skip already-stored intervals cleanly
+ * via `INSERT OR IGNORE` without duplicating sittings or totals.
+ */
+export function usageEventDedupeKey(
+  kind: 'app_foreground' | 'app_background',
+  app: string,
+  startMs: number,
+): string {
+  return stableId(kind === 'app_foreground' ? 'evt_fg' : 'evt_bg', app, startMs);
 }
 
 /** Merge gap rows of the same reason into one countable line. */
@@ -456,14 +545,21 @@ export function getTopInvalidPackages(dropped: readonly UsageDrop[]): { pkg: str
     .slice(0, 10);
 }
 
+function implicitCloseReason(eventType: number): CloseReason {
+  if (eventType === USAGE_EVENT_TYPE.KEYGUARD_SHOWN) return 'device_lock';
+  if (eventType === USAGE_EVENT_TYPE.DEVICE_SHUTDOWN) return 'shutdown';
+  return 'screen_off';
+}
+
 function closeInterval(
   app: string,
   start: number,
   end: number,
   options: { sinceMs: number; maxIntervalMs: number; minIntervalMs: number; gapFloorMs?: number },
-  intervals: { app: string; start: number; end: number; carried: boolean }[],
+  intervals: { app: string; start: number; end: number; carried: boolean; closeReason?: CloseReason }[],
   drops: UsageDrop[],
   gaps: UsageGap[],
+  closeReason?: CloseReason,
 ): void {
   const duration = end - start;
   if (duration > options.maxIntervalMs) {
@@ -477,7 +573,13 @@ function closeInterval(
     drops.push({ reason: 'below_minimum', app, at: start });
     return;
   }
-  intervals.push({ app, start, end, carried: start < options.sinceMs });
+  intervals.push({
+    app,
+    start,
+    end,
+    carried: start < options.sinceMs,
+    ...(closeReason ? { closeReason } : {}),
+  });
 }
 
 type OpenEntry = {
@@ -530,7 +632,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     }
   }
 
-  const intervals: { app: string; start: number; end: number; carried: boolean }[] = [];
+  const intervals: { app: string; start: number; end: number; carried: boolean; closeReason?: CloseReason }[] = [];
   // Track recently closed apps to suppress duplicate bg within honest 60s window
   // (never loosened beyond 60s), PLUS Android Activity lifecycle state:
   //   1. `closedInStream`: packages whose foreground sitting already opened and
@@ -548,23 +650,64 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   const closedInStream = new Set<string>();
   const orphanPausedAt = new Map<string, number>();
   const RECENT_CLOSE_SUPPRESS_MS = 60_000;
+  let screenInteractive = true;
+  let keyguardLocked = false;
 
   for (const row of ordered) {
+    if (row.eventType === USAGE_EVENT_TYPE.SCREEN_INTERACTIVE) {
+      screenInteractive = true;
+    } else if (row.eventType === USAGE_EVENT_TYPE.KEYGUARD_HIDDEN) {
+      keyguardLocked = false;
+    } else if (row.eventType === USAGE_EVENT_TYPE.DEVICE_STARTUP) {
+      screenInteractive = true;
+      keyguardLocked = false;
+    }
+
     // Implicit backgrounds (screen-off, keyguard, shutdown) close *all* open
     // intervals. They must be handled before the ignore-package check because
     // the event itself may come from systemui which is ignored, but its effect
     // is global: the user is no longer looking at any app.
     if (IMPLICIT_BACKGROUND_TYPES.has(row.eventType)) {
+      const reason = implicitCloseReason(row.eventType);
+      if (row.eventType === USAGE_EVENT_TYPE.SCREEN_NON_INTERACTIVE) {
+        screenInteractive = false;
+      } else if (row.eventType === USAGE_EVENT_TYPE.KEYGUARD_SHOWN) {
+        keyguardLocked = true;
+      } else if (row.eventType === USAGE_EVENT_TYPE.DEVICE_SHUTDOWN) {
+        screenInteractive = false;
+        keyguardLocked = true;
+      }
       if (row.timeStamp < options.sinceMs || row.timeStamp >= options.untilMs) {
         drops.push({ reason: 'outside_window', app: row.packageName, at: row.timeStamp, eventType: row.eventType });
         continue;
       }
+      let closedAnyOpen = false;
       for (const [app, entry] of open) {
-        closeInterval(app, entry.earliestStart, row.timeStamp, { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs }, intervals, drops, gaps);
+        closeInterval(
+          app,
+          entry.earliestStart,
+          row.timeStamp,
+          { sinceMs: options.sinceMs, maxIntervalMs, minIntervalMs, gapFloorMs: options.gapFloorMs },
+          intervals,
+          drops,
+          gaps,
+          reason,
+        );
         recentlyClosed.set(app, row.timeStamp);
         closedInStream.add(app);
+        closedAnyOpen = true;
       }
       open.clear();
+      // On Android, pressing the power button or locking from the home screen
+      // often pauses the top activity milliseconds before SCREEN_NON_INTERACTIVE (16)
+      // or KEYGUARD_SHOWN (17). Mark the just-ended interval so sessionize closes
+      // the sitting cleanly and never merges across screen-off or lock.
+      if (!closedAnyOpen && intervals.length > 0) {
+        const lastIv = intervals[intervals.length - 1]!;
+        if (lastIv.end <= row.timeStamp && !lastIv.closeReason) {
+          lastIv.closeReason = reason;
+        }
+      }
       continue;
     }
 
@@ -582,10 +725,10 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     }
 
     // Ignored packages handling:
-    // - Launchers (HOME role, dynamic) and Mirror itself close previous app on fg (user went home)
+    // - Launchers (HOME role, dynamic or canonical fallback) and Mirror itself close previous app on fg (user went home)
     // - SystemUI, settings, permissioncontroller, OEM packageinstaller, etc are ignored WITHOUT closing previous (fixes Honkai 31s vs 52m)
-    if (ignore.has(row.packageName) || isIgnoredSystemApp(row.packageName)) {
-      const isLauncher = launcherSet.has(row.packageName);
+    if (ignore.has(row.packageName) || isExcludedApp(row.packageName, undefined, launcherSet)) {
+      const isLauncher = launcherSet.has(row.packageName) || SHARED_HOME_LAUNCHER_SET.has(row.packageName);
       const isMirror = row.packageName === 'dev.mirror.app';
       if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
         for (const [app, entry] of open) {
@@ -610,6 +753,9 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       continue;
     }
     if (row.eventType === USAGE_EVENT_TYPE.CONTINUE_PREVIOUS_DAY) {
+      if (!screenInteractive || keyguardLocked) {
+        continue;
+      }
       if (open.has(row.packageName)) {
         continue;
       }
@@ -787,17 +933,21 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
   }
   nextOpen.sort((a, b) => a.startMs - b.startMs || a.app.localeCompare(b.app));
 
-  // Merge consecutive intervals of the same app when gap <= 2s
-  // This handles OS emitting fg/bg/fg quickly for same app (e.g. activity rotation)
+  // Merge consecutive intervals of the same app when gap <= 2s AND the earlier
+  // interval was NOT closed by screen-off, lock, or shutdown.
+  // This handles OS emitting fg/bg/fg quickly for same app (e.g. activity rotation).
   intervals.sort((a, b) => a.start - b.start || a.app.localeCompare(b.app));
   const MERGE_GAP_MS = 2000;
   const merged: typeof intervals = [];
   for (const cur of intervals) {
     const last = merged[merged.length - 1];
-    if (last && last.app === cur.app && cur.start - last.end <= MERGE_GAP_MS) {
+    if (last && !last.closeReason && last.app === cur.app && cur.start - last.end <= MERGE_GAP_MS) {
       // Merge: extend last.end to cur.end, keep earliest start and carried flag if either carried
       last.end = Math.max(last.end, cur.end);
       last.carried = last.carried || cur.carried;
+      if (cur.closeReason) {
+        last.closeReason = cur.closeReason;
+      }
     } else {
       merged.push({ ...cur });
     }
@@ -811,7 +961,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     totalMs += interval.end - interval.start;
     events.push({
       schema_version: 1,
-      id: stableId('evt_fg', interval.app, interval.start),
+      id: usageEventDedupeKey('app_foreground', interval.app, interval.start),
       kind: 'app_foreground',
       at: iso(interval.start),
       tier: 'D',
@@ -821,7 +971,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
     });
     events.push({
       schema_version: 1,
-      id: stableId('evt_bg', interval.app, interval.start),
+      id: usageEventDedupeKey('app_background', interval.app, interval.start),
       kind: 'app_background',
       at: iso(interval.end),
       tier: 'D',
@@ -829,6 +979,7 @@ export function buildUsageEvents(rows: readonly UsageRow[], options: BuildUsageO
       content: 'metadata',
       app: interval.app,
       duration_ms: interval.end - interval.start,
+      ...(interval.closeReason ? { close_reason: interval.closeReason } : {}),
     });
   }
 
@@ -934,7 +1085,17 @@ export async function collectUsage(source: UsageSourcePort, store: UsageStorePor
   const to = Math.min(options.now, from + maxWindowMs);
   if (to <= from) return { status: 'no-window', cursor: from };
 
-  const rows = await source.queryEvents(from, to);
+  let rows: UsageRow[];
+  try {
+    rows = await source.queryEvents(from, to);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    const msg = err instanceof Error ? err.message : String(err);
+    if (code === 'NO_PERMISSION' || /NO_PERMISSION|Usage access not granted/i.test(msg)) {
+      return { status: 'permission-required' };
+    }
+    throw err;
+  }
   const built = buildUsageEvents(rows, {
     sinceMs: from,
     untilMs: to,
@@ -1676,8 +1837,8 @@ export function traceAppForegroundIntervals(
     if (!PACKAGE.test(row.packageName)) continue;
     if (row.timeStamp < sinceMs || row.timeStamp >= untilMs) continue;
 
-    if (ignore.has(row.packageName) || isIgnoredSystemApp(row.packageName)) {
-      const isLauncher = launcherSet.has(row.packageName);
+    if (ignore.has(row.packageName) || isExcludedApp(row.packageName, undefined, launcherSet)) {
+      const isLauncher = launcherSet.has(row.packageName) || SHARED_HOME_LAUNCHER_SET.has(row.packageName);
       const isMirror = row.packageName === 'dev.mirror.app';
       if ((isLauncher || isMirror) && FOREGROUND_TYPES.has(row.eventType)) {
         for (const [app, entry] of open) {

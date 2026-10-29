@@ -34,12 +34,15 @@ const base = (over = {}) => {
 
 /* ------------------------------------------------------------------ edges --- */
 
-test('empty: no score, no zero, no NaN, confidence none', () => {
+test('empty: no score, no zero, no NaN, fixed 100 scale with 0 measuredMax, confidence none', () => {
   const score = scoreIqs({ window: DAY, sessions: [] });
   assert.equal(score.value, null, 'unknown is null, never 0');
-  assert.equal(score.max, 0);
+  assert.equal(score.max, 100, 'fixed composite scale is always 100');
+  assert.equal(score.measuredMax, 0);
+  assert.equal(score.unmeasuredMax, 100);
   assert.equal(score.confidence.level, 'none');
   assert.equal(score.confidence.score, 0);
+  assert.match(score.confidence.explanation, /Confidence is 0%/);
   assert.ok(score.factors.every((f) => f.measurable === false));
   assert.ok(!JSON.stringify(score).includes('NaN'));
   for (const f of score.factors) assert.equal(Number.isFinite(f.points), true);
@@ -51,13 +54,15 @@ test('zero-duration sessions are not sessions', () => {
   assert.equal(score.confidence.sample, 0);
 });
 
-test('single-event edge: 1 short sitting (5 min) stays unmeasured under minimum-activity rule; 1 long sitting (20 min) measures only late-night (/15) at low confidence', () => {
+test('single-event edge: 1 short sitting (5 min) stays unmeasured under minimum-activity rule; 1 long sitting (20 min) measures only late-night (15 of 100) at low confidence', () => {
   const shortSingle = scoreIqs({ window: DAY, sessions: [session('ses_one', T0, 5 * MIN)] });
   assert.equal(shortSingle.confidence.sample, 1);
   assert.equal(shortSingle.confidence.level, 'low');
   assert.equal(shortSingle.confidence.smallSample, true);
   assert.equal(shortSingle.value, null, '5 min across 1 sitting is below all minimum-activity floors');
-  assert.equal(shortSingle.max, 0);
+  assert.equal(shortSingle.max, 100);
+  assert.equal(shortSingle.measuredMax, 0);
+  assert.equal(shortSingle.unmeasuredMax, 100);
   assert.match(shortSingle.caveat, /Minimum activity not met yet/);
 
   const longSingle = scoreIqs({ window: DAY, sessions: [session('ses_long', T0, 20 * MIN)] });
@@ -67,12 +72,15 @@ test('single-event edge: 1 short sitting (5 min) stays unmeasured under minimum-
   assert.equal(longSingle.factors.find((f) => f.id === 'session_length').measurable, false, '<5 sittings');
   assert.equal(longSingle.factors.find((f) => f.id === 'switching').measurable, false, '<3 sittings');
   assert.equal(longSingle.factors.find((f) => f.id === 'late_night').measurable, true, '20 min >= 15 min');
-  assert.equal(longSingle.max, 15);
+  assert.equal(longSingle.max, 100);
+  assert.equal(longSingle.measuredMax, 15);
+  assert.equal(longSingle.unmeasuredMax, 85);
   assert.equal(longSingle.value, 15);
+  assert.match(longSingle.confidence.explanation, /Confidence \([0-9]+% · low\) reflects how complete the inputs behind this score are/);
 });
 
-test('minimum-activity rule: hides late-night share on a 2-minute day and hides switching rate on 0.1 active hours (6 min)', () => {
-  // 2-minute day at 23:30 local -> late_night MUST be hidden (not 0/15!)
+test('minimum-activity & per-sitting switching rules: hides late-night on 2-min 2-sitting day and computes switching per sitting on 3+ sustained sittings', () => {
+  // 2-minute day at 23:30 local across 2 sittings -> late_night & switching MUST be hidden (not 0/15!)
   const twoMinLate = scoreIqs({
     window: DAY,
     sessions: [
@@ -82,12 +90,13 @@ test('minimum-activity rule: hides late-night share on a 2-minute day and hides 
     utcOffsetMinutes: 0,
   });
   const lateFactor = twoMinLate.factors.find((f) => f.id === 'late_night');
-  assert.equal(lateFactor.measurable, false, 'late-night share hidden on 2-min day');
-  assert.match(lateFactor.detail, /at least 15 min needed/);
+  assert.equal(lateFactor.measurable, false, 'late-night hidden on 2-min 2-sitting day');
+  assert.match(lateFactor.detail, /at least 15 min or 5 sustained sittings needed/);
   assert.equal(twoMinLate.value, null);
-  assert.equal(twoMinLate.max, 0);
+  assert.equal(twoMinLate.max, 100);
+  assert.equal(twoMinLate.measuredMax, 0);
 
-  // 0.1 active hours (6 min across 6 sittings with rapid switches) -> switching MUST be hidden!
+  // 6 sustained sittings of 1 min alternating apps (5 switches across 6 sittings -> perSitting = 5/6)
   const sixMinSwitchy = scoreIqs({
     window: DAY,
     sessions: Array.from({ length: 6 }, (_, i) =>
@@ -96,11 +105,14 @@ test('minimum-activity rule: hides late-night share on a 2-minute day and hides 
     utcOffsetMinutes: 0,
   });
   const swFactor = sixMinSwitchy.factors.find((f) => f.id === 'switching');
-  assert.equal(swFactor.measurable, false, 'switching rate hidden on 0.1 active hours (6 min)');
-  assert.match(swFactor.detail, /0\.25 active hours/);
-  assert.equal(sixMinSwitchy.factors.find((f) => f.id === 'late_night').measurable, false, '6 min < 15 min');
+  assert.equal(swFactor.measurable, true, 'switching pressure computed per sitting on 6 >= 3 sustained sittings');
+  assert.equal(swFactor.points, 2.5, '15 * (1 - 5/6) = 2.5');
+  assert.match(swFactor.detail, /per sitting/);
+  assert.equal(sixMinSwitchy.factors.find((f) => f.id === 'late_night').measurable, true, '6 >= 5 sustained sittings');
   assert.equal(sixMinSwitchy.factors.find((f) => f.id === 'session_length').measurable, true, '6 >= 5 sittings');
-  assert.equal(sixMinSwitchy.max, 25);
+  assert.equal(sixMinSwitchy.max, 100);
+  assert.equal(sixMinSwitchy.measuredMax, 55);
+  assert.equal(sixMinSwitchy.unmeasuredMax, 45);
   assert.equal(sixMinSwitchy.confidence.smallSample, true);
 });
 
@@ -111,20 +123,24 @@ test('all sessions under 8 s: the length part is zero, not undefined, while sub-
   assert.equal(factor.measurable, true);
   assert.equal(factor.points, 0);
   assert.match(factor.detail, /12 of 12 opens ended under 8 s/);
-  assert.equal(score.factors.find((f) => f.id === 'switching').measurable, false, '48 s < 15 min active');
-  assert.equal(score.factors.find((f) => f.id === 'late_night').measurable, false, '48 s < 15 min sitting time');
-  assert.equal(score.max, 25);
+  assert.equal(score.factors.find((f) => f.id === 'switching').measurable, false, '0 sustained sittings < 3');
+  assert.equal(score.factors.find((f) => f.id === 'late_night').measurable, false, '48 s < 15 min and 0 sustained sittings');
+  assert.equal(score.max, 100);
+  assert.equal(score.measuredMax, 25);
+  assert.equal(score.unmeasuredMax, 75);
   assert.equal(score.value, 0);
 });
 
 /* ------------------------------------------------------------- arithmetic --- */
 
-test('the parts add up exactly to the total, and the max is the sum of measured maxima', () => {
+test('the parts add up exactly to the total on the fixed 100 scale, with measuredMax + unmeasuredMax === 100', () => {
   const score = scoreIqs(base());
   const sum = score.factors.filter((f) => f.measurable).reduce((total, f) => total + f.points, 0);
   assert.ok(Math.abs(sum - score.value) < 1e-9, `${sum} !== ${score.value}`);
-  const max = score.factors.filter((f) => f.measurable).reduce((total, f) => total + f.max, 0);
-  assert.equal(score.max, max);
+  const measuredMax = score.factors.filter((f) => f.measurable).reduce((total, f) => total + f.max, 0);
+  assert.equal(score.max, 100);
+  assert.equal(score.measuredMax, measuredMax);
+  assert.equal(score.measuredMax + score.unmeasuredMax, 100);
   for (const factor of score.factors) {
     assert.ok(factor.points >= 0 && factor.points <= factor.max, `${factor.id} is outside its own range`);
   }
@@ -137,18 +153,20 @@ test('labels are the deliberate share: half intentional is half the part', () =>
   assert.match(factor.detail, /10 of 20 labelled sittings/);
 });
 
-test('too few labels leaves the part unmeasured and the maximum smaller — not zero', () => {
+test('too few labels leaves the part unmeasured (shown separately in unmeasuredMax) — never zero', () => {
   const score = scoreIqs(base({ labels: [{ sessionId: 'ses_0', label: 'intentional' }] }));
   const factor = score.factors.find((f) => f.id === 'deliberate_share');
   assert.equal(factor.measurable, false);
   assert.equal(factor.points, 0);
   assert.match(factor.detail, new RegExp(`1 decisive label \\(${MIN_LABELS} needed\\)`));
-  assert.equal(score.max, 55);
-  assert.match(score.caveat, /Out of 55/);
+  assert.equal(score.max, 100);
+  assert.equal(score.measuredMax, 55);
+  assert.equal(score.unmeasuredMax, 45);
+  assert.match(score.caveat, /55 pts measured today and 45 pts unmeasured/);
 });
 
-test('switching is smooth, bounded and never divides by zero', () => {
-  assert.deepEqual(switchingRate([]), { switches: 0, activeHours: 0, perHour: 0 });
+test('switching is computed per sitting, bounded, and never divides by zero', () => {
+  assert.deepEqual(switchingRate([]), { switches: 0, sittings: 0, perSitting: 0, activeHours: 0, perHour: 0 });
   const sessions = [
     session('a', T0, 10 * MIN, 'com.a'),
     session('b', T0 + 11 * MIN, 10 * MIN, 'com.b'),
@@ -157,9 +175,11 @@ test('switching is smooth, bounded and never divides by zero', () => {
   ];
   const rate = switchingRate(sessions);
   assert.equal(rate.switches, 2);
+  assert.equal(rate.sittings, 4);
+  assert.equal(rate.perSitting, 0.5);
   const score = scoreIqs({ window: DAY, sessions });
   const factor = score.factors.find((f) => f.id === 'switching');
-  assert.ok(factor.points > 0 && factor.points < factor.max);
+  assert.equal(factor.points, 7.5, '15 * (1 - 2/4) = 7.5');
 });
 
 /* --------------------------------------------------------------- late night -- */
@@ -171,14 +191,20 @@ test('late-night is local, wraps midnight, and handles a session spanning it', (
   assert.equal(lateNightMs(Date.parse('2026-10-16T12:00:00Z'), Date.parse('2026-10-16T13:00:00Z'), 0), 0);
 });
 
-test('late-night share lowers that part proportionally', () => {
-  const sessions = [
-    session('a', Date.parse('2026-10-16T09:00:00Z'), 30 * MIN),
+test('late-night quiet-hours duration lowers that part proportionally and never punishes less daytime use', () => {
+  const moreDaytime = [
+    session('a', Date.parse('2026-10-16T09:00:00Z'), 60 * MIN),
     session('b', Date.parse('2026-10-16T23:30:00Z'), 30 * MIN),
   ];
-  const factor = scoreIqs({ window: DAY, sessions }).factors.find((f) => f.id === 'late_night');
-  assert.equal(factor.points, 7.5);
-  assert.match(factor.detail, /50% of sitting spans/);
+  const lessDaytime = [
+    session('a', Date.parse('2026-10-16T09:00:00Z'), 10 * MIN),
+    session('b', Date.parse('2026-10-16T23:30:00Z'), 30 * MIN),
+  ];
+  const factorMore = scoreIqs({ window: DAY, sessions: moreDaytime }).factors.find((f) => f.id === 'late_night');
+  const factorLess = scoreIqs({ window: DAY, sessions: lessDaytime }).factors.find((f) => f.id === 'late_night');
+  assert.equal(factorMore.points, 7.5);
+  assert.equal(factorLess.points, 7.5, 'using less during the day must never lower late_night points');
+  assert.match(factorLess.detail, /30 min between 23:00 and 05:00 local/);
 });
 
 /* -------------------------------------------------------------- topic depth -- */
@@ -399,5 +425,117 @@ test('property: sessionBands over buildCanonicalDaySittings always sums to sitti
       },
     ),
     { numRuns: 100 },
+  );
+});
+
+test('property: using less never lowers the score (shortening sittings, capping daytime/evening sittings, skipping <8s bounces, widening gaps, or trimming quiet hours)', () => {
+  const dayStart = Date.parse('2026-10-25T00:00:00Z');
+  const dayWindow = { fromMs: dayStart, toMs: dayStart + 86_400_000 };
+
+  fc.assert(
+    fc.property(
+      fc.array(
+        fc.record({
+          // Non-overlapping schedule slots across the 24h day (including 23:00–05:00 quiet hours)
+          gapMin: fc.integer({ min: 1, max: 35 }),
+          durSec: fc.integer({ min: 2, max: 2400 }),
+          scalePct: fc.integer({ min: 10, max: 100 }),
+          app: fc.constantFrom('org.wikipedia', 'com.reddit.frontpage', 'com.google.android.youtube', 'com.whatsapp'),
+          label: fc.constantFrom('intentional', 'mindless', 'unsure', null),
+        }),
+        { minLength: 5, maxLength: 30 },
+      ),
+      fc.constantFrom(0, 330, -300),
+      (specs, utcOffsetMinutes) => {
+        let cursor = dayStart + 10 * MIN;
+        const moreSessions = [];
+        const labels = [];
+        let sustainedCount = 0;
+
+        specs.forEach((sp, idx) => {
+          const durMs = sp.durSec * 1000;
+          const startMs = cursor;
+          const endMs = startMs + durMs;
+          if (endMs >= dayWindow.toMs) return;
+          const id = `mono_${idx}`;
+          moreSessions.push({ id, app: sp.app, startMs, endMs });
+          if (durMs >= 8_000) sustainedCount += 1;
+          if (sp.label) labels.push({ sessionId: id, label: sp.label });
+          cursor = endMs + sp.gapMin * MIN;
+        });
+
+        if (sustainedCount < 5) return;
+
+        const baseline = scoreIqs({
+          window: dayWindow,
+          sessions: moreSessions,
+          labels,
+          utcOffsetMinutes,
+        });
+        assert.notEqual(baseline.value, null);
+
+        // 1. Shorten every sitting ("using less"): sustained sittings stay >= 8s, short sittings shorten too.
+        const shortened = moreSessions.map((s, idx) => {
+          const dur = s.endMs - s.startMs;
+          const pct = specs[idx].scalePct / 100;
+          const nextDur =
+            dur >= 8_000
+              ? Math.max(8_000, Math.floor(dur * pct))
+              : Math.max(1_000, Math.floor(dur * pct));
+          return { ...s, endMs: s.startMs + nextDur };
+        });
+        const shortenedScore = scoreIqs({
+          window: dayWindow,
+          sessions: shortened,
+          labels,
+          utcOffsetMinutes,
+        });
+        assert.equal(shortenedScore.measuredMax, baseline.measuredMax);
+        assert.ok(
+          shortenedScore.value >= baseline.value,
+          `shortening sittings lowered score from ${baseline.value} to ${shortenedScore.value}`,
+        );
+        for (const f of baseline.factors.filter((x) => x.measurable)) {
+          const sf = shortenedScore.factors.find((x) => x.id === f.id);
+          assert.ok(sf.points >= f.points, `factor ${f.id} dropped from ${f.points} to ${sf.points}`);
+        }
+
+        // 2. Skip unlabelled <8s reflex bounces: never lowers score when measuredMax matches
+        const labelSet = new Set(labels.map((l) => l.sessionId));
+        const withoutBounces = moreSessions.filter(
+          (s) => s.endMs - s.startMs >= 8_000 || labelSet.has(s.id),
+        );
+        const noBounceScore = scoreIqs({
+          window: dayWindow,
+          sessions: withoutBounces,
+          labels,
+          utcOffsetMinutes,
+        });
+        if (noBounceScore.measuredMax === baseline.measuredMax) {
+          assert.ok(
+            noBounceScore.value >= baseline.value,
+            `removing <8s bounces lowered score from ${baseline.value} to ${noBounceScore.value}`,
+          );
+        }
+
+        // 3. Cap every sitting at 10 minutes: never lowers score
+        const capped10m = moreSessions.map((s) => ({
+          ...s,
+          endMs: Math.min(s.endMs, s.startMs + 10 * MIN),
+        }));
+        const cappedScore = scoreIqs({
+          window: dayWindow,
+          sessions: capped10m,
+          labels,
+          utcOffsetMinutes,
+        });
+        assert.equal(cappedScore.measuredMax, baseline.measuredMax);
+        assert.ok(
+          cappedScore.value >= baseline.value,
+          `capping sittings at 10m lowered score from ${baseline.value} to ${cappedScore.value}`,
+        );
+      },
+    ),
+    { numRuns: 200 },
   );
 });

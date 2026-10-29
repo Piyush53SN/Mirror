@@ -6,12 +6,13 @@
  * Nothing here reads a raw pixel value from anywhere except the token object.
  */
 import * as React from 'react';
-import { RNText, View } from '../host';
+import { Pressable, RNText, View } from '../host';
 import type { StyleProp, TextStyle, ViewStyle } from '../host';
 import { useTheme } from '../theme';
 import type { MirrorTheme, TypeRole } from '../tokens';
 import type { DataTier } from '../tiers';
 import { TIERS } from '../tiers';
+import { a11yTarget, coerceLabel } from '../a11y';
 
 type BaseProps = {
   children?: React.ReactNode;
@@ -94,7 +95,7 @@ export function SectionHeader({
   const t = withTheme(theme);
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: t.space(2) }}>
-      <View style={{ flexShrink: 1 }}>
+      <View accessible accessibilityRole="header" style={{ flexShrink: 1 }}>
         <Text role="title-lg" theme={t}>
           {title}
         </Text>
@@ -116,6 +117,7 @@ export function Stat({
   unit,
   label,
   hint,
+  accessibilityLabel,
   tone = 'core',
   theme,
 }: {
@@ -124,12 +126,19 @@ export function Stat({
   label: string;
   /** The hedge word ("about", "roughly") belongs in the sentence, not the number. */
   hint?: string;
+  accessibilityLabel?: string;
   tone?: TextProps['tone'];
   theme?: MirrorTheme;
 }) {
   const t = withTheme(theme);
+  const spokenUnit = unit ? unit.replace(/^\/\s*(\d+)/, 'out of $1') : '';
+  const defaultLabel = [label ? `${label}: ${value}` : value, spokenUnit, hint].filter(Boolean).join(' ').trim();
   return (
-    <View accessible accessibilityRole="summary" accessibilityLabel={`${label}: ${value} ${unit ?? ''}`.trim()}>
+    <View
+      accessible
+      accessibilityRole="summary"
+      accessibilityLabel={coerceLabel(accessibilityLabel ?? defaultLabel)}
+    >
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.space(1) }}>
         <Text role="display" tone={tone} theme={t}>
           {value}
@@ -190,39 +199,58 @@ export function ConfidenceChip({
 }) {
   const t = withTheme(theme);
   const text = label ?? (tiers.length ? `Based on ${tiers.slice().sort().join(' + ')}` : 'No data yet');
-  return (
+  const inner = (
     <View
-      accessible
-      accessibilityRole={onPress ? 'button' : 'text'}
-      accessibilityLabel={`${text}${onPress ? '. Opens the capability matrix.' : ''}`}
-      onStartShouldSetResponder={onPress ? () => true : undefined}
-      onResponderRelease={onPress}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         gap: t.space(1),
         paddingHorizontal: t.space(2),
-        minHeight: t.size.chipTouchHeight,
+        height: t.size.chipHeight,
+        borderRadius: t.radius.pill,
+        backgroundColor: t.color.card,
+        borderWidth: 1,
+        borderColor: t.color.borderCard,
       }}
     >
+      <Text role="label" tone="muted" theme={t}>
+        {text}
+      </Text>
+    </View>
+  );
+  if (!onPress) {
+    return (
       <View
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={coerceLabel(text)}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
           gap: t.space(1),
           paddingHorizontal: t.space(2),
-          height: t.size.chipHeight,
-          borderRadius: t.radius.pill,
-          backgroundColor: t.glass.chip.fill,
-          borderWidth: 1,
-          borderColor: t.color.borderCard,
+          minHeight: t.size.chipTouchHeight,
         }}
       >
-        <Text role="label" tone="muted" theme={t}>
-          {text}
-        </Text>
+        {inner}
       </View>
-    </View>
+    );
+  }
+  return (
+    <Pressable
+      onPress={onPress}
+      {...a11yTarget(`${text}. Opens the capability matrix.`)}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: t.space(1),
+        paddingHorizontal: t.space(2),
+        minWidth: t.size.touchTarget,
+        minHeight: t.size.touchTarget,
+      }}
+    >
+      {inner}
+    </Pressable>
   );
 }
 
@@ -264,23 +292,26 @@ export function ListRow({
   );
   if (!onPress) return content;
   return (
-    <View
-      accessible
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? [title, meta].filter(Boolean).join(', ')}
-      onStartShouldSetResponder={() => true}
-      onResponderRelease={onPress}
+    <Pressable
+      onPress={onPress}
+      {...a11yTarget(accessibilityLabel ?? [title, meta].filter(Boolean).join(', '))}
+      style={{
+        width: '100%',
+        minWidth: t.size.touchTarget,
+        minHeight: t.size.touchTarget,
+        justifyContent: 'center',
+      }}
     >
       {content}
-    </View>
+    </Pressable>
   );
 }
 
 /* ------------------------------------------------------------ Callout etc. -- */
 
 /**
- * The one place a caveat is rendered. `tone="warn"` is reserved for a real
- * limitation ("this cannot be measured"), never for engagement copy.
+ * The one place a caveat is rendered. `tone="limit"` uses an opaque `t.color.card`
+ * surface and `core` ink so limitations stay >= 4.5:1 even inside elevated cards.
  */
 export function Callout({
   children,
@@ -297,13 +328,13 @@ export function Callout({
       style={{
         borderRadius: t.radius.md,
         padding: t.space(3),
-        backgroundColor: tone === 'limit' ? t.glass.chip.fill : 'transparent',
+        backgroundColor: tone === 'limit' ? t.color.card : 'transparent',
         borderWidth: 1,
         borderColor: t.color.borderCard,
         gap: t.space(1),
       }}
     >
-      <Text role="label" tone="muted" theme={t}>
+      <Text role="label" tone={tone === 'limit' ? 'core' : 'muted'} theme={t}>
         {children}
       </Text>
     </View>

@@ -63,6 +63,8 @@ export type IngestOptions = {
   maxAppsPerDay?: number;
   /** Sessions shorter than this are dropped by the sessionizer. Default 0. */
   minDurationMs?: number;
+  /** Dynamic home-launcher or extra excluded packages merged with `SHARED_EXCLUDED_PACKAGES`. */
+  ignorePackages?: readonly string[];
 };
 
 export type SessionAssignment = { eventId: string; sessionId: string | null };
@@ -160,6 +162,7 @@ export function ingest(batch: IngestBatch, options: IngestOptions = {}): IngestR
   const { sessions, dropped } = sessionize(timed, {
     mergeGapMs: options.mergeGapMs,
     minDurationMs: options.minDurationMs,
+    ignorePackages: options.ignorePackages,
   });
 
   const stored: StoredSession[] = sessions.map((session) => ({

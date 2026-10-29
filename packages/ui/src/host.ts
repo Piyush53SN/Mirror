@@ -12,6 +12,7 @@
 export {
   View,
   Text as RNText,
+  TextInput,
   Pressable,
   ScrollView,
   Image,
@@ -21,4 +22,4 @@ export {
   useWindowDimensions,
 } from 'react-native';
 
-export type { ViewStyle, TextStyle, StyleProp } from 'react-native';
+export type { ViewStyle, TextStyle, StyleProp, TextInputProps } from 'react-native';

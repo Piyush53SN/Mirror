@@ -20,7 +20,7 @@
  */
 import type { DataTier } from './tier';
 import { TIERS } from './tier';
-import { CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, TOPIC_VECTOR_DIM, type MirrorEvent } from './event';
+import { CLOSE_REASONS, CONTENT_CLASSES, ORIGINS, SCHEMA_VERSION, TOPIC_VECTOR_DIM, type MirrorEvent } from './event';
 
 export type ValidationError = { path: string; message: string };
 export type ValidationResult = { ok: true; value: MirrorEvent } | { ok: false; errors: ValidationError[] };
@@ -41,7 +41,7 @@ const COMMON = ['schema_version', 'id', 'kind', 'at', 'tier', 'origin', 'content
 /** Fields each kind may carry, beyond the common ones. */
 export const KIND_FIELDS: Record<string, readonly string[]> = {
   app_foreground: ['app', 'activity'],
-  app_background: ['app', 'duration_ms'],
+  app_background: ['app', 'duration_ms', 'close_reason'],
   device_unlock: [],
   web_visit: ['host', 'duration_ms', 'scroll_depth', 'completion_ratio', 'query', 'item_hash', 'topic_vector'],
   api_item: ['source_id', 'action', 'subject', 'item_hash', 'topic_vector'],
@@ -185,6 +185,9 @@ export function validateEvent(input: unknown): ValidationResult {
   }
   if (e.phase !== undefined && !['start', 'end', 'left'].includes(String(e.phase))) {
     errors.push(fail('phase', 'must be start, end or left'));
+  }
+  if (e.close_reason !== undefined && !CLOSE_REASONS.includes(e.close_reason as (typeof CLOSE_REASONS)[number])) {
+    errors.push(fail('close_reason', `must be one of ${CLOSE_REASONS.join(', ')}`));
   }
   if (e.query !== undefined && (typeof e.query !== 'string' || e.query.length > 512)) {
     errors.push(fail('query', 'must be a string of at most 512 characters'));

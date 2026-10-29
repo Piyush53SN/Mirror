@@ -37,18 +37,23 @@ const DAY_MS = 86_400_000;
  * update `docs/metrics.md` §9 in the same commit. A stored score must not be
  * compared with one computed under a different version without saying so.
  */
-export const IQS_METRICS_VERSION = 2;
+export const IQS_METRICS_VERSION = 3;
+
+/** Fixed composite scale; unmeasured factors are shown separately rather than changing the scale or counting as zero. */
+export const FIXED_SCORE_MAX = 100;
 
 /** Label facts below this are too few to be a share. */
 export const MIN_LABELS = 5;
 /** Bounce-share (<8 s) below this sitting count is a small-sample coin flip, not a mix. */
 export const MIN_SESSION_MIX_SITTINGS = 5;
-/** Minimum sittings before computing switching pressure. */
+/** Minimum non-excluded sittings before computing per-sitting switching pressure. */
 export const MIN_SWITCHING_SITTINGS = 3;
-/** Minimum non-excluded active sitting time (15 min = 0.25 h) before computing switches/hour. */
+/** Minimum active sitting time (15 min = 0.25 h) retained for Focus Windows per-hour cell diagnostics. */
 export const MIN_SWITCHING_ACTIVE_MS = 15 * MINUTE_MS;
-/** Minimum total sitting time (15 min) before computing late-night share. */
+/** Minimum total sitting time (15 min) before computing late-night quiet-hours points on <5 sustained sittings. */
 export const MIN_LATE_NIGHT_ACTIVE_MS = 15 * MINUTE_MS;
+/** Quiet-hours screen time (60 min in 23:00–05:00 local) at which the 15-pt late-night factor reaches 0. */
+export const LATE_NIGHT_SATURATION_MS = 60 * MINUTE_MS;
 /** Below these thresholds, measured scores are flagged in confidence as small-sample. */
 export const SMALL_SAMPLE_SITTINGS = 15;
 export const SMALL_SAMPLE_ACTIVE_MS = 30 * MINUTE_MS;
@@ -101,6 +106,8 @@ export type Confidence = {
   smallSample: boolean;
   /** Decisive labels (intentional + mindless), not `unsure`. */
   labels: number;
+  /** Plain-language summary explaining what the confidence percentage means and why it has this value. */
+  explanation: string;
   reasons: string[];
 };
 
@@ -110,8 +117,12 @@ export type Score = {
   metricsVersion: number;
   /** Null when nothing could be measured. Never zero for "unknown". */
   value: number | null;
-  /** Sum of the maxima of the measurable factors: 100, 75, or less. */
+  /** Fixed composite scale (always 100); unmeasured parts are reported separately in `unmeasuredMax`. */
   max: number;
+  /** Sum of maxima of the measurable factors (0..100). */
+  measuredMax: number;
+  /** Sum of maxima of the unmeasured factors (`100 - measuredMax`), shown separately and never scored as zero. */
+  unmeasuredMax: number;
   band: string;
   factors: Factor[];
   confidence: Confidence;
@@ -124,6 +135,7 @@ export type CuriositySplit = {
   deepMs: number;
   habitMs: number;
   unlabeledMs: number;
+  switchesPerSitting: number;
   switchesPerHour: number;
   labelShare: number;
 };
@@ -258,26 +270,23 @@ export function lateNightMs(startMs: number, endMs: number, utcOffsetMinutes: nu
   return total;
 }
 
-/** System apps that should not count toward switching pressure (installer, Play Store, Settings-type) */
-const SWITCHING_EXCLUDED_APPS = new Set<string>([
-  'dev.mirror.app',
-  'com.android.systemui',
-  'com.google.android.permissioncontroller',
-  'com.android.packageinstaller',
-  'com.google.android.packageinstaller',
-  'com.android.intentresolver',
-  'com.google.android.intentresolver',
-  'com.android.settings',
-  'com.android.vending', // Play Store
-  'com.google.android.gms',
-  'com.google.android.gsf',
-  'android',
-]);
-
-/** App changes per active hour. A change after a gap longer than 5 min is a new sitting. Excludes installer/Play Store/Settings-type system apps from switching pressure. */
-export function switchingRate(sessions: readonly ScoredSession[]): { switches: number; activeHours: number; perHour: number } {
-  // Filter out system apps (including all OEM package installers) for switching pressure
-  const filtered = sessions.filter((s) => !SWITCHING_EXCLUDED_APPS.has(s.app) && !isIgnoredSystemApp(s.app));
+/**
+ * App changes per sitting (and per active hour for diagnostics).
+ * A change after a gap longer than 5 min is a new sitting, not a switch.
+ * Uses the unified shared system/launcher/utility exclusion predicate.
+ */
+export function switchingRate(sessions: readonly ScoredSession[]): {
+  switches: number;
+  sittings: number;
+  perSitting: number;
+  activeHours: number;
+  perHour: number;
+} {
+  // Brief <8s bounces are already counted in `session_length`; switching pressure
+  // measures cross-app hopping across sustained (>=8s) non-utility sittings.
+  const filtered = sessions.filter(
+    (s) => ms(s) >= SHORT_SESSION_MS && !isLabelingExcludedApp(s.app) && !isIgnoredSystemApp(s.app),
+  );
   const ordered = [...filtered].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
   let switches = 0;
   for (let i = 1; i < ordered.length; i += 1) {
@@ -285,9 +294,16 @@ export function switchingRate(sessions: readonly ScoredSession[]): { switches: n
     const current = ordered[i]!;
     if (current.app !== previous.app && current.startMs - previous.endMs <= SWITCH_GAP_MS) switches += 1;
   }
+  const sittings = ordered.length;
   const totalMs = ordered.reduce((sum, session) => sum + ms(session), 0);
   const activeHours = totalMs / HOUR_MS;
-  return { switches, activeHours, perHour: activeHours > 0 ? switches / activeHours : 0 };
+  return {
+    switches,
+    sittings,
+    perSitting: sittings > 0 ? switches / sittings : 0,
+    activeHours,
+    perHour: activeHours > 0 ? switches / activeHours : 0,
+  };
 }
 
 /** Cosine similarity for the topic factor. Kept local: core-analytics has no model dependency. */
@@ -436,11 +452,13 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
     }
   }
   if (decisive < MIN_LABELS) return null;
+  const sw = switchingRate(sessions);
   return {
     deepMs,
     habitMs,
     unlabeledMs,
-    switchesPerHour: switchingRate(sessions).perHour,
+    switchesPerSitting: sw.perSitting,
+    switchesPerHour: sw.perHour,
     labelShare: decisive / sessions.length,
   };
 }
@@ -448,21 +466,22 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
 /**
  * The Interaction Quality Score.
  *
- * Weights: session length 25, deliberate share 20, switching 15, late night 15,
- * topic depth 25. The four OS-only parts sum to 75, which is why a usage-only
- * score is out of 75 rather than 100 — the old mockup weights summed to 90 while
- * its copy claimed a 75 cap; the engine makes the copy true.
+ * Fixed 100-point scale across five factors: session length 25, deliberate share 20,
+ * switching 15, late night 15, topic depth 25. Only measured factors enter `value`
+ * and `measuredMax`; unmeasured factors (`unmeasuredMax = 100 - measuredMax`) are
+ * reported separately and never counted as zero or rescaled.
  */
 export function scoreIqs(input: ScoreInput): Score {
   const window = input.window;
   const windowMs = Math.max(1, window.toMs - window.fromMs);
-  const sessions = sessionsInWindow(input.sessions, window);
+  const sessions = sessionsInWindow(input.sessions, window).filter((s) => !isIgnoredSystemApp(s.app));
   const totalMs = sessions.reduce((sum, session) => sum + ms(session), 0);
   const offset = input.utcOffsetMinutes ?? 0;
 
   /* ---------------------------------------------------------- base factors -- */
 
   const shortCount = sessions.filter((session) => ms(session) < SHORT_SESSION_MS).length;
+  const sustainedCount = sessions.length - shortCount;
   const shortShare = sessions.length > 0 ? shortCount / sessions.length : 0;
   const lengthMeasurable = sessions.length >= MIN_SESSION_MIX_SITTINGS;
   const lengthPoints = round1(25 * (1 - shortShare));
@@ -496,42 +515,40 @@ export function scoreIqs(input: ScoreInput): Score {
     measurable: labelled,
   };
 
-  const switchingFiltered = sessions.filter((s) => !SWITCHING_EXCLUDED_APPS.has(s.app) && !isIgnoredSystemApp(s.app));
-  const switchingActiveMs = switchingFiltered.reduce((sum, session) => sum + ms(session), 0);
   const switching = switchingRate(sessions);
-  const switchingMeasurable =
-    switchingFiltered.length >= MIN_SWITCHING_SITTINGS && switchingActiveMs >= MIN_SWITCHING_ACTIVE_MS;
+  const switchingMeasurable = switching.sittings >= MIN_SWITCHING_SITTINGS;
   const switchingFactor: Factor = {
     id: 'switching',
     label: 'Switching pressure',
-    // Smooth and bounded: 15 at no switching, 7.5 at 20/h, never zero. A cliff
-    // would punish one unusual hour; a benchmark against other people would be
-    // a comparison the product promises not to make.
-    points: switchingMeasurable ? round1((15 * 20) / (switching.perHour + 20)) : 0,
+    // Per-sitting rate: switches / sittings is bounded in [0, 1) and monotonically
+    // non-increasing when sittings shorten (gaps widen), so using less never lowers points.
+    points: switchingMeasurable ? round1(15 * (1 - switching.perSitting)) : 0,
     max: 15,
     tier: 'D',
     detail: switchingMeasurable
-      ? `${switching.switches} app switches across ${switching.activeHours.toFixed(1)} active hours (${switching.perHour.toFixed(1)}/h).`
-      : switchingFiltered.length < MIN_SWITCHING_SITTINGS
-        ? `Not measured: fewer than ${MIN_SWITCHING_SITTINGS} non-system sittings (${switchingFiltered.length} recorded).`
-        : `Not measured: ${Math.max(1, Math.round(switchingActiveMs / MINUTE_MS))} min (${switching.activeHours.toFixed(2)} h) active time — at least ${Math.round(MIN_SWITCHING_ACTIVE_MS / MINUTE_MS)} min (0.25 active hours) needed for a stable per-hour rate.`,
+      ? `${switching.switches} rapid cross-app switch${switching.switches === 1 ? '' : 'es'} across ${switching.sittings} sittings (${switching.perSitting.toFixed(2)} per sitting).`
+      : `Not measured: fewer than ${MIN_SWITCHING_SITTINGS} non-utility sittings (${switching.sittings} recorded).`,
     measurable: switchingMeasurable,
   };
 
   const lateMs = sessions.reduce((sum, session) => sum + lateNightMs(session.startMs, session.endMs, offset, input.lateNight?.startHour, input.lateNight?.endHour), 0);
-  const lateMeasurable = totalMs >= MIN_LATE_NIGHT_ACTIVE_MS;
-  const lateShare = totalMs > 0 ? clamp01(lateMs / totalMs) : 0;
+  const lateMeasurable =
+    totalMs >= MIN_LATE_NIGHT_ACTIVE_MS || sustainedCount >= MIN_SESSION_MIX_SITTINGS;
+  const lateRatio = clamp01(lateMs / LATE_NIGHT_SATURATION_MS);
+  const lateMinRounded = Math.round(lateMs / MINUTE_MS);
   const lateFactor: Factor = {
     id: 'late_night',
-    label: 'Late-night share',
-    points: lateMeasurable ? round1(15 * (1 - lateShare)) : 0,
+    label: 'Late-night quiet hours',
+    points: lateMeasurable ? round1(15 * (1 - lateRatio)) : 0,
     max: 15,
     tier: 'D',
     detail: lateMeasurable
-      ? `${Math.round(lateShare * 100)}% of sitting spans fell between 23:00 and 05:00 local.`
+      ? lateMs === 0
+        ? '0 min between 23:00 and 05:00 local (full 15 pts; reaches 0 at 60 min).'
+        : `${lateMinRounded > 0 ? `${lateMinRounded} min` : `${Math.max(1, Math.round(lateMs / 1000))} s`} between 23:00 and 05:00 local (${Math.round(lateRatio * 100)}% of 60 min quiet-hours budget).`
       : totalMs === 0
         ? 'Not measured: no sitting spans.'
-        : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min of sitting spans in this window (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min needed before computing late-night share).`,
+        : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min across ${sustainedCount} sustained sitting${sustainedCount === 1 ? '' : 's'} (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min or ${MIN_SESSION_MIX_SITTINGS} sustained sittings needed).`,
     measurable: lateMeasurable,
   };
 
@@ -579,27 +596,43 @@ export function scoreIqs(input: ScoreInput): Score {
 
   const factors = [lengthFactor, deliberateFactor, switchingFactor, lateFactor, topicFactor];
   const measured = factors.filter((factor) => factor.measurable);
-  const max = measured.reduce((sum, factor) => sum + factor.max, 0);
+  const unmeasured = factors.filter((factor) => !factor.measurable);
+  const measuredMax = measured.reduce((sum, factor) => sum + factor.max, 0);
+  const unmeasuredMax = Math.max(0, FIXED_SCORE_MAX - measuredMax);
   const value = measured.length > 0 ? round1(measured.reduce((sum, factor) => sum + factor.points, 0)) : null;
-  const confidence = confidenceFor(input, sessions, totalMs, decisive, measured.length / factors.length, windowMs);
-  if (max < 100 && value !== null) confidence.reasons.push(`The score covers ${max} of 100 points; the missing parts are listed, not estimated.`);
+  const confidence = confidenceFor(
+    input,
+    sessions,
+    totalMs,
+    decisive,
+    measured.length / factors.length,
+    measuredMax,
+    windowMs,
+  );
+  if (unmeasuredMax > 0 && value !== null) {
+    confidence.reasons.push(
+      `${measuredMax} of ${FIXED_SCORE_MAX} points measured today; ${unmeasuredMax} points remain unmeasured and are shown separately rather than scored as zero.`,
+    );
+  }
 
   const totalMinLabel = totalMs < MINUTE_MS ? `${Math.max(1, Math.round(totalMs / 1000))} s` : `${Math.round(totalMs / MINUTE_MS)} min`;
   const caveat =
     value === null
       ? sessions.length === 0
         ? 'Not enough data to score. Mirror will not fill the gap with an estimate.'
-        : `Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SESSION_MIX_SITTINGS} sittings or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min of sitting spans before scoring; small-sample rates are hidden rather than guessed).`
-      : max < 100
-        ? `Out of ${max}: ${factors.filter((f) => !f.measurable).map((f) => f.label.toLowerCase()).join(', ')} ${factors.filter((f) => !f.measurable).length === 1 ? 'is' : 'are'} not measured. The score is not rescaled to 100.`
-        : 'Every part is measured. The parts add up exactly; a total you cannot take apart is not a measurement.';
+        : `Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SWITCHING_SITTINGS} non-utility sittings, ${MIN_SESSION_MIX_SITTINGS} sittings, or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min before scoring; small-sample rates are hidden rather than guessed).`
+      : unmeasuredMax > 0
+        ? `Fixed 100-point scale: ${measuredMax} pts measured today and ${unmeasuredMax} pts unmeasured (${unmeasured.map((f) => `${f.label.toLowerCase()} ${f.max} pts`).join(', ')}). Unmeasured parts are shown separately — never counted as zero and never rescaled.`
+        : 'All 100 points are measured today. The measured parts add up to the exact score.';
 
   return {
     id: 'iqs',
     metricsVersion: IQS_METRICS_VERSION,
     value,
-    max,
-    band: value === null ? 'not measured' : max >= 100 ? 'full band' : 'usage-only band',
+    max: FIXED_SCORE_MAX,
+    measuredMax,
+    unmeasuredMax,
+    band: value === null ? 'not measured' : measuredMax >= FIXED_SCORE_MAX ? 'full band' : 'usage-only band',
     factors,
     confidence,
     caveat,
@@ -612,6 +645,7 @@ function confidenceFor(
   totalMs: number,
   labels: number,
   tierCompleteness: number,
+  measuredMax: number,
   windowMs: number,
 ): Confidence {
   const window = input.window;
@@ -639,6 +673,8 @@ function confidenceFor(
       activeMs: 0,
       smallSample: true,
       labels,
+      explanation:
+        'Confidence is 0% (none) because no complete sittings were recorded in this window yet. Confidence measures how complete the data behind the score is — never how good or bad your phone use was.',
       reasons: [
         gapReason,
         'No complete sittings in this window.',
@@ -675,5 +711,19 @@ function confidenceFor(
 
   const level: ConfidenceLevel =
     sessions.length === 0 ? 'none' : input.approximate || smallSample ? 'low' : score >= 0.75 ? 'high' : score >= 0.5 ? 'medium' : 'low';
-  return { score, level, coverage, sample: sessions.length, activeMs: totalMs, smallSample, labels, reasons };
+  const pct = Math.round(score * 100);
+  const capCauses: string[] = [];
+  if (input.approximate) capCauses.push('OS app-switch timing without content tiers');
+  if (smallSample) capCauses.push(`a small sample (${sessions.length} sitting${sessions.length === 1 ? '' : 's'}, ${activeMinLabel})`);
+  const capSentence =
+    capCauses.length > 0
+      ? ` Capped at ${pct}% (${level}) because of ${capCauses.join(' and ')}.`
+      : '';
+  const explanation =
+    `Confidence (${pct}% · ${level}) reflects how complete the inputs behind this score are — never a judgement of your screen time. ` +
+    `It weighs window coverage (${Math.round(coverage * 100)}%), sample size (${sessions.length} of 30 sittings), ` +
+    `explicit intent labels (${labels} of 20), and measured scale (${measuredMax} of ${FIXED_SCORE_MAX} pts).` +
+    capSentence;
+
+  return { score, level, coverage, sample: sessions.length, activeMs: totalMs, smallSample, labels, explanation, reasons };
 }

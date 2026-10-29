@@ -30,6 +30,7 @@ import type {
   DayStoreRowCounts,
   GapReason,
   ImportRecord,
+  KeyIntegrityResult,
   RandomBytes,
   RollupRecord,
   SessionRepairSnapshot,
@@ -704,6 +705,7 @@ export class MirrorStore {
     const validReasons: StoreResetReason[] = [
       'user_delete_all',
       'key_mismatch_reset',
+      'keystore_invalidated',
       'reinstall_or_storage_cleared',
     ];
     if (!validReasons.includes(entry.reason)) {
@@ -739,6 +741,7 @@ export class MirrorStore {
         !/^\d{4}-\d{2}-\d{2}$/.test(parsed.day) ||
         (parsed.reason !== 'user_delete_all' &&
           parsed.reason !== 'key_mismatch_reset' &&
+          parsed.reason !== 'keystore_invalidated' &&
           parsed.reason !== 'reinstall_or_storage_cleared')
       ) {
         return null;
@@ -755,6 +758,78 @@ export class MirrorStore {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Verify that existing sealed rows in `events`, `sessions`, and `daily_rollups`
+   * can be decrypted with the active device key BEFORE appending new events.
+   *
+   * Prevents mixed-key corruption and unhandled `DecryptionError` crashes when
+   * Android Keystore invalidates a hardware-backed key (e.g. lockscreen credential
+   * reset or OS restore).
+   */
+  async verifyKeyIntegrity(): Promise<KeyIntegrityResult> {
+    const derived = this.derived();
+    const checks: { table: string; sql: string }[] = [
+      { table: 'events', sql: `SELECT payload FROM events ORDER BY at ASC LIMIT 1` },
+      { table: 'events', sql: `SELECT payload FROM events ORDER BY at DESC LIMIT 1` },
+      { table: 'sessions', sql: `SELECT payload FROM sessions ORDER BY start_ms ASC LIMIT 1` },
+      { table: 'sessions', sql: `SELECT payload FROM sessions ORDER BY start_ms DESC LIMIT 1` },
+      { table: 'daily_rollups', sql: `SELECT payload FROM daily_rollups ORDER BY day DESC LIMIT 1` },
+    ];
+    for (const c of checks) {
+      const rows = await this.driver.all<{ payload: Uint8Array }>(c.sql);
+      if (rows.length === 0) continue;
+      try {
+        open<Record<string, unknown>>(rows[0]!.payload, derived, this.keyId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const reason = /sealed with key/i.test(message) ? 'key_mismatch' : 'corrupt_ciphertext';
+        this.diagnostic(`key integrity check failed on ${c.table}`, message);
+        return {
+          ok: false,
+          reason,
+          currentKeyId: this.keyId,
+          message,
+        };
+      }
+    }
+    return { ok: true, currentKeyId: this.keyId };
+  }
+
+  /**
+   * Recover cleanly when Android Keystore invalidates or loses the previous root
+   * key: captures `previousHistoryStartDay` from plaintext index metadata (zero
+   * decryption), wipes unreadable ciphertext via `deleteAll()`, and writes an
+   * explicit `StoreResetAudit` record so the UI surfaces when and why history reset.
+   */
+  async recoverFromKeyInvalidation(options: {
+    day: string;
+    at?: number;
+    reason?: 'keystore_invalidated' | 'key_mismatch_reset';
+    detail?: string;
+    utcOffsetMinutes?: number;
+  }): Promise<StoreResetAudit> {
+    const at = options.at ?? this.clock();
+    const offsetMs = Number.isFinite(options.utcOffsetMinutes) ? (options.utcOffsetMinutes ?? 0) * 60_000 : 0;
+    const earliestEv = await this.earliestEventAt();
+    const earliestSess = await this.earliestSessionStart();
+    const candidates = [earliestEv, earliestSess].filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    const previousHistoryStartDay =
+      candidates.length > 0
+        ? new Date(Math.min(...candidates) + offsetMs).toISOString().slice(0, 10)
+        : undefined;
+
+    await this.deleteAll();
+    const entry: StoreResetAudit = {
+      at: Math.floor(at),
+      day: options.day,
+      reason: options.reason ?? 'keystore_invalidated',
+      ...(previousHistoryStartDay ? { previousHistoryStartDay } : {}),
+      ...(options.detail ? { detail: options.detail } : {}),
+    };
+    await this.recordResetAudit(entry);
+    return entry;
   }
 
   /** Earliest non-label event timestamp (`ms`), via index scan with zero decryption. */

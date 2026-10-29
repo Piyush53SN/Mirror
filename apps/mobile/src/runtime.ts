@@ -20,6 +20,8 @@ import {
 } from '@mirror/store';
 import {
   DEFAULT_MAX_INTERVAL_MS,
+  SHARED_EXCLUDED_PACKAGES,
+  SHARED_HOME_LAUNCHER_PACKAGES,
   buildUsageEvents,
   collectUsage,
   computeDayForegroundTotals,
@@ -108,9 +110,10 @@ export async function createRuntime(options: { allowContent?: boolean; retention
 
   creating = (async () => {
     const db = await SQLite.openDatabaseAsync('mirror.db');
+    const keyProvider = secureStoreKeys();
     const store = new MirrorStore({
       driver: expoDriver(db),
-      keys: secureStoreKeys(),
+      keys: keyProvider,
       random: osRandom,
       allowContent: options.allowContent ?? false,
       retentionDays: options.retentionDays ?? 180,
@@ -122,27 +125,54 @@ export async function createRuntime(options: { allowContent?: boolean; retention
 
     const usage = nativeUsageSource();
     const offsetNow = () => -new Date().getTimezoneOffset();
-    const FALLBACK_HOME_LAUNCHERS = [
-      'com.mi.android.globallauncher',
-      'com.miui.home',
-      'com.google.android.apps.nexuslauncher',
-      'com.sec.android.app.launcher',
-      'com.android.launcher',
-      'com.android.launcher3',
-      'com.oppo.launcher',
-      'com.oneplus.launcher',
-      'com.nothing.launcher',
-    ];
+
+    // Verify encrypted store key integrity BEFORE any collection or read pass so
+    // an Android Keystore invalidation or key rotation recovers cleanly without
+    // crashing or mixing new-key ciphertext into an unreadable table.
+    const ensureKeyIntegrity = async (now = Date.now()): Promise<StoreResetAudit | null> => {
+      const ksNotice = keyProvider.consumeKeystoreInvalidation();
+      const check = await store.verifyKeyIntegrity();
+      if (!ksNotice && check.ok) return null;
+
+      // Only reset if existing rows actually failed decryption (or existed under old key)
+      if (!check.ok) {
+        const day = localDayKey(now, offsetNow());
+        const reason: 'keystore_invalidated' | 'key_mismatch_reset' = ksNotice
+          ? 'keystore_invalidated'
+          : 'key_mismatch_reset';
+        const detail = ksNotice ?? check.message;
+        console.info(
+          '[MirrorStore:reset]',
+          JSON.stringify({
+            when: new Date(now).toISOString(),
+            day,
+            why: reason,
+            detail,
+          }),
+        );
+        return store.recoverFromKeyInvalidation({
+          day,
+          at: now,
+          reason,
+          detail,
+          utcOffsetMinutes: offsetNow(),
+        });
+      }
+      return null;
+    };
+    await ensureKeyIntegrity();
+
     let cachedLauncherPkgs: string[] = [];
-    const resolveLaunchers = async (): Promise<string[]> => {
+    const resolveIgnoredPackages = async (): Promise<string[]> => {
       try {
         const pkgs = await usage.getLauncherPackages();
         if (Array.isArray(pkgs) && pkgs.length > 0) {
           cachedLauncherPkgs = pkgs;
-          return pkgs;
         }
       } catch {}
-      return cachedLauncherPkgs.length > 0 ? cachedLauncherPkgs : FALLBACK_HOME_LAUNCHERS;
+      const launchers =
+        cachedLauncherPkgs.length > 0 ? cachedLauncherPkgs : [...SHARED_HOME_LAUNCHER_PACKAGES];
+      return [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launchers])];
     };
 
     // Single-flight guards so AppState 'active', initial mount, Refresh, and
@@ -156,10 +186,14 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       collectNow: async (now = Date.now()) => {
         if (collectInFlight) return collectInFlight;
         collectInFlight = (async () => {
-          const launcherPkgs = await resolveLaunchers();
-          const res = await collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
+          await ensureKeyIntegrity(now);
+          const ignorePackages = await resolveIgnoredPackages();
+          const res = await collectUsage(usage, store, { now, ignorePackages });
+          if (res.status === 'permission-required') {
+            return res;
+          }
           // Refresh today's `data_gaps` summary from a clean single-day pass so stale
-          // pre-fix gap rows from earlier today cannot block P3 cards (`data_gaps` only;
+          // pre-fix gap rows from earlier today cannot block Insights cards (`data_gaps` only;
           // NEVER deletes rows from `events`).
           try {
             if (await usage.hasPermission()) {
@@ -175,7 +209,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                 const rebuiltToday = buildUsageEvents(rawToday, {
                   sinceMs: fromDayMs - DEFAULT_MAX_INTERVAL_MS,
                   untilMs: now,
-                  ignorePackages: launcherPkgs,
+                  ignorePackages,
                   gapFloorMs: fromDayMs,
                 });
                 await store.replaceGapsForWindow(
@@ -195,10 +229,16 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           collectInFlight = null;
         }
       },
-      ingestDay: (day, utcOffsetMinutes = offsetNow()) => ingestDay(store, day, utcOffsetMinutes),
+      ingestDay: async (day, utcOffsetMinutes = offsetNow()) => {
+        const ignorePackages = await resolveIgnoredPackages();
+        return ingestDay(store, day, utcOffsetMinutes, ignorePackages);
+      },
       ingestRecent: async (now = Date.now()) => {
         if (ingestInFlight) return ingestInFlight;
-        ingestInFlight = ingestRecentDays(store, now, offsetNow());
+        ingestInFlight = (async () => {
+          const ignorePackages = await resolveIgnoredPackages();
+          return ingestRecentDays(store, now, offsetNow(), ignorePackages);
+        })();
         try {
           return await ingestInFlight;
         } finally {
@@ -216,7 +256,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           if (effectiveToMs <= range.fromMs) return [];
           const hasPerm = await usage.hasPermission().catch(() => false);
           if (!hasPerm) return [];
-          const launcherPkgs = await resolveLaunchers();
+          const ignorePackages = await resolveIgnoredPackages();
           const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
           const rawRows = await usage
             .queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs)
@@ -229,7 +269,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
             window: range,
             nowMs: now,
             lookbackMs: DEFAULT_MAX_INTERVAL_MS,
-            ignorePackages: launcherPkgs,
+            ignorePackages,
           });
         } catch {
           return [];
@@ -240,7 +280,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           const now = Date.now();
           const effectiveToMs = Math.min(range.toMs, now);
           if (effectiveToMs <= range.fromMs) return [];
-          const launcherPkgs = await resolveLaunchers();
+          const ignorePackages = await resolveIgnoredPackages();
           const storedRows = await store.events({
             from: range.fromMs - DEFAULT_MAX_INTERVAL_MS,
             to: effectiveToMs + DEFAULT_MAX_INTERVAL_MS,
@@ -260,7 +300,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           return computeDayForegroundTotalsFromStoredEvents(storedEvents, {
             window: range,
             nowMs: now,
-            ignorePackages: launcherPkgs,
+            ignorePackages,
           });
         } catch {
           return [];
@@ -268,11 +308,11 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       rawBucketTotals: async (range) => {
         try {
-          const launcherPkgs = await resolveLaunchers();
+          const ignorePackages = await resolveIgnoredPackages();
           const rows = await usage.queryUsageStats(range.fromMs, range.toMs);
           return summarizeUsageStatsBucketsForDay(rows, {
             window: range,
-            ignorePackages: launcherPkgs,
+            ignorePackages,
           });
         } catch {
           return [];
@@ -285,7 +325,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           if (!targetApp || effectiveToMs <= range.fromMs) return [];
           const hasPerm = await usage.hasPermission().catch(() => false);
           if (!hasPerm) return [];
-          const launcherPkgs = await resolveLaunchers();
+          const ignorePackages = await resolveIgnoredPackages();
           const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
           const rawRows = await usage
             .queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs)
@@ -295,7 +335,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
             window: range,
             nowMs: now,
             lookbackMs: DEFAULT_MAX_INTERVAL_MS,
-            ignorePackages: launcherPkgs,
+            ignorePackages,
           });
         } catch {
           return [];
@@ -322,7 +362,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           if (effectiveToMs <= range.fromMs) {
             return { totals: [], source: 'os_events' };
           }
-          const launcherPkgs = await resolveLaunchers();
+          const ignorePackages = await resolveIgnoredPackages();
           const hasPerm = await usage.hasPermission().catch(() => false);
           const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
           const [rawRows, storedRows, earliestStoredEventMs] = await Promise.all([
@@ -367,7 +407,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
               window: range,
               nowMs: now,
               lookbackMs: DEFAULT_MAX_INTERVAL_MS,
-              ignorePackages: launcherPkgs,
+              ignorePackages,
             },
           });
         } catch {

@@ -28,6 +28,7 @@ import type {
 } from '@mirror/core-analytics';
 import {
   DEFAULT_MAX_INTERVAL_MS,
+  SHARED_EXCLUDED_PACKAGES,
   buildCanonicalDaySittings,
   buildUsageEvents,
   computeDiscoveryJourney,
@@ -38,15 +39,21 @@ import {
   curiositySplit,
   evaluateAppOsDiscrepancies,
   getTopInvalidPackages,
-  isIgnoredSystemApp,
+  isExcludedApp,
   scoreIqs,
   sessionBands,
   sumSittingSpanMs,
   summarizeOrphanDrops,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
-import { defineUsageTask, provideRuntime, registerUsageTask } from './collector/background';
+import {
+  defineUsageTask,
+  provideRuntime,
+  registerUsageTask,
+  unregisterUsageTask,
+} from './collector/background';
 import { getCachedLabel, resolveAppLabels } from './collector/appLabels';
+import { fallbackSafeInsets, normalizeSafeInsets, type SafeInsets } from './components/useSafeInsets';
 import {
   MirrorAppContext,
   dayEndMs,
@@ -66,6 +73,8 @@ import {
 export function MirrorAppProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [activeTab, setActiveTab] = React.useState<TabKey>('home');
   const [permission, setPermission] = React.useState<PermissionState>('checking');
+  const [permissionDismissed, setPermissionDismissed] = React.useState<boolean>(false);
+  const [insets, setInsets] = React.useState<SafeInsets>(() => fallbackSafeInsets());
   const [sessions, setSessions] = React.useState<SessionRow[]>([]);
   const [dailyTotals, setDailyTotals] = React.useState<DailyTotal[]>([]);
   const [dailyTotalsSource, setDailyTotalsSource] = React.useState<DayTotalsSource>('os_events');
@@ -153,6 +162,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       defineUsageTask();
 
       const usage = runtime.usage();
+      const nativeInsets = usage.getWindowInsets();
+      if (nativeInsets && isCurrent()) {
+        setInsets(normalizeSafeInsets(nativeInsets));
+      }
       if (!usage.available) {
         if (!isCurrent()) return;
         setPermission('unavailable');
@@ -165,88 +178,66 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       if (!has) {
         if (!isCurrent()) return;
         setPermission('denied');
-        hasLoadedOnceRef.current = true;
-        setLoading(false);
-        try {
-          const dayFrom = dayStartMs(targetDay);
-          const dayTo = dayEndMs(targetDay);
-          const q = await runtime.dataQuality({ fromMs: dayFrom, toMs: dayTo });
-          const resolvedOs = await runtime
-            .osTotalsWithSource({ fromMs: dayFrom, toMs: dayTo })
-            .catch(() => ({ totals: [], source: 'os_events' as const }));
-          const osRows = resolvedOs.totals;
-          let launcherPkgs: string[] = [];
-          try {
-            launcherPkgs = await usage.getLauncherPackages();
-          } catch {}
-          const launcherSet = new Set(launcherPkgs);
-          const candidateOs = osRows.filter(
-            (r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName) && r.totalMs > 0,
-          );
-          const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
-          const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
-          const byAppDenied = new Map<string, number>();
-          for (const r of filteredOs) {
-            byAppDenied.set(r.packageName, (byAppDenied.get(r.packageName) ?? 0) + r.totalMs);
-          }
-          const totals: DailyTotal[] = [...byAppDenied.entries()]
-            .map(([app, totalMs]) => ({ app, label: resolved[app] ?? app, totalMs }))
-            .sort((a, b) => b.totalMs - a.totalMs || a.app.localeCompare(b.app));
-          if (!isCurrent()) return;
-          setQuality(q);
-          setDailyTotals(totals);
-          setDailyTotalsSource(resolvedOs.source);
-          setLabels(resolved);
-        } catch {}
-        return;
-      }
-
-      if (!isCurrent()) return;
-      setPermission('granted');
-      try {
-        await registerUsageTask();
-      } catch {}
-
-      const collectResult = await runtime.collectNow();
-      if (!isCurrent()) return;
-      if (collectResult.status === 'collected') {
-        const byReason = collectResult.gaps.reduce((acc: Record<string, number>, g) => {
-          acc[g.reason] = (acc[g.reason] ?? 0) + g.count;
-          return acc;
-        }, {});
-        const gapTotal = collectResult.gaps.reduce((sum, g) => sum + g.count, 0);
-        const spannedCount = collectResult.gaps
-          .filter((g) => g.fromMs !== undefined && g.toMs !== undefined && g.toMs > g.fromMs)
-          .reduce((sum, g) => sum + g.count, 0);
-        const kindLabel =
-          gapTotal === 0
-            ? '0 unmatched events'
-            : spannedCount === 0
-              ? `${gapTotal} unmatched event${gapTotal === 1 ? '' : 's'}`
-              : `${gapTotal} gap/unmatched event${gapTotal === 1 ? '' : 's'}`;
-        setLastCollect(
-          `collect: ${collectResult.events} events (${collectResult.inserted} new, ${collectResult.duplicate} skipped), ${kindLabel}${gapTotal > 0 ? ` (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})` : ''}`,
-        );
-        try {
-          const orphanPkgs = [
-            ...new Set(collectResult.dropped.filter((d) => d.reason === 'orphan_background' && d.app).map((d) => d.app!)),
-          ];
-          const orphanLabels = orphanPkgs.length > 0 ? await resolveAppLabels(orphanPkgs) : {};
-          if (isCurrent()) {
-            setLatestSyncOrphans(summarizeOrphanDrops(collectResult.dropped, orphanLabels, 6));
-          }
-        } catch {}
-        try {
-          const top = getTopInvalidPackages(collectResult.dropped as Parameters<typeof getTopInvalidPackages>[0]);
-          if (isCurrent()) setInvalidTop(top);
-          console.log('Top invalid_package:', top);
-        } catch {}
+        await unregisterUsageTask().catch(() => {});
+        setLastCollect('usage access turned off — showing stored on-device history');
       } else {
-        setLastCollect(`collect: ${collectResult.status}`);
+        if (!isCurrent()) return;
+        setPermission('granted');
+        try {
+          await registerUsageTask();
+        } catch {}
+
+        const collectResult = await runtime.collectNow();
+        if (!isCurrent()) return;
+        if (collectResult.status === 'permission-required') {
+          setPermission('denied');
+          await unregisterUsageTask().catch(() => {});
+          setLastCollect('usage access turned off — showing stored on-device history');
+        } else if (collectResult.status === 'collected') {
+          const byReason = collectResult.gaps.reduce((acc: Record<string, number>, g) => {
+            acc[g.reason] = (acc[g.reason] ?? 0) + g.count;
+            return acc;
+          }, {});
+          const gapTotal = collectResult.gaps.reduce((sum, g) => sum + g.count, 0);
+          const spannedCount = collectResult.gaps
+            .filter((g) => g.fromMs !== undefined && g.toMs !== undefined && g.toMs > g.fromMs)
+            .reduce((sum, g) => sum + g.count, 0);
+          const kindLabel =
+            gapTotal === 0
+              ? '0 unmatched events'
+              : spannedCount === 0
+                ? `${gapTotal} unmatched event${gapTotal === 1 ? '' : 's'}`
+                : `${gapTotal} gap/unmatched event${gapTotal === 1 ? '' : 's'}`;
+          setLastCollect(
+            `collect: ${collectResult.events} events (${collectResult.inserted} new, ${collectResult.duplicate} skipped), ${kindLabel}${gapTotal > 0 ? ` (${Object.entries(byReason).map(([k, v]) => `${k}:${v}`).join(', ')})` : ''}`,
+          );
+          try {
+            const orphanPkgs = [
+              ...new Set(collectResult.dropped.filter((d) => d.reason === 'orphan_background' && d.app).map((d) => d.app!)),
+            ];
+            const orphanLabels = orphanPkgs.length > 0 ? await resolveAppLabels(orphanPkgs) : {};
+            if (isCurrent()) {
+              setLatestSyncOrphans(summarizeOrphanDrops(collectResult.dropped, orphanLabels, 6));
+            }
+          } catch {}
+          try {
+            const top = getTopInvalidPackages(collectResult.dropped as Parameters<typeof getTopInvalidPackages>[0]);
+            if (isCurrent()) setInvalidTop(top);
+            console.log('Top invalid_package:', top);
+          } catch {}
+        } else {
+          setLastCollect(`collect: ${collectResult.status}`);
+        }
+
+        await runtime.ingestRecent();
+        if (!isCurrent()) return;
       }
 
-      await runtime.ingestRecent();
-      if (!isCurrent()) return;
+      // Refresh reset audit in case runtime.collectNow() recovered from a Keystore invalidation
+      try {
+        const resetAudit = await runtime.lastReset();
+        if (isCurrent()) setLastReset(resetAudit);
+      } catch {}
 
       try {
         const [rowCounts, repairSnap] = await Promise.all([
@@ -269,12 +260,18 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         try {
           launcherPkgs = await usage.getLauncherPackages();
         } catch {}
-        const launcherSet = new Set(launcherPkgs);
+        const sharedIgnore = [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launcherPkgs])];
         const candidateOs = osRows.filter(
-          (r) => !launcherSet.has(r.packageName) && !isIgnoredSystemApp(r.packageName) && r.totalMs > 0,
+          (r) => !isExcludedApp(r.packageName, { ignorePackages: sharedIgnore }) && r.totalMs > 0,
         );
         const resolved = await resolveAppLabels(candidateOs.map((r) => r.packageName));
-        const filteredOs = candidateOs.filter((r) => !isIgnoredSystemApp(r.packageName, resolved[r.packageName]));
+        const filteredOs = candidateOs.filter(
+          (r) =>
+            !isExcludedApp(r.packageName, {
+              ignorePackages: sharedIgnore,
+              label: resolved[r.packageName],
+            }),
+        );
         const osMap = new Map<string, number>();
         for (const r of filteredOs) {
           osMap.set(r.packageName, (osMap.get(r.packageName) ?? 0) + r.totalMs);
@@ -292,7 +289,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           sessDay.map((s) => ({ id: s.id, app: s.app, startMs: s.start_ms, endMs: s.end_ms })),
           {
             window: { fromMs: dayFrom, toMs: dayTo },
-            ignorePackages: launcherPkgs,
+            ignorePackages: sharedIgnore,
             appLabels: allLabelsForDay,
           },
         );
@@ -339,7 +336,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         }));
 
         if (!isCurrent()) return;
-        setLauncherPackages(launcherPkgs);
+        setLauncherPackages(sharedIgnore);
         setLabels((prev) => ({ ...prev, ...allLabelsForDay }));
         setDailyTotals(totals);
         setDailyTotalsSource(resolvedOs.source);
@@ -360,7 +357,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           const allHistSessions = await runtime.store.sessions({ fromMs: focusHistFrom, toMs: dayTo });
           const histSessions = allHistSessions.filter((s) => s.end_ms > histFrom && s.start_ms < dayTo);
           const histApps = [...new Set(allHistSessions.map((s) => s.app))].filter(
-            (app) => !launcherSet.has(app) && !isIgnoredSystemApp(app),
+            (app) => !isExcludedApp(app, { ignorePackages: sharedIgnore }),
           );
           const histResolved = await resolveAppLabels(histApps);
           const mergedLabels = { ...allLabelsForDay, ...histResolved };
@@ -384,7 +381,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               sessions: histScored,
               utcOffsetMinutes,
               labels: mergedLabels,
-              ignorePackages: launcherPkgs,
+              ignorePackages: sharedIgnore,
             }),
           );
           setDiscovery(
@@ -394,7 +391,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               intentLabels: loadedLabels,
               labelWindow: { fromMs: dayFrom, toMs: dayTo },
               labels: mergedLabels,
-              ignorePackages: launcherPkgs,
+              ignorePackages: sharedIgnore,
               utcOffsetMinutes,
             }),
           );
@@ -403,7 +400,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               sessions: histScored,
               intentLabels: loadedLabels,
               labels: mergedLabels,
-              ignorePackages: launcherPkgs,
+              ignorePackages: sharedIgnore,
               utcOffsetMinutes,
             }),
           );
@@ -412,7 +409,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               sessions: focusScored,
               intentLabels: loadedLabels,
               labels: mergedLabels,
-              ignorePackages: launcherPkgs,
+              ignorePackages: sharedIgnore,
               utcOffsetMinutes,
             }),
           );
@@ -454,9 +451,17 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             ...sittingMap.keys(),
             ...rawBucketMap.keys(),
           ]);
-          const candidateApps = [...allApps].filter((app) => !launcherSet.has(app) && !isIgnoredSystemApp(app));
+          const candidateApps = [...allApps].filter(
+            (app) => !isExcludedApp(app, { ignorePackages: sharedIgnore }),
+          );
           const resolvedDay = await resolveAppLabels(candidateApps);
-          const filteredApps = candidateApps.filter((app) => !isIgnoredSystemApp(app, resolvedDay[app]));
+          const filteredApps = candidateApps.filter(
+            (app) =>
+              !isExcludedApp(app, {
+                ignorePackages: sharedIgnore,
+                label: resolvedDay[app],
+              }),
+          );
           const allowedSet = new Set(filteredApps);
 
           const discrepancies = evaluateAppOsDiscrepancies({
@@ -546,7 +551,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         const dayTo = dayEndMs(targetDay);
         const debugFrom = dayFrom - DEFAULT_MAX_INTERVAL_MS;
         const debugTo = Math.min(dayTo + DEFAULT_MAX_INTERVAL_MS, now);
-        const debug = debugTo > debugFrom ? await usage.queryEventsDebug(debugFrom, debugTo) : [];
+        const debug =
+          has && debugTo > debugFrom ? await usage.queryEventsDebug(debugFrom, debugTo) : [];
         if (isCurrent()) setDebugEvents(debug.slice(-120));
         console.log(
           `RAW UsageEvents debug (${targetDay}, count):`,
@@ -560,13 +566,15 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           } catch {}
           const since24h = now - 24 * 3_600_000;
           const debug24h =
-            targetDay === toDayStr(now)
-              ? debug.filter((e) => e.timeStamp >= since24h)
-              : await usage.queryEventsDebug(since24h, now);
+            !has
+              ? []
+              : targetDay === toDayStr(now)
+                ? debug.filter((e) => e.timeStamp >= since24h)
+                : await usage.queryEventsDebug(since24h, now);
           const built24h = buildUsageEvents(debug24h, {
             sinceMs: since24h,
             untilMs: now,
-            ignorePackages: launcherPkgs,
+            ignorePackages: [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launcherPkgs])],
           });
           const orphanPkgs = [
             ...new Set(built24h.dropped.filter((d) => d.reason === 'orphan_background' && d.app).map((d) => d.app!)),
@@ -697,6 +705,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         } catch {}
         const utcOffsetMinutes = -new Date().getTimezoneOffset();
         const histFrom = dayTo - 30 * 86_400_000;
+        const sharedIgnore = [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launcherPkgs])];
         const allHistSessions = await rt.store.sessions({ fromMs: dayTo - 84 * 86_400_000, toMs: dayTo });
         const histScored: ScoredSession[] = allHistSessions
           .filter((x) => x.end_ms > histFrom && x.start_ms < dayTo)
@@ -719,7 +728,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             intentLabels: updatedLabels,
             labelWindow: { fromMs: dayFrom, toMs: dayTo },
             labels,
-            ignorePackages: launcherPkgs,
+            ignorePackages: sharedIgnore,
             utcOffsetMinutes,
           }),
         );
@@ -728,7 +737,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             sessions: histScored,
             intentLabels: updatedLabels,
             labels,
-            ignorePackages: launcherPkgs,
+            ignorePackages: sharedIgnore,
             utcOffsetMinutes,
           }),
         );
@@ -737,7 +746,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             sessions: focusScored,
             intentLabels: updatedLabels,
             labels,
-            ignorePackages: launcherPkgs,
+            ignorePackages: sharedIgnore,
             utcOffsetMinutes,
           }),
         );
@@ -771,6 +780,31 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     setIntentLabels({});
     await recomputeFromLabels({});
   }, [recomputeFromLabels]);
+
+  const exportAllData = React.useCallback(async (): Promise<boolean> => {
+    try {
+      const rt = runtimeRef.current ?? (await createRuntime());
+      runtimeRef.current = rt;
+      const [exportedEvents, exportedSessions, exportedGaps, resetAudit] = await Promise.all([
+        rt.store.events(),
+        rt.store.sessions(),
+        rt.store.gaps(),
+        rt.store.lastResetAudit(),
+      ]);
+      const bundle = {
+        exportedAt: new Date().toISOString(),
+        schemaVersion: 3,
+        events: exportedEvents,
+        sessions: exportedSessions,
+        gaps: exportedGaps,
+        lastReset: resetAudit,
+      };
+      await Share.share({ message: JSON.stringify(bundle, null, 2) });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   const resetStoredData = React.useCallback(
     async (reason: StoreResetReason = 'user_delete_all') => {
@@ -993,12 +1027,24 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const totalGaps = Math.max(0, storedTotalGaps - Math.max(0, storedOrphanCount - orphanCount));
   const p3Reliable = orphanCount <= 50 && totalGaps <= 100;
 
+  const dismissPermissionPrimer = React.useCallback(() => {
+    setPermissionDismissed(true);
+  }, []);
+
+  const showPermissionPrimer = React.useCallback(() => {
+    setPermissionDismissed(false);
+  }, []);
+
   const value = React.useMemo<MirrorAppContextValue>(
     () => ({
       activeTab,
       setActiveTab,
       permission,
       setPermission,
+      permissionDismissed,
+      dismissPermissionPrimer,
+      showPermissionPrimer,
+      insets,
       loading,
       error,
       lastCollect,
@@ -1007,6 +1053,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       keyMismatch,
       dismissKeyMismatch,
       resetStoredData,
+      exportAllData,
       lastReset,
       selectedDay,
       setSelectedDay,
@@ -1069,6 +1116,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     [
       activeTab,
       permission,
+      permissionDismissed,
+      dismissPermissionPrimer,
+      showPermissionPrimer,
+      insets,
       loading,
       error,
       lastCollect,
@@ -1077,6 +1128,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       keyMismatch,
       dismissKeyMismatch,
       resetStoredData,
+      exportAllData,
       lastReset,
       selectedDay,
       dayOptions,

@@ -1542,7 +1542,25 @@ export function WhyDrawerSheet({ theme, persona }: ScreenProps) {
           theme={theme}
           score={iqs.value ?? 0}
           maxScore={iqs.max}
-          components={measured.map((factor) => ({ label: factor.label, points: factor.points, note: factor.detail, tier: factor.tier }))}
+          measuredMax={iqs.measuredMax}
+          components={measured.map((factor) => ({
+            label: factor.label,
+            points: factor.points,
+            maxPoints: factor.max,
+            note: factor.detail,
+            tier: factor.tier,
+          }))}
+          unmeasuredComponents={missing.map((factor) => ({
+            label: factor.label,
+            maxPoints: factor.max,
+            reason: factor.detail,
+            tier: factor.tier,
+          }))}
+          confidence={{
+            scorePct: Math.round(confidence.score * 100),
+            level: confidence.level,
+            explanation: confidence.explanation,
+          }}
           caveat={iqs.caveat}
         />
         <Card theme={theme}>

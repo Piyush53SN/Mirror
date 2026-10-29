@@ -84,34 +84,40 @@ test('edge: all-sessions-under-8s across 4 days unlocks history with 0 clusters 
 
 /* ------------------------------------------- detection & boundary rules --- */
 
-test('detects 3+ consecutive short sittings on same app within 60m, skips cross-app splits, long sittings, and utility/installer apps', () => {
+test('enforces Rabbit Hole spec bar: 4+ returns (5+ sittings) AND combined session > 30 min, skipping cross-app splits and utility/installer apps', () => {
   const d1 = Date.parse('2026-10-21T12:00:00.000Z');
-  const d2 = Date.parse('2026-10-22T23:10:00.000Z'); // late-night 23:10 UTC
+  const d2 = Date.parse('2026-10-22T23:05:00.000Z'); // late-night UTC
   const d3 = Date.parse('2026-10-23T14:00:00.000Z');
   const d4 = Date.parse('2026-10-24T15:00:00.000Z');
 
   const sessions = [
-    // Day 1: Reddit -> Wikipedia -> Reddit -> Reddit (broken by Wikipedia -> max consecutive Reddit is 2, NOT a cluster)
-    { id: 'd1_1', app: 'com.reddit.frontpage', startMs: d1, endMs: d1 + 2 * MIN_MS },
-    { id: 'd1_2', app: 'org.wikipedia', startMs: d1 + 10 * MIN_MS, endMs: d1 + 12 * MIN_MS },
-    { id: 'd1_3', app: 'com.reddit.frontpage', startMs: d1 + 20 * MIN_MS, endMs: d1 + 22 * MIN_MS },
-    { id: 'd1_4', app: 'com.reddit.frontpage', startMs: d1 + 40 * MIN_MS, endMs: d1 + 42 * MIN_MS },
+    // Day 1: 3 returns (4 sittings) totalling 40m (> 30m, < 4 returns) -> NOT a cluster!
+    { id: 'd1_1', app: 'com.reddit.frontpage', startMs: d1, endMs: d1 + 10 * MIN_MS },
+    { id: 'd1_2', app: 'com.reddit.frontpage', startMs: d1 + 15 * MIN_MS, endMs: d1 + 25 * MIN_MS },
+    { id: 'd1_3', app: 'com.reddit.frontpage', startMs: d1 + 30 * MIN_MS, endMs: d1 + 40 * MIN_MS },
+    { id: 'd1_4', app: 'com.reddit.frontpage', startMs: d1 + 45 * MIN_MS, endMs: d1 + 55 * MIN_MS },
 
-    // Day 2 (23:10 UTC, late night): 3 consecutive short Reddit sittings (2m, 3m, 2m, 20m apart) -> VALID CLUSTER!
-    { id: 'd2_1', app: 'com.reddit.frontpage', startMs: d2, endMs: d2 + 2 * MIN_MS },
-    { id: 'd2_2', app: 'com.reddit.frontpage', startMs: d2 + 22 * MIN_MS, endMs: d2 + 25 * MIN_MS },
-    { id: 'd2_3', app: 'com.reddit.frontpage', startMs: d2 + 45 * MIN_MS, endMs: d2 + 47 * MIN_MS },
+    // Day 2 (late night): 4 returns (5 consecutive Reddit sittings: 7m, 8m, 6m, 7m, 7m = 35m > 30m) -> VALID CLUSTER!
+    { id: 'd2_1', app: 'com.reddit.frontpage', startMs: d2, endMs: d2 + 7 * MIN_MS },
+    { id: 'd2_2', app: 'com.reddit.frontpage', startMs: d2 + 12 * MIN_MS, endMs: d2 + 20 * MIN_MS },
+    { id: 'd2_3', app: 'com.reddit.frontpage', startMs: d2 + 26 * MIN_MS, endMs: d2 + 32 * MIN_MS },
+    { id: 'd2_4', app: 'com.reddit.frontpage', startMs: d2 + 38 * MIN_MS, endMs: d2 + 45 * MIN_MS },
+    { id: 'd2_5', app: 'com.reddit.frontpage', startMs: d2 + 50 * MIN_MS, endMs: d2 + 57 * MIN_MS },
 
-    // Day 3: 3 consecutive LONG sittings on YouTube (12m each, >= 5m) -> NOT short-return cluster
-    { id: 'd3_1', app: 'com.google.android.youtube', startMs: d3, endMs: d3 + 12 * MIN_MS },
-    { id: 'd3_2', app: 'com.google.android.youtube', startMs: d3 + 30 * MIN_MS, endMs: d3 + 42 * MIN_MS },
-    { id: 'd3_3', app: 'com.google.android.youtube', startMs: d3 + 60 * MIN_MS, endMs: d3 + 72 * MIN_MS },
+    // Day 3: 4 returns (5 sittings) totalling EXACTLY 30m (6m * 5 = 30m, NOT strictly > 30m) -> NOT a cluster!
+    { id: 'd3_1', app: 'com.google.android.youtube', startMs: d3, endMs: d3 + 6 * MIN_MS },
+    { id: 'd3_2', app: 'com.google.android.youtube', startMs: d3 + 10 * MIN_MS, endMs: d3 + 16 * MIN_MS },
+    { id: 'd3_3', app: 'com.google.android.youtube', startMs: d3 + 20 * MIN_MS, endMs: d3 + 26 * MIN_MS },
+    { id: 'd3_4', app: 'com.google.android.youtube', startMs: d3 + 30 * MIN_MS, endMs: d3 + 36 * MIN_MS },
+    { id: 'd3_5', app: 'com.google.android.youtube', startMs: d3 + 40 * MIN_MS, endMs: d3 + 46 * MIN_MS },
 
-    // Day 4: 4 consecutive short opens on Calculator (utility) & Package installer -> MUST BE EXCLUDED!
-    { id: 'd4_c1', app: 'com.google.android.calculator', startMs: d4, endMs: d4 + 30_000 },
-    { id: 'd4_c2', app: 'com.google.android.calculator', startMs: d4 + 5 * MIN_MS, endMs: d4 + 5 * MIN_MS + 30_000 },
-    { id: 'd4_c3', app: 'com.google.android.calculator', startMs: d4 + 10 * MIN_MS, endMs: d4 + 10 * MIN_MS + 30_000 },
-    { id: 'd4_p1', app: 'com.miui.packageinstaller', startMs: d4 + 20 * MIN_MS, endMs: d4 + 20 * MIN_MS + 30_000 },
+    // Day 4: 5 consecutive opens > 30m on Calculator (utility) & Package installer -> MUST BE EXCLUDED!
+    { id: 'd4_c1', app: 'com.google.android.calculator', startMs: d4, endMs: d4 + 8 * MIN_MS },
+    { id: 'd4_c2', app: 'com.google.android.calculator', startMs: d4 + 10 * MIN_MS, endMs: d4 + 18 * MIN_MS },
+    { id: 'd4_c3', app: 'com.google.android.calculator', startMs: d4 + 20 * MIN_MS, endMs: d4 + 28 * MIN_MS },
+    { id: 'd4_c4', app: 'com.google.android.calculator', startMs: d4 + 30 * MIN_MS, endMs: d4 + 38 * MIN_MS },
+    { id: 'd4_c5', app: 'com.google.android.calculator', startMs: d4 + 40 * MIN_MS, endMs: d4 + 48 * MIN_MS },
+    { id: 'd4_p1', app: 'com.miui.packageinstaller', startMs: d4 + 50 * MIN_MS, endMs: d4 + 52 * MIN_MS },
     // Anchor valid session on Day 4
     { id: 'd4_wiki', app: 'org.wikipedia', startMs: d4 + 60 * MIN_MS, endMs: d4 + 70 * MIN_MS },
   ];
@@ -134,9 +140,10 @@ test('detects 3+ consecutive short sittings on same app within 60m, skips cross-
   assert.equal(res.distinctDays, 4);
   assert.equal(res.limitedHistory, true);
   assert.equal(res.clusterCount, 1);
-  assert.equal(res.totalClusterSittings, 3);
-  assert.equal(res.totalClusterMs, 7 * MIN_MS);
-  assert.equal(res.lateNightShare, 1, 'all 3 sittings occurred in 23:00-05:00 UTC');
+  assert.equal(res.totalClusterSittings, 5);
+  assert.equal(res.clusters[0].returnCount, 4);
+  assert.equal(res.totalClusterMs, 35 * MIN_MS);
+  assert.ok(res.lateNightShare > 0.9, 'cluster occurred inside 23:00-05:00 UTC');
   assert.deepEqual(res.clusterExplicitLabels, {
     intentional: 1,
     mindless: 1,
@@ -146,7 +153,8 @@ test('detects 3+ consecutive short sittings on same app within 60m, skips cross-
   });
   assert.equal(res.clusters[0].label, 'Reddit');
   assert.equal(res.clusters[0].day, '2026-10-22');
-  assert.ok(res.definitionText.includes('Search and save signals are unavailable on Tier D'));
+  assert.match(res.definitionText, /4\+ returns/);
+  assert.match(res.definitionText, /over 30 min/);
 });
 
 test('property: invariants hold across arbitrary multi-day session streams', () => {
@@ -193,7 +201,9 @@ test('property: invariants hold across arbitrary multi-day session streams', () 
         assert.ok(res.clusterExplicitLabels.total <= res.totalClusterSittings);
 
         for (const c of res.clusters) {
-          assert.ok(c.sittingCount >= 3);
+          assert.ok(c.sittingCount >= 5);
+          assert.ok(c.returnCount >= 4);
+          assert.ok(c.totalSittingMs > 30 * MIN_MS);
           assert.notEqual(c.app, 'com.google.android.calculator');
           assert.notEqual(c.app, 'com.miui.packageinstaller');
           assert.notEqual(c.app, 'dev.mirror.app');

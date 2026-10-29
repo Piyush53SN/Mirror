@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Platform, ScrollView, StatusBar, View } from 'react-native';
+import { ScrollView, StatusBar, View } from 'react-native';
 import { Backdrop, Card, Pill, SectionHeader, Text, Toolbar, rgba, useTheme } from '@mirror/ui';
 import {
   BUILD_FULL,
@@ -11,6 +11,7 @@ import {
   P3_GUARD_FULL,
 } from '../buildDetails';
 import { formatDuration, lastNDays, useMirrorApp } from '../context/MirrorAppContext';
+import { useSafeInsets } from './useSafeInsets';
 
 function formatSignedDuration(diffMs: number): string {
   if (!Number.isFinite(diffMs) || diffMs === 0) return '0s';
@@ -23,6 +24,7 @@ export function DebugView(): React.ReactElement {
     selectedDay,
     setSelectedDay,
     setShowDebug,
+    insets: contextInsets,
     dailyTotalsSource,
     validation,
     flaggedDiscrepancies = [],
@@ -52,14 +54,14 @@ export function DebugView(): React.ReactElement {
         ? 'Approximate (OS INTERVAL_DAILY bucket fallback — no UsageEvents or stored events)'
         : 'OS UsageEvents (live, clipped strictly to local day)';
 
-  const topInset =
-    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 28) + theme.space(1.5) : theme.space(6);
+  const insets = useSafeInsets(contextInsets);
+  const topInset = insets.top + theme.space(1.5);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.color.canvas }}>
       <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
       <Backdrop theme={theme} />
-      <View style={{ paddingTop: topInset }}>
+      <View style={{ paddingTop: topInset, paddingLeft: insets.left, paddingRight: insets.right }}>
         <Toolbar
           title="Debug – hidden"
           subtitle={`Selected day: ${selectedDay}`}
@@ -73,7 +75,11 @@ export function DebugView(): React.ReactElement {
       </View>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: theme.space(4), paddingTop: theme.space(2), paddingBottom: theme.space(8) }}
+        contentContainerStyle={{
+          paddingHorizontal: Math.max(theme.space(4), Math.max(insets.left, insets.right) + theme.space(4)),
+          paddingTop: theme.space(2),
+          paddingBottom: insets.bottom + theme.space(8),
+        }}
       >
         <View style={{ gap: theme.space(3) }}>
         <Card theme={theme} elevated>

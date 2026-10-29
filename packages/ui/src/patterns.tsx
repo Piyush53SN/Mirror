@@ -95,40 +95,78 @@ export function PermissionPrimer({
 
 /* -------------------------------------------------------------- WhySheet ---- */
 
-export type WhyComponent = { label: string; points: number; note?: string; tier: DataTier };
+export type WhyComponent = { label: string; points: number; maxPoints?: number; note?: string; tier: DataTier };
+export type WhyUnmeasuredComponent = { label: string; maxPoints: number; reason: string; tier: DataTier };
+export type WhyConfidenceSummary = {
+  scorePct: number;
+  level: string;
+  explanation: string;
+  reasons?: string[];
+};
 
 /**
- * "Why is this score what it is." The components must sum to the score, exactly.
- * If they do not, the sheet says so rather than hiding the discrepancy — this is
- * the component that makes every other number in the app auditable.
+ * "Why is this score what it is." The measured components must sum to the score,
+ * on a fixed composite scale (`100`) where unmeasured parts are shown separately
+ * (never zeroed into a hidden penalty and never rescaled).
  */
 export function WhySheet({
   score,
   maxScore,
+  measuredMax,
   components,
+  unmeasuredComponents,
+  confidence,
   caveat,
   theme,
 }: {
   score: number;
   maxScore: number;
+  measuredMax?: number;
   components: WhyComponent[];
+  unmeasuredComponents?: WhyUnmeasuredComponent[];
+  confidence?: WhyConfidenceSummary;
   caveat: string;
   theme?: MirrorTheme;
 }) {
   const t = withTheme(theme);
   const sum = components.reduce((total, c) => total + c.points, 0);
   const consistent = Math.abs(sum - score) < 1e-6;
-  const max = Math.max(...components.map((c) => Math.abs(c.points)), 1);
+  const max = Math.max(...components.map((c) => Math.max(Math.abs(c.points), c.maxPoints ?? 0)), 1);
+  const effectiveMeasuredMax =
+    typeof measuredMax === 'number'
+      ? measuredMax
+      : components.every((c) => typeof c.maxPoints === 'number')
+        ? components.reduce((acc, c) => acc + (c.maxPoints ?? 0), 0)
+        : undefined;
+  const unmeasuredTotal =
+    typeof effectiveMeasuredMax === 'number'
+      ? Math.max(0, maxScore - effectiveMeasuredMax)
+      : (unmeasuredComponents ?? []).reduce((acc, u) => acc + u.maxPoints, 0);
 
   return (
     <View style={{ gap: t.space(3) }}>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.space(2) }}>
-        <Text role="display" theme={t}>
-          {String(Math.round(score))}
-        </Text>
-        <Text role="label" tone="muted" theme={t}>
-          {`/ ${maxScore}`}
-        </Text>
+      <View
+        accessible
+        accessibilityRole="summary"
+        accessibilityLabel={`Score ${Math.round(score)} out of ${maxScore}${
+          typeof effectiveMeasuredMax === 'number'
+            ? `, ${effectiveMeasuredMax} points measured today and ${unmeasuredTotal} points not measured`
+            : ''
+        }`}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.space(2) }}>
+          <Text role="display" theme={t}>
+            {String(Math.round(score))}
+          </Text>
+          <Text role="label" tone="muted" theme={t}>
+            {`/ ${maxScore}`}
+          </Text>
+        </View>
+        {typeof effectiveMeasuredMax === 'number' ? (
+          <Text role="label" tone="muted" theme={t} style={{ marginTop: t.space(1) }}>
+            {`Measured today: up to ${effectiveMeasuredMax} of ${maxScore} pts · Not measured: ${unmeasuredTotal} pts`}
+          </Text>
+        ) : null}
       </View>
 
       <View style={{ gap: t.space(2) }}>
@@ -142,13 +180,15 @@ export function WhySheet({
                 </Text>
               </View>
               <Text role="label" theme={t} style={{ fontWeight: '600' }}>
-                {`${c.points >= 0 ? '+' : ''}${c.points.toFixed(1)}`}
+                {typeof c.maxPoints === 'number'
+                  ? `${c.points >= 0 ? '+' : ''}${c.points.toFixed(1)} / ${c.maxPoints}`
+                  : `${c.points >= 0 ? '+' : ''}${c.points.toFixed(1)}`}
               </Text>
             </View>
             <View style={{ height: 6, borderRadius: t.radius.pill, backgroundColor: t.glass.chip.fill, overflow: 'hidden' }}>
               <View
                 style={{
-                  width: `${Math.min(100, (Math.abs(c.points) / max) * 100)}%`,
+                  width: `${Math.min(100, (Math.abs(c.points) / (c.maxPoints && c.maxPoints > 0 ? c.maxPoints : max)) * 100)}%`,
                   height: '100%',
                   borderRadius: t.radius.pill,
                   backgroundColor: c.points < 0 ? t.color.inkMuted : t.color.anchor,
@@ -163,6 +203,66 @@ export function WhySheet({
           </View>
         ))}
       </View>
+
+      {unmeasuredComponents && unmeasuredComponents.length > 0 ? (
+        <View
+          style={{
+            borderRadius: t.radius.md,
+            padding: t.space(3),
+            borderWidth: 1,
+            borderColor: t.color.borderCard,
+            gap: t.space(2),
+          }}
+        >
+          <Text role="label" theme={t} style={{ fontWeight: '600' }}>
+            {`Not measured today (${unmeasuredTotal} of ${maxScore} pts excluded, not counted as 0)`}
+          </Text>
+          {unmeasuredComponents.map((u) => (
+            <View key={u.label} style={{ gap: 2 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: t.space(2) }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space(2), flexShrink: 1 }}>
+                  <TierBadge tier={u.tier} ghost theme={t} />
+                  <Text role="label" tone="muted" theme={t}>
+                    {u.label}
+                  </Text>
+                </View>
+                <Text role="micro" tone="muted" theme={t}>
+                  {`up to ${u.maxPoints} pts`}
+                </Text>
+              </View>
+              <Text role="micro" tone="muted" theme={t}>
+                {u.reason}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {confidence ? (
+        <View
+          style={{
+            borderRadius: t.radius.md,
+            padding: t.space(3),
+            borderWidth: 1,
+            borderColor: t.color.borderCard,
+            gap: t.space(1),
+          }}
+        >
+          <Text role="label" theme={t} style={{ fontWeight: '600' }}>
+            {`Confidence: ${confidence.scorePct}% (${confidence.level})`}
+          </Text>
+          <Text role="label" tone="muted" theme={t}>
+            {confidence.explanation}
+          </Text>
+          {confidence.reasons && confidence.reasons.length > 0
+            ? confidence.reasons.map((r) => (
+                <Text key={r} role="micro" tone="muted" theme={t}>
+                  {`· ${r}`}
+                </Text>
+              ))
+            : null}
+        </View>
+      ) : null}
 
       <Callout theme={t} tone={consistent ? 'neutral' : 'limit'}>
         {consistent

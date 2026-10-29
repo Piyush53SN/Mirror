@@ -25,8 +25,9 @@ import {
   type WhatIfResult,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
+import type { SafeInsets } from '../components/useSafeInsets';
 
-export type { DayTotalsSource, FlaggedAppDiscrepancy };
+export type { DayTotalsSource, FlaggedAppDiscrepancy, SafeInsets };
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
 export type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -106,6 +107,29 @@ export function lastNDays(n: number, baseDay = toDayStr(Date.now())): string[] {
   return out;
 }
 
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export function formatSpokenDay(day: string, isToday = false, isSelected = false): string {
+  const [y, m, d] = day.split('-').map(Number);
+  const month = MONTH_NAMES[(m ?? 1) - 1] ?? String(m);
+  const base = `${month} ${d ?? day}, ${y ?? ''}`.trim();
+  const prefix = isToday ? `Today, ${base}` : base;
+  return isSelected ? `${prefix}, selected` : prefix;
+}
+
 // Rule-based hint – duration does NOT indicate intent; UI only, never used in scoring.
 export function guessIntent(durationMs: number, _app: string): { hint: string; neverCounts: true } {
   if (durationMs > 0 && durationMs < 8000) {
@@ -132,6 +156,10 @@ export type MirrorAppContextValue = {
 
   permission: PermissionState;
   setPermission: (p: PermissionState) => void;
+  permissionDismissed?: boolean;
+  dismissPermissionPrimer?: () => void;
+  showPermissionPrimer?: () => void;
+  insets?: SafeInsets | null;
   loading: boolean;
   error: string | null;
   lastCollect: string | null;
@@ -140,6 +168,7 @@ export type MirrorAppContextValue = {
   keyMismatch: { oldKey: string; newKey: string } | null;
   dismissKeyMismatch: () => void;
   resetStoredData: (reason?: StoreResetReason) => Promise<void>;
+  exportAllData?: () => Promise<boolean>;
   lastReset?: StoreResetAudit | null;
 
   selectedDay: string;

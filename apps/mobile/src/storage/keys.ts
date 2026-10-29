@@ -61,31 +61,91 @@ function idFromKey(key: Uint8Array): string {
 
 type Cached = { keyB64: string; id: string };
 
-export function secureStoreKeys(): KeyProvider {
+export type SecureStoreKeyProvider = KeyProvider & {
+  /** Non-null once when Android Keystore invalidated an unreadable hardware key and provisioned a new one. */
+  consumeKeystoreInvalidation(): string | null;
+  /** Clear in-memory key cache so SecureStore is re-checked after a live Keystore invalidation. */
+  resetCache(): void;
+};
+
+export function secureStoreKeys(): SecureStoreKeyProvider {
   let cached: Cached | null = null;
   let pending: Promise<Cached> | null = null;
+  let invalidatedDetail: string | null = null;
+
+  async function clearSecureStoreSlots(): Promise<void> {
+    await Promise.all([
+      SecureStore.deleteItemAsync(KEY_V2_NAME).catch(() => {}),
+      SecureStore.deleteItemAsync(LEGACY_KEY_NAME).catch(() => {}),
+      SecureStore.deleteItemAsync(LEGACY_ID_NAME).catch(() => {}),
+    ]);
+  }
+
+  async function safeGetItem(name: string): Promise<{ value: string | null; invalidated: string | null }> {
+    try {
+      const value = await SecureStore.getItemAsync(name);
+      return { value, invalidated: null };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { value: null, invalidated: `${name}: ${msg}` };
+    }
+  }
+
+  async function provisionFreshKey(): Promise<Cached> {
+    const created = Crypto.getRandomBytes(32);
+    const newId = idFromKey(created);
+    const keyB64 = toBase64(created);
+    const toStore = JSON.stringify({ k: keyB64, id: newId });
+    const opts = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
+    try {
+      await SecureStore.setItemAsync(KEY_V2_NAME, toStore, opts);
+      await SecureStore.setItemAsync(LEGACY_KEY_NAME, keyB64, opts);
+      await SecureStore.setItemAsync(LEGACY_ID_NAME, newId, opts);
+    } catch {
+      // If Android Keystore rejected overwriting a permanently invalidated alias,
+      // wipe slots first and retry cleanly.
+      await clearSecureStoreSlots();
+      await SecureStore.setItemAsync(KEY_V2_NAME, toStore, opts);
+      await SecureStore.setItemAsync(LEGACY_KEY_NAME, keyB64, opts);
+      await SecureStore.setItemAsync(LEGACY_ID_NAME, newId, opts);
+    }
+    cached = { keyB64, id: newId };
+    return cached;
+  }
 
   async function ensure(): Promise<Cached> {
     if (cached) return cached;
     if (pending) return pending;
     pending = (async () => {
-      // 1. Try v2 (atomic)
-      const v2raw = await SecureStore.getItemAsync(KEY_V2_NAME);
-      if (v2raw) {
+      // 1. Try v2 (atomic) — catches Android Keystore KeyPermanentlyInvalidatedException / BadPaddingException
+      const v2 = await safeGetItem(KEY_V2_NAME);
+      if (v2.invalidated) {
+        invalidatedDetail = v2.invalidated;
+        await clearSecureStoreSlots();
+        return provisionFreshKey();
+      }
+      if (v2.value) {
         try {
-          const parsed = JSON.parse(v2raw) as { k?: string; id?: string };
+          const parsed = JSON.parse(v2.value) as { k?: string; id?: string };
           if (parsed.k && parsed.id) {
             cached = { keyB64: parsed.k, id: parsed.id };
             return cached;
           }
         } catch {
-          // corrupt v2, fall through
+          // corrupt v2 JSON, fall through
         }
       }
 
       // 2. Try legacy v1 pair – migrate if both exist
-      const legacyKey = await SecureStore.getItemAsync(LEGACY_KEY_NAME);
-      const legacyId = await SecureStore.getItemAsync(LEGACY_ID_NAME);
+      const legKeyRes = await safeGetItem(LEGACY_KEY_NAME);
+      const legIdRes = await safeGetItem(LEGACY_ID_NAME);
+      if (legKeyRes.invalidated || legIdRes.invalidated) {
+        invalidatedDetail = legKeyRes.invalidated ?? legIdRes.invalidated;
+        await clearSecureStoreSlots();
+        return provisionFreshKey();
+      }
+      const legacyKey = legKeyRes.value;
+      const legacyId = legIdRes.value;
 
       if (legacyKey && legacyId) {
         const toStore = JSON.stringify({ k: legacyKey, id: legacyId });
@@ -111,32 +171,13 @@ export function secureStoreKeys(): KeyProvider {
       }
 
       if (!legacyKey && legacyId) {
-        // Id exists but key missing – backup restore case
-        const created = Crypto.getRandomBytes(32);
-        const newId = idFromKey(created);
-        const toStore = JSON.stringify({ k: toBase64(created), id: newId });
-        await SecureStore.setItemAsync(KEY_V2_NAME, toStore, {
-          keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-        });
-        cached = { keyB64: toBase64(created), id: newId };
-        return cached;
+        invalidatedDetail = 'legacy key id present without root key (keystore cleared or partial restore)';
+        await clearSecureStoreSlots();
+        return provisionFreshKey();
       }
 
       // 3. No keys – first launch
-      const created = Crypto.getRandomBytes(32);
-      const newId = idFromKey(created);
-      const toStore = JSON.stringify({ k: toBase64(created), id: newId });
-      await SecureStore.setItemAsync(KEY_V2_NAME, toStore, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-      await SecureStore.setItemAsync(LEGACY_KEY_NAME, toBase64(created), {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-      await SecureStore.setItemAsync(LEGACY_ID_NAME, newId, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
-      cached = { keyB64: toBase64(created), id: newId };
-      return cached;
+      return provisionFreshKey();
     })();
 
     try {
@@ -155,6 +196,15 @@ export function secureStoreKeys(): KeyProvider {
     async rootKey() {
       const { keyB64 } = await ensure();
       return fromBase64(keyB64);
+    },
+    consumeKeystoreInvalidation() {
+      const out = invalidatedDetail;
+      invalidatedDetail = null;
+      return out;
+    },
+    resetCache() {
+      cached = null;
+      pending = null;
     },
   };
 }

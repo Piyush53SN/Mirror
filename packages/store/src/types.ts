@@ -145,7 +145,17 @@ export type ImportRecord = {
 export type StoreResetReason =
   | 'user_delete_all'
   | 'key_mismatch_reset'
+  | 'keystore_invalidated'
   | 'reinstall_or_storage_cleared';
+
+export type KeyIntegrityResult =
+  | { ok: true; currentKeyId: string }
+  | {
+      ok: false;
+      reason: 'key_mismatch' | 'corrupt_ciphertext';
+      currentKeyId: string;
+      message: string;
+    };
 
 export type StoreResetAudit = {
   at: number;

@@ -13,81 +13,120 @@ import {
   SectionHeader,
   Stat,
   Surface,
+  TIERS,
   Text,
+  TextField,
   TierBadge,
   useTheme,
 } from '@mirror/ui';
-import { BUILD_SHORT, P3_GUARD_SHORT } from '../buildDetails';
+import { BOUNDARY_GUARD_SHORT, BUILD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
-import { useMirrorApp } from '../context/MirrorAppContext';
+import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
+
+const ALL_TIERS = [TIERS.A, TIERS.B, TIERS.C, TIERS.D] as const;
 
 export function YouTab(): React.ReactElement {
   const theme = useTheme();
   const {
     focusWindows,
+    lastReset,
+    collectingSince,
     quality,
-    evolution,
+    p3Reliable,
     orphanCount,
     totalGaps,
-    p3Reliable,
-    intentLabels,
-    lastReset,
+    latestSyncOrphans,
     resetStoredData,
+    exportAllData,
     clearStoredLabels,
-    checkPermissionAndCollect,
-    openSettings,
-    buildTapCount,
     handleBuildTap,
+    checkPermissionAndCollect,
   } = useMirrorApp();
 
-  const [confirmMode, setConfirmMode] = React.useState<'none' | 'delete-all' | 'clear-labels'>('none');
-  const [busyAction, setBusyAction] = React.useState<'none' | 'delete-all' | 'clear-labels'>('none');
+  const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
+  const [confirmingClearLabels, setConfirmingClearLabels] = React.useState(false);
+  const [busyAction, setBusyAction] = React.useState<'none' | 'export' | 'delete' | 'clearLabels'>('none');
   const [privacyNotice, setPrivacyNotice] = React.useState<string | null>(null);
 
-  const storedLabelCount = Object.keys(intentLabels).length;
-  const decisiveLabelCount = React.useMemo(
-    () =>
-      Object.values(intentLabels).filter(
-        (lbl) => lbl === 'intentional' || lbl === 'mindless',
-      ).length,
-    [intentLabels],
-  );
-  const recordedDays = focusWindows?.distinctDays ?? evolution?.distinctDays ?? 0;
-  const historyStartDay = focusWindows?.historyStartDay ?? evolution?.historyStartDay ?? null;
+  const deletePhraseMatches = deleteConfirmText.trim() === 'DELETE';
 
-  const handleConfirmDeleteAll = React.useCallback(async () => {
-    setBusyAction('delete-all');
+  const handleExport = React.useCallback(async () => {
+    setBusyAction('export');
+    setPrivacyNotice(null);
     try {
-      await resetStoredData('user_delete_all');
-      setConfirmMode('none');
-      setPrivacyNotice('Deleted all local Mirror data on this device.');
+      const ok = exportAllData ? await exportAllData() : false;
+      setPrivacyNotice(
+        ok
+          ? 'Export bundle ready — Android share sheet opened with your local JSON export.'
+          : 'Could not export local data right now.',
+      );
     } finally {
       setBusyAction('none');
     }
-  }, [resetStoredData]);
+  }, [exportAllData]);
+
+  const handleConfirmDeleteAll = React.useCallback(async () => {
+    if (deleteConfirmText.trim() !== 'DELETE') return;
+    setBusyAction('delete');
+    setPrivacyNotice(null);
+    try {
+      await resetStoredData('user_delete_all');
+      setConfirmingDelete(false);
+      setDeleteConfirmText('');
+      setPrivacyNotice('All local Mirror data has been deleted from this device.');
+    } finally {
+      setBusyAction('none');
+    }
+  }, [deleteConfirmText, resetStoredData]);
 
   const handleConfirmClearLabels = React.useCallback(async () => {
-    setBusyAction('clear-labels');
+    setBusyAction('clearLabels');
+    setPrivacyNotice(null);
     try {
       await clearStoredLabels();
-      setConfirmMode('none');
-      setPrivacyNotice('Cleared all manual intent labels. Recorded usage history was kept.');
+      setConfirmingClearLabels(false);
+      setPrivacyNotice('All manual intent labels have been cleared from this device.');
     } finally {
       setBusyAction('none');
     }
   }, [clearStoredLabels]);
 
+  const resetDateLabel = React.useMemo(() => {
+    if (!lastReset?.at) return null;
+    if (typeof lastReset.at === 'number') {
+      return new Date(lastReset.at).toISOString().slice(0, 10);
+    }
+    return String(lastReset.at).slice(0, 10);
+  }, [lastReset]);
+
+  const resetReasonText = React.useMemo(() => {
+    if (!lastReset) return '';
+    const prev = (lastReset as { previousHistoryStartDay?: string | null }).previousHistoryStartDay;
+    const suffix = prev ? `, previous history began ${prev}` : '';
+    if (lastReset.reason === 'user_delete_all') {
+      return `you chose Delete all local data on this phone${suffix}`;
+    }
+    if (lastReset.reason === 'keystore_invalidated') {
+      return `Android Keystore key was invalidated (for example after a lock-screen change), so Mirror started a fresh encrypted store${suffix}`;
+    }
+    if (lastReset.reason === 'key_mismatch_reset') {
+      return `the encrypted database key was reset on this phone${suffix}`;
+    }
+    return `local storage was cleared or reinstalled${suffix}`;
+  }, [lastReset]);
+
   return (
     <AppShell
       title="You"
-      subtitle="Focus windows, local privacy & data quality"
+      subtitle={`Focus Windows · Privacy · Data Tiers${focusWindows?.historyStartDay ? ` (history starts ${focusWindows.historyStartDay})` : ''}`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
         </Pill>
       }
     >
-      {/* J20 Frosted Horizon Hero — Focus Windows (requires 21+ local days & 5+ sittings per cell) */}
+      {/* Focus Windows — observed timing blocks (requires 21 days AND 5 sittings/cell) */}
       <Surface
         radius="hero"
         theme={theme}
@@ -101,208 +140,136 @@ export function YouTab(): React.ReactElement {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
           <View style={{ flex: 1, gap: theme.space(0.5) }}>
             <Text role="micro" tone="muted" theme={theme}>
-              OBSERVED TIMING BLOCKS · TIER D
+              OBSERVED TIMING BLOCKS · 21 DAYS & 5 SITTINGS/CELL
             </Text>
             <Text role="title-lg" theme={theme}>
               Focus Windows
             </Text>
             <Text role="label" tone="muted" theme={theme}>
-              {focusWindows && focusWindows.ready
-                ? `${focusWindows.distinctDays} days (${focusWindows.historyStartDay} to ${focusWindows.lastDay}) · ${focusWindows.cellsMeetingSampleFloor} cells at 5+ sittings`
-                : 'requires 3 weeks (21+ days) and 5+ sittings per cell'}
+              {focusWindows?.ready
+                ? `Observed across ${focusWindows.distinctDays} days (${focusWindows.cellsMeetingSampleFloor} qualifying cells)`
+                : focusWindows?.progressLabel ?? 'Needs 3 weeks of data and ≥5 sittings per cell'}
             </Text>
           </View>
           <TierBadge tier="D" theme={theme} />
         </View>
 
         <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-          <Chip static label="Based on usage patterns only" theme={theme} />
-          <Chip static label="Never blocks or nudges" theme={theme} />
-          <ConfidenceChip tiers={['D']} label="Tier D · Descriptive timing only" theme={theme} />
+          <Chip static label="Descriptive · non-clinical" theme={theme} />
+          <ConfidenceChip tiers={['D']} label="21d & ≥5 sittings/cell" theme={theme} />
         </View>
 
         {!p3Reliable ? (
-          <EmptyState
-            title="Needs reliable session boundaries"
-            body={P3_GUARD_SHORT(orphanCount, totalGaps)}
-            theme={theme}
-          />
-        ) : !focusWindows ? (
-          <EmptyState
-            title="Needs 3 weeks (21+ days) of history"
-            body="Focus Windows computes observed phone-timing blocks once multi-week local sitting history is recorded."
-            theme={theme}
-          />
-        ) : (
-          <View style={{ gap: theme.space(3) }}>
-            <View
-              style={{
-                borderRadius: theme.radius.md,
-                backgroundColor: theme.glass.card.fill,
-                borderWidth: 1,
-                borderColor: theme.color.borderCard,
-                padding: theme.space(3),
-                gap: theme.space(2),
-              }}
-            >
-              <Meter
-                theme={theme}
-                value={Math.min(1, Math.max(0, focusWindows.distinctDays / 21))}
-                label="Multi-week history threshold"
-                caption={`${focusWindows.distinctDays} / 21 days`}
-                tone={focusWindows.ready ? 'anchor' : 'muted'}
-              />
-            </View>
-
-            {!focusWindows.ready ? (
-              <EmptyState
-                title={focusWindows.emptyStateTitle ?? 'Needs 3 weeks of data and 5 sittings per cell'}
-                body={`${focusWindows.emptyStateBody ?? ''} Progress: ${focusWindows.progressLabel}`}
-                theme={theme}
-              />
-            ) : (
+          <Callout theme={theme} tone="limit">
+            {BOUNDARY_GUARD_SHORT(orphanCount, totalGaps)}
+          </Callout>
+        ) : !focusWindows || !focusWindows.ready ? (
+          <View style={{ gap: theme.space(2.5) }}>
+            <EmptyState
+              title={`Coming with more data — ${focusWindows?.emptyStateTitle ?? 'Needs 3 weeks of data and 5 sittings per cell'}`}
+              body={
+                focusWindows?.emptyStateBody ??
+                'Focus Windows stay hidden until Mirror has at least 21 local days of history and 5 or more sittings in a weekday × 4-hour block.'
+              }
+              theme={theme}
+            />
+            {focusWindows ? (
               <View
                 style={{
                   borderRadius: theme.radius.md,
-                  backgroundColor: theme.glass.card.fill,
+                  backgroundColor: theme.color.card,
                   borderWidth: 1,
                   borderColor: theme.color.borderCard,
                   padding: theme.space(3),
                   gap: theme.space(2),
                 }}
               >
+                <Meter
+                  theme={theme}
+                  value={Math.min(1, focusWindows.distinctDays / focusWindows.minDays)}
+                  label="History progress (21-day requirement)"
+                  caption={`${focusWindows.distinctDays} / ${focusWindows.minDays} days`}
+                  tone="anchor"
+                />
                 <Text role="micro" tone="muted" theme={theme}>
-                  {focusWindows.progressLabel}
+                  {`${focusWindows.progressLabel}${focusWindows.historyStartDay ? ` · history starts ${focusWindows.historyStartDay}` : ''}`}
                 </Text>
-                {focusWindows.suggestedWindows.length === 0 ? (
-                  <Text role="body" theme={theme}>
-                    {`0 weekday × 4-hour blocks matched the low-switching pattern across ${focusWindows.cellsMeetingSampleFloor} qualified cell${focusWindows.cellsMeetingSampleFloor === 1 ? '' : 's'} (requires 15+ min active, 80%+ sittings of 8 s or longer, and at most 12 switches/h).`}
-                  </Text>
-                ) : (
-                  focusWindows.suggestedWindows.map((w) => (
-                    <Meter
-                      key={w.cellId}
-                      theme={theme}
-                      value={w.sustainedShare}
-                      label={`${w.label} · ${w.sessionCount} sittings (${w.distinctDays}d)`}
-                      caption={`${Math.round(w.sustainedShare * 100)}% 8s+ · ${w.switchesPerHour !== null ? `${w.switchesPerHour}/h` : 'rate hidden'}`}
-                      tone="anchor"
-                    />
-                  ))
-                )}
               </View>
-            )}
-
+            ) : null}
+          </View>
+        ) : (
+          <View style={{ gap: theme.space(2.5) }}>
+            <Text role="micro" tone="muted" theme={theme}>
+              {focusWindows.progressLabel}
+            </Text>
             <View
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.glass.card.fill,
+                backgroundColor: theme.color.card,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
-                gap: theme.space(1),
+                gap: theme.space(2.5),
               }}
             >
-              <Text role="label" theme={theme}>
-                What Tier D can show
-              </Text>
-              {focusWindows.capabilities.tierDCanShow.map((line, idx) => (
-                <Text key={`fw-can-${idx}`} role="micro" tone="muted" theme={theme}>
-                  {`• ${line}`}
-                </Text>
-              ))}
-              <Text role="label" theme={theme} style={{ marginTop: theme.space(1) }}>
-                What Tier D cannot show
-              </Text>
-              {focusWindows.capabilities.tierDCannotShow.map((line, idx) => (
-                <Text key={`fw-cannot-${idx}`} role="micro" tone="muted" theme={theme}>
-                  {`• ${line}`}
-                </Text>
-              ))}
-              <Text role="micro" tone="muted" theme={theme} style={{ marginTop: theme.space(1) }}>
-                {focusWindows.capabilities.nonDiagnosticRule}
-              </Text>
+              {(() => {
+                const windows = focusWindows.suggestedWindows;
+                const maxHoldMs = Math.max(1, ...windows.map((w) => w.totalSittingMs || 1));
+                return windows.map((w, idx) => (
+                  <View key={w.cellId} style={{ gap: theme.space(1.5) }}>
+                    {idx > 0 ? <Divider theme={theme} /> : null}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: theme.space(2) }}>
+                      <Text role="label" theme={theme}>
+                        {`${idx + 1}. ${w.label}`}
+                      </Text>
+                      <Text role="micro" tone="muted" theme={theme}>
+                        {`${w.sessionCount} sittings across ${w.distinctDays}d`}
+                      </Text>
+                    </View>
+                    <Meter
+                      theme={theme}
+                      value={(w.totalSittingMs || 0) / maxHoldMs}
+                      label="Block sitting span"
+                      caption={`${formatDuration(w.totalSittingMs || 0)}${w.switchesPerHour !== null ? ` · ${w.switchesPerHour.toFixed(1)} switches/hr` : ''}`}
+                      tone={idx === 0 ? 'anchor' : 'muted'}
+                    />
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {`${Math.round(w.sustainedShare * 100)}% sustained (≥8 s)${w.explicitLabels && w.explicitLabels.decisive > 0 ? ` · ${w.explicitLabels.intentional}/${w.explicitLabels.decisive} user-labelled intentional` : ''}`}
+                    </Text>
+                  </View>
+                ));
+              })()}
             </View>
+            <Callout theme={theme} tone="neutral">
+              {focusWindows.capabilities.nonDiagnosticRule}
+            </Callout>
           </View>
         )}
       </Surface>
 
-      {/* Frosted Glass Card — Local Data & Privacy (two-step delete all data + clear manual labels) */}
+      {/* Local Data & Privacy Controls (Export + Clear Labels + Typed Delete All + Reset Audit) */}
       <Card theme={theme} style={{ marginBottom: 0 }}>
         <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
           <Text role="micro" tone="muted" theme={theme}>
-            ON-DEVICE STORAGE · ENCRYPTED SQLITE
+            ON-DEVICE STORAGE · ZERO CLOUD SYNC
           </Text>
           <SectionHeader
             theme={theme}
             title="Local Data & Privacy"
-            caption="all data stays on this phone — clear manual labels or wipe the store anytime"
+            caption={`encrypted SQLite on this phone${collectingSince ? ` · last sync ${collectingSince}` : ''}`}
           />
         </View>
 
         <View style={{ gap: theme.space(2.5) }}>
-          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-            <Chip static label="Tier D active · OS usage" theme={theme} />
-            <Chip static label="Tiers A/B/C unavailable in v0.1" theme={theme} />
-            <Chip static label="Backup & OTA disabled" theme={theme} />
-          </View>
+          <Text role="body" theme={theme}>
+            Mirror stores every event, derived sitting, and explicit intent label solely on this phone in an AES-256-GCM encrypted SQLite database. Release builds declare zero network permissions.
+          </Text>
 
-          <View
-            style={{
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.glass.card.fill,
-              borderWidth: 1,
-              borderColor: theme.color.borderCard,
-              padding: theme.space(3),
-              gap: theme.space(2),
-            }}
-          >
-            <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
-              <View style={{ flex: 1, minWidth: 120 }}>
-                <Stat
-                  value={recordedDays > 0 ? `${recordedDays} ${recordedDays === 1 ? 'day' : 'days'}` : 'Today'}
-                  label="Local history"
-                  hint={
-                    lastReset
-                      ? `History reset on ${lastReset.day}`
-                      : historyStartDay
-                        ? `History starts ${historyStartDay}`
-                        : 'Encrypted SQLite'
-                  }
-                  theme={theme}
-                />
-              </View>
-              <View style={{ flex: 1, minWidth: 120 }}>
-                <Stat
-                  value={String(storedLabelCount)}
-                  label={storedLabelCount === 1 ? 'Manual label' : 'Manual labels'}
-                  hint={storedLabelCount > 0 ? `${decisiveLabelCount} decisive` : 'None stored'}
-                  theme={theme}
-                />
-              </View>
-            </View>
-            {lastReset ? (
-              <Text role="micro" tone="muted" theme={theme}>
-                {`History reset on ${lastReset.day} (${
-                  lastReset.reason === 'key_mismatch_reset'
-                    ? 'key mismatch after reinstall'
-                    : lastReset.reason === 'reinstall_or_storage_cleared'
-                      ? 'reinstall or cleared storage'
-                      : 'manual delete-all'
-                }${
-                  lastReset.previousHistoryStartDay
-                    ? `, previous history began ${lastReset.previousHistoryStartDay}`
-                    : ''
-                }).`}
-              </Text>
-            ) : null}
-            <Divider theme={theme} />
-            <Text role="micro" tone="muted" theme={theme}>
-              {
-                'Records are sealed locally with a device-bound SecureStore key (allowBackup: false, telemetry: false, INTERNET stripped in release). Export file import (Tier B), browser extension (Tier C), and API connectors (Tier A) are disabled in v0.1.'
-              }
-            </Text>
-          </View>
+          {lastReset && resetDateLabel ? (
+            <Callout theme={theme} tone="neutral">
+              {`History reset on ${resetDateLabel} (${resetReasonText}). Analytics reflect only data collected after that reset.`}
+            </Callout>
+          ) : null}
 
           {privacyNotice ? (
             <Callout theme={theme} tone="neutral">
@@ -310,41 +277,54 @@ export function YouTab(): React.ReactElement {
             </Callout>
           ) : null}
 
-          {confirmMode === 'none' ? (
-            <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+            <Pill
+              theme={theme}
+              variant="secondary"
+              disabled={busyAction !== 'none'}
+              onPress={handleExport}
+            >
+              {busyAction === 'export' ? 'Preparing export…' : 'Export all local data (JSON)'}
+            </Pill>
+
+            {!confirmingClearLabels ? (
               <Pill
                 testID="clear-labels-trigger"
                 theme={theme}
-                variant="secondary"
-                disabled={storedLabelCount === 0 || busyAction !== 'none'}
-                onPress={() => {
-                  setPrivacyNotice(null);
-                  setConfirmMode('clear-labels');
-                }}
-              >
-                {`Clear manual labels (${storedLabelCount})`}
-              </Pill>
-              <Pill
-                testID="delete-all-data-trigger"
-                theme={theme}
-                variant="secondary"
+                variant="quiet"
                 disabled={busyAction !== 'none'}
                 onPress={() => {
                   setPrivacyNotice(null);
-                  setConfirmMode('delete-all');
+                  setConfirmingClearLabels(true);
+                }}
+              >
+                Clear manual labels
+              </Pill>
+            ) : null}
+
+            {!confirmingDelete ? (
+              <Pill
+                testID="delete-all-data-trigger"
+                theme={theme}
+                variant="quiet"
+                disabled={busyAction !== 'none'}
+                onPress={() => {
+                  setPrivacyNotice(null);
+                  setDeleteConfirmText('');
+                  setConfirmingDelete(true);
                 }}
               >
                 Delete all local data
               </Pill>
-            </View>
-          ) : null}
+            ) : null}
+          </View>
 
-          {confirmMode === 'clear-labels' ? (
+          {confirmingClearLabels ? (
             <View
               testID="clear-labels-confirm-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.glass.card.fill,
+                backgroundColor: theme.color.card,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
@@ -352,14 +332,12 @@ export function YouTab(): React.ReactElement {
               }}
             >
               <Text role="label" theme={theme}>
-                {`Clear ${storedLabelCount} manual intent label${storedLabelCount === 1 ? '' : 's'}?`}
+                Clear all manual intent labels?
               </Text>
               <Text role="micro" tone="muted" theme={theme}>
-                {
-                  'Removes all manual intentional, mindless, and unsure labels across every day. Recorded sessions and OS foreground totals are kept.'
-                }
+                Your recorded app sittings and screen-time history remain intact; only your manual Intentional / Mindless / Not sure tags are removed.
               </Text>
-              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Pill
                   testID="clear-labels-confirm-btn"
                   theme={theme}
@@ -367,62 +345,64 @@ export function YouTab(): React.ReactElement {
                   disabled={busyAction !== 'none'}
                   onPress={handleConfirmClearLabels}
                 >
-                  {busyAction === 'clear-labels' ? 'Clearing labels…' : 'Confirm clear labels'}
+                  {busyAction === 'clearLabels' ? 'Clearing…' : 'Confirm clear labels'}
                 </Pill>
-                <Pill
-                  testID="clear-labels-cancel-btn"
-                  theme={theme}
-                  variant="secondary"
-                  disabled={busyAction !== 'none'}
-                  onPress={() => setConfirmMode('none')}
-                >
+                <LinkButton theme={theme} onPress={() => setConfirmingClearLabels(false)}>
                   Cancel
-                </Pill>
+                </LinkButton>
               </View>
             </View>
           ) : null}
 
-          {confirmMode === 'delete-all' ? (
+          {confirmingDelete ? (
             <View
               testID="delete-all-data-confirm-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.glass.card.fill,
+                backgroundColor: theme.color.card,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
                 gap: theme.space(2),
               }}
             >
-              <Callout theme={theme} tone="limit">
-                {`Confirm permanent deletion? This wipes Mirror's encrypted SQLite database on this phone — all multi-day history, sessions, collection cursors, gap diagnostics, and ${storedLabelCount} manual label${storedLabelCount === 1 ? '' : 's'}.`}
-              </Callout>
-              <Text role="micro" tone="muted" theme={theme}>
-                {
-                  'Note: if Android Usage Access remains granted, the next sync reads only Android’s rolling 24-hour OS window like a fresh install. Revoke Usage Access in Settings first if you want collection stopped completely.'
-                }
+              <Text role="label" theme={theme}>
+                Delete all local data on this phone?
               </Text>
+              <Text role="micro" tone="muted" theme={theme}>
+                This permanently erases all stored usage events, derived sittings, data-gap records, and explicit intent labels inside Mirror, and records today as your local reset date. Android’s own UsageStats history in Settings is untouched.
+              </Text>
+              <Text role="micro" theme={theme}>
+                Type DELETE in capital letters to enable permanent deletion:
+              </Text>
+              <TextField
+                testID="delete-all-data-input"
+                value={deleteConfirmText}
+                onChangeText={setDeleteConfirmText}
+                placeholder="Type DELETE"
+                autoCapitalize="characters"
+                accessibilityLabel="Type DELETE to confirm deleting all local data"
+                theme={theme}
+              />
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
                 <Pill
                   testID="delete-all-data-confirm-btn"
                   theme={theme}
-                  variant="primary"
-                  disabled={busyAction !== 'none'}
+                  variant={deletePhraseMatches ? 'primary' : 'quiet'}
+                  disabled={busyAction !== 'none' || !deletePhraseMatches}
                   onPress={handleConfirmDeleteAll}
                 >
-                  {busyAction === 'delete-all' ? 'Deleting…' : 'Confirm delete everything'}
+                  {busyAction === 'delete' ? 'Deleting…' : 'Yes, delete everything'}
                 </Pill>
-                <Pill
+                <LinkButton
                   testID="delete-all-data-cancel-btn"
                   theme={theme}
-                  variant="secondary"
-                  disabled={busyAction !== 'none'}
-                  onPress={() => setConfirmMode('none')}
+                  onPress={() => {
+                    setDeleteConfirmText('');
+                    setConfirmingDelete(false);
+                  }}
                 >
                   Cancel
-                </Pill>
-                <LinkButton theme={theme} onPress={openSettings}>
-                  Open usage settings
                 </LinkButton>
               </View>
             </View>
@@ -430,98 +410,122 @@ export function YouTab(): React.ReactElement {
         </View>
       </Card>
 
-      {/* Frosted Glass Card — Data quality & P3 session boundary diagnostics */}
+      {/* Tier Matrix & Connector Availability */}
       <Card theme={theme} style={{ marginBottom: 0 }}>
         <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
           <Text role="micro" tone="muted" theme={theme}>
-            COLLECTOR DIAGNOSTICS · HARD GATE ORPHANS ≤50
+            FOUR DATA TIERS · V0.1 AVAILABILITY
           </Text>
           <SectionHeader
             theme={theme}
-            title="Data quality & session boundaries"
-            caption="daily totals come from OS stats; P3 cards require clean boundaries"
+            title="Data sources & privacy tiers"
+            caption="each tier makes an explicit trade-off between richness and access"
           />
         </View>
 
         <View style={{ gap: theme.space(2.5) }}>
-          <View
-            style={{
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.glass.card.fill,
-              borderWidth: 1,
-              borderColor: theme.color.borderCard,
-              padding: theme.space(3),
-              gap: theme.space(1.5),
-            }}
-          >
-            <Text role="body" theme={theme}>
-              {quality?.sentence ?? 'No collection gaps recorded.'}
-            </Text>
-          </View>
-
-          <View
-            style={{
-              borderRadius: theme.radius.md,
-              backgroundColor: theme.glass.card.fill,
-              borderWidth: 1,
-              borderColor: theme.color.borderCard,
-              padding: theme.space(3),
-              gap: theme.space(1.5),
-            }}
-          >
-            {!p3Reliable ? (
-              <>
-                <Text role="label" theme={theme}>
-                  {`Hard gate: needs more reliable sessions — orphans ${orphanCount} (must be ≤50), total unmatched/gap events ${totalGaps} (must be ≤100)`}
-                </Text>
-                <Text role="micro" tone="muted" theme={theme}>
-                  {P3_GUARD_SHORT(orphanCount, totalGaps)}
-                </Text>
-                <Callout theme={theme} tone="limit">
-                  {
-                    'Hard gate enforced: P3 blocked until orphans ≤50. Per-app totals from day-clipped OS foreground events remain available on Home. Labeling optional, only explicit labels count, hint never counts.'
+          {ALL_TIERS.map((meta, idx) => (
+            <View key={meta.letter} style={{ gap: theme.space(1.5) }}>
+              {idx > 0 ? <Divider theme={theme} /> : null}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.space(2) }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(1.5), flexShrink: 1 }}>
+                  <TierBadge tier={meta.letter} theme={theme} />
+                  <Text role="label" theme={theme}>
+                    {`Tier ${meta.letter} · ${meta.name}`}
+                  </Text>
+                </View>
+                <Chip
+                  static
+                  label={
+                    meta.letter === 'D'
+                      ? 'Active on this phone'
+                      : meta.letter === 'A'
+                        ? 'Explicit labels active'
+                        : 'Not in v0.1'
                   }
-                </Callout>
-              </>
-            ) : (
-              <>
-                <Text role="label" theme={theme}>
-                  {`Gate open — orphans ${orphanCount}, unmatched/gap events ${totalGaps}`}
-                </Text>
+                  theme={theme}
+                />
+              </View>
+              <Text role="micro" tone="muted" theme={theme}>
+                {meta.how}
+              </Text>
+              {!meta.connectorAvailable ? (
                 <Text role="micro" tone="muted" theme={theme}>
-                  {evolution && evolution.hasHistory && evolution.rows.length > 0
-                    ? `Interest Evolution (J4), Discovery Journey (J9), Rabbit Hole (J11), What-if Simulator (J18, Estimates), and Focus Windows (J20, ${focusWindows?.ready ? 'active' : `${focusWindows?.distinctDays ?? evolution.distinctDays}/21 days`}) are active across Insights, Journey, and You (${evolution.distinctDays} days since ${evolution.historyStartDay}).`
-                    : `What-if Simulator (J18, Estimates) is in Insights, Focus Windows (J20 empty state: ${focusWindows?.distinctDays ?? evolution?.distinctDays ?? 0}/21 days) is above, and 3-day cards (J4, J9, J11) show progress empty states in Journey until ${evolution?.minDays ?? 3}+ days of session history are collected (${evolution?.distinctDays ?? 0} of ${evolution?.minDays ?? 3} day${(evolution?.distinctDays ?? 0) === 1 ? '' : 's'} so far).`}
+                  {meta.letter === 'B'
+                    ? 'Manual file import is not enabled in v0.1 yet.'
+                    : 'No OAuth or cloud connectors exist in v0.1 — Mirror makes zero network calls.'}
                 </Text>
-              </>
-            )}
-          </View>
-
-          <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-            <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
-              Refresh
-            </Pill>
-            <LinkButton theme={theme} onPress={openSettings}>
-              Open usage settings
-            </LinkButton>
-          </View>
+              ) : null}
+            </View>
+          ))}
         </View>
       </Card>
 
-      {/* What this build is — 7-tap debug entry preserved */}
+      {/* Data Quality & Session Boundary Health */}
+      <Card theme={theme} style={{ marginBottom: 0 }}>
+        <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
+          <Text role="micro" tone="muted" theme={theme}>
+            COLLECTION INTEGRITY · HONEST GAPS
+          </Text>
+          <SectionHeader
+            theme={theme}
+            title="Data quality & session boundaries"
+            caption={p3Reliable ? 'boundaries clean (unmatched ≤50, total ≤100)' : 'boundary guard active'}
+          />
+        </View>
+
+        <View style={{ gap: theme.space(2) }}>
+          <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
+            <Stat
+              value={String(orphanCount)}
+              label="Unmatched events"
+              hint="Threshold ≤50"
+              theme={theme}
+            />
+            <Stat
+              value={String(totalGaps)}
+              label="Total boundary events"
+              hint="Threshold ≤100"
+              theme={theme}
+            />
+            {quality && quality.measuredGapMs > 0 ? (
+              <Stat
+                value={formatDuration(quality.measuredGapMs)}
+                label="Unmeasured span"
+                hint="Recorded collection gaps"
+                theme={theme}
+              />
+            ) : null}
+          </View>
+
+          <Text role="micro" tone="muted" theme={theme}>
+            {quality?.sentence ?? 'Zero collection gaps or unmatched boundary events on the selected day.'}
+          </Text>
+
+          {latestSyncOrphans && latestSyncOrphans.total > 0 ? (
+            <Text role="micro" tone="muted" theme={theme}>
+              {`Latest sync unmatched closes (${latestSyncOrphans.total}): ${latestSyncOrphans.byApp
+                .map((item) => `${item.label} (${item.count})`)
+                .join(', ')}`}
+            </Text>
+          ) : null}
+        </View>
+      </Card>
+
+      {/* What this build is — silent 7-tap unlocks hidden DebugView without a visible hint */}
       <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`What this build is. Tap 7 times for debug, currently ${buildTapCount} of 7`}
-        style={{ minHeight: theme.size.touchTarget }}
         onPress={handleBuildTap}
+        accessibilityRole="button"
+        accessibilityLabel="What this build is"
+        style={{ minHeight: theme.size.touchTarget, minWidth: theme.size.touchTarget }}
       >
         <Card theme={theme} style={{ marginBottom: 0 }}>
           <SectionHeader
             theme={theme}
             title="What this build is"
-            caption={`Tap 7 times for debug – build ${buildTapCount}/7`}
+            caption="On-device architecture & privacy posture"
           />
-          <Text role="micro" tone="muted" theme={theme}>
+          <Text role="body" theme={theme}>
             {BUILD_SHORT}
           </Text>
         </Card>

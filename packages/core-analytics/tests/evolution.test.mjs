@@ -66,7 +66,9 @@ test('scoreIqs confidence: 39 unspanned orphan gaps never say "No collection gap
     approximate: true,
   });
 
-  assert.equal(score.max, 55, 'with 5+ sittings and 15+ min active (without 5 labels or vectors), usage-only max is 55');
+  assert.equal(score.max, 100, 'fixed composite scale is 100');
+  assert.equal(score.measuredMax, 55, 'with 5+ sittings and 15+ min active (without 5 labels or vectors), usage-only measuredMax is 55');
+  assert.equal(score.unmeasuredMax, 45);
   assert.ok(!score.confidence.reasons.some((r) => /No collection gaps/i.test(r)));
   assert.ok(score.confidence.reasons.some((r) => /39 unmatched OS events recorded/i.test(r)));
   assert.ok(!score.confidence.reasons.some((r) => /0 min unmeasured/i.test(r)));
