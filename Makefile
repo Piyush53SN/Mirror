@@ -7,7 +7,7 @@
 NPM ?= npm
 NODE ?= node
 
-.PHONY: help install verify test typecheck lint security android-manifest android-build release-stage1 ota-guard offline-test changelog gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
+.PHONY: help install verify test typecheck lint security android-manifest android-build release-stage1 release-check-tag release-verify-signing ota-guard offline-test changelog gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
 
 help:
 	@echo "make install             install node deps"
@@ -19,6 +19,8 @@ help:
 	@echo "make android-manifest    audit the merged AndroidManifest.xml (exit 2 if nothing is built)"
 	@echo "make android-build       Gradle debug build + merged-manifest gate (needs JDK + Android SDK)"
 	@echo "make release-stage1      Stage 1 preflight; signing itself is MANUAL (no keystore here)"
+	@echo "make release-check-tag   verify TAG=vX.Y.Z matches all repo manifests + build.gradle"
+	@echo "make release-verify-signing  verify ANDROID_KEYSTORE_* secrets exist and decode cleanly"
 	@echo "make ota-guard           OTA guard – updates disabled/narrow-only, no new permissions/collection"
 	@echo "make offline-test        offline test – works with backend off, no secrets, no analytics"
 	@echo "make changelog           generate CHANGELOG.md since previous tag"
@@ -60,6 +62,13 @@ release-stage1:
 	$(NODE) scripts/android/release-preflight.mjs
 	$(NODE) scripts/android/check-ota-guard.mjs
 	$(NODE) scripts/android/check-offline.mjs
+
+release-check-tag:
+	@test -n "$(TAG)" || (echo "Usage: make release-check-tag TAG=v0.1.0" >&2 && exit 1)
+	$(NODE) scripts/release/bump-version.mjs --check --tag "$(TAG)"
+
+release-verify-signing:
+	$(NODE) scripts/release/verify-signing-env.mjs --allow-store-file
 
 ota-guard:
 	$(NODE) scripts/android/check-ota-guard.mjs

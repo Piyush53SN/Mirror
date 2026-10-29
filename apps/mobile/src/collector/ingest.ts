@@ -171,28 +171,10 @@ export async function ingestRecentDays(store: MirrorStore, now: number, utcOffse
 
   const results: IngestDayResult[] = [];
   try {
+    // Strictly one-time, idempotent repair gated by `session_repair_v29` in `meta`.
     await repairSessionsFromStoredEvents(store, now, utcOffsetMinutes);
 
-    let dayCounts = await store.dayRowCounts(utcOffsetMinutes);
-    if (dayCounts.some((row) => row.bgEvents > row.fgEvents)) {
-      const allStored = await store.events();
-      const missingFg = recoverMissingForegroundEvents(
-        allStored.map((row) => ({
-          id: row.id,
-          kind: row.kind,
-          origin: typeof row.payload.origin === 'string' ? row.payload.origin : undefined,
-          app: typeof row.payload.app === 'string' ? row.payload.app : undefined,
-          at: typeof row.payload.at === 'string' ? row.payload.at : new Date(row.at).toISOString(),
-          duration_ms:
-            typeof row.payload.duration_ms === 'number' ? row.payload.duration_ms : undefined,
-        })),
-      );
-      if (missingFg.length > 0) {
-        await store.appendEvents(missingFg);
-        dayCounts = await store.dayRowCounts(utcOffsetMinutes);
-      }
-    }
-
+    const dayCounts = await store.dayRowCounts(utcOffsetMinutes);
     for (const row of dayCounts) {
       if (row.day >= dayBefore) continue;
       const hasUsageEvents = row.fgEvents > 0 || row.bgEvents > 0 || row.otherEvents > 0;

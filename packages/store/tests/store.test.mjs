@@ -928,6 +928,42 @@ test('(c) one-time non-destructive session repair restores 4f27118 sub-second tr
     assert.ok(snap);
     assert.equal(snap.recoveredFgEvents, 121);
     assert.equal(snap.rebuiltDays, 10);
+
+    // 3. One-time + idempotency guarantees:
+    //    (a) Once `session_repair_v29` is recorded in `meta`, subsequent `repairSessionsFromStoredEvents`
+    //        and `ingestRecentDays` calls short-circuit without re-scanning all encrypted events,
+    //        never delete rows, and keep the original repair snapshot + session IDs untouched.
+    let fullTableEventScans = 0;
+    const origEvents = s.events.bind(s);
+    s.events = async (opts) => {
+      if (opts === undefined) {
+        fullTableEventScans += 1;
+      }
+      return origEvents(opts);
+    };
+
+    const snap2 = await mobileIngest.repairSessionsFromStoredEvents(s, nowOct29 + 3_600_000, IST_OFFSET);
+    assert.deepEqual(snap2, snap, 'second repair call returns persisted one-time snapshot');
+    await mobileIngest.ingestRecentDays(s, nowOct29 + 3_600_000, IST_OFFSET);
+    assert.equal(fullTableEventScans, 0, 'subsequent syncs do not run full-table event repair scans');
+    assert.equal((await s.counts()).total, 320, 'event count stays identical after repeated syncs');
+    assert.deepEqual(await s.dayRowCounts(IST_OFFSET), repairedCounts, 'per-day row counts stay identical');
+
+    //    (b) Even if re-evaluated directly against already-repaired events (e.g. crash before `meta` write),
+    //        `recoverMissingForegroundEvents` emits 0 candidates and `appendEvents` inserts 0 duplicates.
+    s.events = origEvents;
+    const repairedStored = await s.events();
+    const retryCandidates = core.recoverMissingForegroundEvents(
+      repairedStored.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        origin: row.payload.origin,
+        app: row.payload.app,
+        at: row.payload.at,
+        duration_ms: row.payload.duration_ms,
+      })),
+    );
+    assert.equal(retryCandidates.length, 0, 'recovery is strictly idempotent once pairs are present');
   } finally {
     close();
   }

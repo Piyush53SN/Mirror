@@ -5,13 +5,14 @@
  * (100% offline — never requires registry network access).
  *
  * Usage:
- *   node scripts/release/bump-version.mjs --check [--root <dir>]
- *   node scripts/release/bump-version.mjs <semver> [--version-code <int>] [--root <dir>]
+ *   node scripts/release/bump-version.mjs --check [--tag <vX.Y.Z>] [--root <dir>]
+ *   node scripts/release/bump-version.mjs <semver|vSemver> [--version-code <int>] [--root <dir>]
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const TAG_RE = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
 
 const RELEASE_JSON_MANIFESTS = [
   'package.json',
@@ -26,27 +27,30 @@ const LOCKFILE_WORKSPACE_KEYS = ['', 'apps/mobile', 'apps/extension', 'packages/
 function parseArgs(argv) {
   let root = resolve(import.meta.dirname, '..', '..');
   let check = false;
+  let tag = null;
   let version = null;
   let versionCode = null;
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === '--check') {
       check = true;
+    } else if (a === '--tag') {
+      tag = argv[++i] ?? '';
     } else if (a === '--root') {
       root = resolve(argv[++i]);
     } else if (a === '--version-code') {
       versionCode = Number(argv[++i]);
     } else if (!a.startsWith('-') && version === null) {
-      version = a;
+      version = a.startsWith('v') ? a.slice(1) : a;
     } else {
       throw new Error(`Unknown argument: ${a}`);
     }
   }
-  return { root, check, version, versionCode };
+  return { root, check, tag, version, versionCode };
 }
 
 function main() {
-  const { root, check, version, versionCode } = parseArgs(process.argv.slice(2));
+  const { root, check, tag, version, versionCode } = parseArgs(process.argv.slice(2));
   const appJsonPath = join(root, 'apps/mobile/app.json');
   if (!existsSync(appJsonPath)) {
     console.error(`Missing ${appJsonPath}`);
@@ -99,13 +103,21 @@ function main() {
         failures.push(`apps/mobile/android/app/build.gradle versionName=${mName?.[1]} != ${currentVersion}`);
       }
     }
+    if (tag !== null) {
+      const tagMatch = TAG_RE.exec(tag);
+      if (!tagMatch) {
+        failures.push(`git tag "${tag}" is not a valid v<semver> release tag (expected vX.Y.Z)`);
+      } else if (tagMatch[1] !== currentVersion) {
+        failures.push(`git tag "${tag}" does not match apps/mobile/app.json version "v${currentVersion}"`);
+      }
+    }
     if (failures.length > 0) {
-      console.error('Version check FAILED:');
+      console.error('::error::Version/tag check FAILED:');
       for (const f of failures) console.error(`  - ${f}`);
       process.exit(1);
     }
     console.log(
-      `Version check OK: v${currentVersion} (versionCode ${currentCode}) aligned across ${jsonFiles.length + 1} manifests${existsSync(gradlePath) ? ' + build.gradle' : ''}${existsSync(lockPath) ? ' + package-lock.json' : ''}.`,
+      `Version check OK: v${currentVersion} (versionCode ${currentCode})${tag ? ` [tag ${tag} verified]` : ''} aligned across ${jsonFiles.length + 1} manifests${existsSync(gradlePath) ? ' + build.gradle' : ''}${existsSync(lockPath) ? ' + package-lock.json' : ''}.`,
     );
     return;
   }

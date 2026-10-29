@@ -79,6 +79,20 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
   assert.match(repoCheck.stdout, /Version check OK: v0\.1\.0 \(versionCode 1\)/);
 
+  // Matching --tag v0.1.0 passes; mismatched or malformed --tag fails loudly
+  const tagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0'], { encoding: 'utf8' });
+  assert.equal(tagOk.status, 0, tagOk.stdout + tagOk.stderr);
+  assert.match(tagOk.stdout, /\[tag v0\.1\.0 verified\]/);
+
+  const tagMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0'], { encoding: 'utf8' });
+  assert.equal(tagMismatch.status, 1);
+  assert.match(tagMismatch.stderr, /::error::Version\/tag check FAILED/);
+  assert.match(tagMismatch.stderr, /does not match apps\/mobile\/app\.json version "v0\.1\.0"/);
+
+  const tagMalformed = spawnSync(process.execPath, [bumpScript, '--check', '--tag', '0.1.0'], { encoding: 'utf8' });
+  assert.equal(tagMalformed.status, 1);
+  assert.match(tagMalformed.stderr, /is not a valid v<semver> release tag/);
+
   const dir = mkdtempSync(join(tmpdir(), 'mirror-version-'));
   mkdirSync(join(dir, 'apps', 'mobile', 'android', 'app'), { recursive: true });
   mkdirSync(join(dir, 'apps', 'extension'), { recursive: true });
@@ -144,5 +158,110 @@ test('DebugView, MirrorAppProvider, runtime, and ingest flag any app differing f
   assert.doesNotMatch(runtime, /lifecycle_repair_v28/);
   assert.match(ingestFile, /repairSessionsFromStoredEvents/);
   assert.match(ingestFile, /recoverMissingForegroundEvents/);
+  // Repair is strictly one-time inside repairSessionsFromStoredEvents (only 1 call site to recoverMissingForegroundEvents)
+  assert.equal(
+    (ingestFile.match(/recoverMissingForegroundEvents\s*\(/g) ?? []).length,
+    1,
+    'recoverMissingForegroundEvents runs strictly inside one-time repairSessionsFromStoredEvents',
+  );
+});
+
+test('verify-signing-env fails loudly on missing/invalid secrets and release.yml never falls back to debug signing', () => {
+  const verifyScript = join(ROOT, 'scripts', 'release', 'verify-signing-env.mjs');
+  const baseEnv = { PATH: process.env.PATH ?? '' };
+
+  // 1. All 4 secrets missing -> fails loudly naming all 4 secrets
+  const allMissing = spawnSync(process.execPath, [verifyScript], { env: baseEnv, encoding: 'utf8' });
+  assert.equal(allMissing.status, 1);
+  assert.match(allMissing.stderr, /::error::Missing required Android release signing secret\(s\)/);
+  assert.match(allMissing.stderr, /ANDROID_KEYSTORE_BASE64/);
+  assert.match(allMissing.stderr, /ANDROID_KEYSTORE_PASSWORD/);
+  assert.match(allMissing.stderr, /ANDROID_KEY_ALIAS/);
+  assert.match(allMissing.stderr, /ANDROID_KEY_PASSWORD/);
+
+  // 2. Fake PKCS#12 header (0x30 ASN.1 SEQUENCE + 48 bytes) with 1 missing secret -> still fails loudly
+  const fakePkcs12 = Buffer.alloc(64, 0x05);
+  fakePkcs12[0] = 0x30;
+  const fakeB64 = fakePkcs12.toString('base64');
+
+  const missingKeyPass = spawnSync(process.execPath, [verifyScript], {
+    env: {
+      ...baseEnv,
+      ANDROID_KEYSTORE_BASE64: fakeB64,
+      ANDROID_KEYSTORE_PASSWORD: 'not-a-real-store-pass',
+      ANDROID_KEY_ALIAS: 'mirror-upload',
+    },
+    encoding: 'utf8',
+  });
+  assert.equal(missingKeyPass.status, 1);
+  assert.match(missingKeyPass.stderr, /ANDROID_KEY_PASSWORD/);
+  assert.doesNotMatch(missingKeyPass.stderr, /not-a-real-store-pass/);
+
+  // 3. Corrupt/non-keystore base64 -> fails loudly
+  const badMagic = Buffer.alloc(64, 0x41).toString('base64');
+  const badRes = spawnSync(process.execPath, [verifyScript], {
+    env: {
+      ...baseEnv,
+      ANDROID_KEYSTORE_BASE64: badMagic,
+      ANDROID_KEYSTORE_PASSWORD: 'not-a-real-store-pass',
+      ANDROID_KEY_ALIAS: 'mirror-upload',
+      ANDROID_KEY_PASSWORD: 'not-a-real-key-pass',
+    },
+    encoding: 'utf8',
+  });
+  assert.equal(badRes.status, 1);
+  assert.match(badRes.stderr, /did not decode to a valid PKCS#12 or JKS keystore/);
+
+  // 4. Materializing inside the repository root is refused
+  const inRepoRes = spawnSync(
+    process.execPath,
+    [verifyScript, '--materialize', join(ROOT, 'apps', 'mobile', 'illegal.keystore')],
+    {
+      env: {
+        ...baseEnv,
+        ANDROID_KEYSTORE_BASE64: fakeB64,
+        ANDROID_KEYSTORE_PASSWORD: 'not-a-real-store-pass',
+        ANDROID_KEY_ALIAS: 'mirror-upload',
+        ANDROID_KEY_PASSWORD: 'not-a-real-key-pass',
+      },
+      encoding: 'utf8',
+    },
+  );
+  assert.equal(inRepoRes.status, 1);
+  assert.match(inRepoRes.stderr, /Refusing to materialize release keystore inside repository root/);
+
+  // 5. Valid secrets + external temp destination succeeds without printing secret values
+  const outDir = mkdtempSync(join(tmpdir(), 'mirror-signing-'));
+  const ksPath = join(outDir, 'signing', 'release.keystore');
+  const okRes = spawnSync(process.execPath, [verifyScript, '--materialize', ksPath], {
+    env: {
+      ...baseEnv,
+      ANDROID_KEYSTORE_BASE64: fakeB64,
+      ANDROID_KEYSTORE_PASSWORD: 'not-a-real-store-pass',
+      ANDROID_KEY_ALIAS: 'mirror-upload',
+      ANDROID_KEY_PASSWORD: 'not-a-real-key-pass',
+    },
+    encoding: 'utf8',
+  });
+  const writtenBytes = readFileSync(ksPath);
+  rmSync(outDir, { recursive: true, force: true });
+  assert.equal(okRes.status, 0, okRes.stdout + okRes.stderr);
+  assert.equal(writtenBytes.length, 64);
+  assert.doesNotMatch(okRes.stdout + okRes.stderr, /not-a-real-/);
+
+  // 6. Tracked release workflow enforces fail-loud tag + signing gates and never debug-signs release artifacts
+  const releaseWf = readFileSync(join(ROOT, 'infra', 'workflows', 'release.yml'), 'utf8');
+  assert.match(releaseWf, /bump-version\.mjs --check --tag/);
+  assert.match(releaseWf, /verify-signing-env\.mjs/);
+  assert.match(releaseWf, /MIRROR_REQUIRE_RELEASE_SIGNING:\s*'1'/);
+  assert.match(releaseWf, /verify --verbose --print-certs/);
+  assert.match(releaseWf, /CN=Android Debug/);
+  assert.match(releaseWf, /fail_on_unmatched_files:\s*true/);
+  assert.doesNotMatch(releaseWf, /android\.injected\.signing\.store\.file/);
+
+  // 7. Gradle signing plugin enforces MIRROR_REQUIRE_RELEASE_SIGNING=1
+  const signingPlugin = readFileSync(join(ROOT, 'apps', 'mobile', 'plugins', 'with-release-signing.js'), 'utf8');
+  assert.match(signingPlugin, /MIRROR_REQUIRE_RELEASE_SIGNING/);
+  assert.match(signingPlugin, /throw new GradleException/);
 });
 

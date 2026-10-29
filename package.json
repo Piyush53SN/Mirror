@@ -41,7 +41,9 @@
     "test:android": "node --test tests/android-manifest.test.mjs",
     "android:manifest": "node scripts/android/check-merged-manifest.mjs",
     "test:release": "node --test tests/release-stage1.test.mjs",
+    "release:bump": "node scripts/release/bump-version.mjs",
     "release:check-version": "node scripts/release/bump-version.mjs --check",
+    "release:verify-signing": "node scripts/release/verify-signing-env.mjs",
     "release:changelog": "node scripts/release/changelog.mjs"
   },
   "keywords": [

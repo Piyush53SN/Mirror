@@ -53,11 +53,15 @@ All distributable manifests and Gradle metadata stay locked to the same release 
 ```bash
 # Verify version alignment across package.json, apps/mobile/{package.json,app.json},
 # apps/mobile/android/app/build.gradle, apps/extension/{package.json,manifest.json},
-# packages/ui/package.json, and package-lock.json:
+# packages/ui/package.json, and package-lock.json (plus optional git tag match):
 npm run release:check-version
+make release-check-tag TAG=v0.1.0
 
 # Bump version offline in lockstep (when cutting a future release):
-node scripts/release/bump-version.mjs 0.2.0 --version-code 2
+npm run release:bump -- 0.2.0 --version-code 2
+
+# Verify release signing secrets/env locally (fails loudly if missing or invalid):
+make release-verify-signing
 
 # Regenerate CHANGELOG.md for a release tag:
 node scripts/release/changelog.mjs v0.1.0
@@ -73,15 +77,16 @@ on:
     tags: ['v*']
 ```
 
-**Tracked workflow source:** `infra/workflows/release.yml` (sync to `.github/workflows/release.yml` via GitHub Web UI or a token with `workflows` scope before pushing `v0.1.0`).
+**Tracked workflow source:** `infra/workflows/release.yml` (synced with `.github/workflows/release.yml`; if GitHub App push permissions block `.github/workflows/*`, copy `infra/workflows/release.yml` via GitHub Web UI before pushing `v0.1.0`).
 
-1. **Version & Tag Check:** `node scripts/release/bump-version.mjs --check` plus check that `v${expo.version}` equals the pushed tag (`v0.1.0`).
-2. **Verify + Guards:** `npm run verify`, `check-ota-guard.mjs`, `check-offline.mjs`, `npm run test:privacy`, `make release-stage1`.
-3. **Manifest Gates:** `make android-build` (debug gate) and `:app:processReleaseManifest` + `npm run android:manifest -- --variant release` (`INTERNET` removed in release; `ACCESS_NETWORK_STATE` kept only for `WorkManager`).
-4. **Signed Build (`docs/RELEASE_SIGNING.md`):**
-   - When `MIRROR_UPLOAD_KEYSTORE_BASE64`, `MIRROR_UPLOAD_STORE_PASSWORD`, and `MIRROR_UPLOAD_KEY_ALIAS` secrets are set, builds upload-signed `mirror-v0.1.0-release.apk` and `mirror-v0.1.0-release.aab` via `with-release-signing.js`.
-   - Otherwise falls back to `DEBUG_KEYSTORE_BASE64` (`mirror-test.apk`, phone-testable, not for Play Store).
-5. **Changelog & GitHub Release:** Runs `node scripts/release/changelog.mjs $TAG` and publishes the GitHub Release with `CHANGELOG.md`, APK/AAB artifacts, and merged-manifest audit JSON reports.
+1. **Tag & Manifest Lockstep Check (fails loudly on mismatch):** `node scripts/release/bump-version.mjs --check --tag "${{ github.ref_name }}"` verifies valid `v<semver>` syntax and exact match against all 6 manifests, `build.gradle`, and `package-lock.json`.
+2. **Release Signing Secret Check (fails loudly if missing):** `node scripts/release/verify-signing-env.mjs --materialize "$RUNNER_TEMP/signing/release.keystore"` verifies all 4 secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) exist and decode to a valid PKCS#12/JKS keystore outside `$GITHUB_WORKSPACE`, aborting immediately (`exit 1` + `::error::`) rather than ever falling back to `debug.keystore`.
+3. **Verify + Guards:** `npm run verify`, `make release-stage1` (`release-preflight.mjs`, `check-ota-guard.mjs`, `check-offline.mjs`), and `npm run test:privacy`.
+4. **Manifest Gates:** `make android-build` (debug gate) and `:app:processReleaseManifest` + `npm run android:manifest -- --variant release` (`INTERNET` removed in release; `ACCESS_NETWORK_STATE` kept only for `WorkManager`).
+5. **Signed Release Build & `apksigner` Proof (`docs/RELEASE_SIGNING.md`):**
+   - Runs `./gradlew :app:assembleRelease :app:bundleRelease` with `MIRROR_REQUIRE_RELEASE_SIGNING=1` (Gradle throws `GradleException` if signing credentials are missing).
+   - Verifies `app-release.apk` via `apksigner verify --verbose --print-certs`, rejects `CN=Android Debug`, writes `SHA256SUMS.txt`, and shreds `$RUNNER_TEMP/signing` with `if: always()`.
+6. **Changelog & GitHub Release:** Runs `node scripts/release/changelog.mjs "$TAG"` and publishes `mirror-$TAG-release.apk`, `mirror-$TAG-release.aab`, `SHA256SUMS.txt`, `CHANGELOG.md`, `docs/deployment.md`, and merged-manifest audit JSON reports (`fail_on_unmatched_files: true`).
 
 ## OTA guard (`scripts/android/check-ota-guard.mjs`)
 

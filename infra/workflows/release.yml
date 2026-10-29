@@ -1,4 +1,4 @@
-name: Release - tag-triggered, GitHub Release, changelog, OTA guard, offline, privacy
+name: Release - tag-triggered, signed APK/AAB, guards, changelog, GitHub Release
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build, guards, changelog, GitHub Release
+    name: Verify tag & signing secrets, build signed APK/AAB, publish GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -30,6 +30,36 @@ jobs:
           node-version: '22.13.0'
           cache: npm
 
+      - name: Verify manifest versions match git tag (fail loudly on mismatch)
+        run: |
+          node scripts/release/bump-version.mjs --check --tag "${{ github.ref_name }}"
+
+      - name: Verify release signing secrets (fail loudly if missing)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          MIRROR_UPLOAD_KEYSTORE_BASE64: ${{ secrets.MIRROR_UPLOAD_KEYSTORE_BASE64 }}
+          MIRROR_UPLOAD_STORE_PASSWORD: ${{ secrets.MIRROR_UPLOAD_STORE_PASSWORD }}
+          MIRROR_UPLOAD_KEY_ALIAS: ${{ secrets.MIRROR_UPLOAD_KEY_ALIAS }}
+          MIRROR_UPLOAD_KEY_PASSWORD: ${{ secrets.MIRROR_UPLOAD_KEY_PASSWORD }}
+        run: |
+          node scripts/release/verify-signing-env.mjs \
+            --materialize "$RUNNER_TEMP/signing/release.keystore"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Verify (tokens, lockfile, typecheck, lint, tests, secret scan, bundle)
+        run: npm run verify
+
+      - name: Release Stage 1 preflight + OTA guard + offline check
+        run: make release-stage1
+
+      - name: Privacy canary
+        run: npm run test:privacy
+
       - name: Set up JDK 17
         uses: actions/setup-java@v5
         with:
@@ -38,104 +68,108 @@ jobs:
 
       - name: Install Android SDK platforms
         run: |
-          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          set -eo pipefail
+          SDKMANAGER=""
+          if [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          elif [ -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          else
+            SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::error::sdkmanager not found under $ANDROID_HOME"
+            exit 1
+          fi
           yes | "$SDKMANAGER" --licenses || true
           "$SDKMANAGER" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
           echo "$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_PATH"
 
-      - name: Install deps
-        run: npm ci
-
-      - name: Verify manifest versions match git tag
+      - name: Expo prebuild (android)
         run: |
-          node scripts/release/bump-version.mjs --check
-          APP_VER=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/mobile/app.json","utf8")).expo.version)')
-          if [[ "${{ github.ref_name }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ "v$APP_VER" != "${{ github.ref_name }}" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match app.json version v$APP_VER"
-            exit 1
-          fi
-
-      - name: Verify (tokens, typecheck, tests, secret scan, bundle)
-        run: npm run verify
-
-      - name: OTA guard
-        run: node scripts/android/check-ota-guard.mjs
-
-      - name: Offline test
-        run: node scripts/android/check-offline.mjs
-
-      - name: Privacy canary
-        run: npm run test:privacy
-
-      - name: Expo prebuild
-        run: |
+          set -eo pipefail
           cd apps/mobile
-          CI=1 EXPO_NO_GIT_STATUS=1 npx expo prebuild --platform android --no-install
+          CI=1 EXPO_NO_GIT_STATUS=1 npx expo prebuild --platform android --clean --non-interactive
           chmod +x android/gradlew
-          cd ../..
+          cd "$GITHUB_WORKSPACE"
 
-      - name: Release Stage 1 preflight (before keystore materialization)
-        run: make release-stage1
-
-      - name: Restore stable debug keystore
+      - name: Restore debug keystore (for debug manifest gate only)
         run: |
+          set -eo pipefail
           KEYSTORE_PATH="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore"
           mkdir -p "$(dirname "$KEYSTORE_PATH")"
           if [ -n "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" ]; then
             echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > "$KEYSTORE_PATH"
-            ls -lh "$KEYSTORE_PATH"
-          else
-            echo "::warning::DEBUG_KEYSTORE_BASE64 not set - ephemeral keystore"
-            keytool -genkeypair -v -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" || true
+          elif [ ! -f "$KEYSTORE_PATH" ]; then
+            keytool -genkeypair -v -storetype PKCS12 -keystore "$KEYSTORE_PATH" -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
 
       - name: Build debug + gate
         run: |
+          set -eo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.reports"
           make android-build
           npm run android:manifest -- --variant debug --json .reports/merged-manifest-debug.json
 
       - name: Build release manifest + gate
         run: |
+          set -eo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.reports"
           cd apps/mobile/android
-          ./gradlew :app:processReleaseManifest --no-daemon --stacktrace 2>&1 | tee ../../.reports/gradle-release.log
-          cd ../..
+          ./gradlew :app:processReleaseManifest --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/.reports/gradle-release.log"
+          cd "$GITHUB_WORKSPACE"
           npm run android:manifest -- --variant release --json .reports/merged-manifest-release.json
 
-      - name: Build release APK / AAB (upload-signed when secrets exist, else debug-signed mirror-test.apk)
+      - name: Build & sign release APK / AAB (fail loudly if unsigned or debug-signed)
         env:
-          MIRROR_UPLOAD_KEYSTORE_BASE64: ${{ secrets.MIRROR_UPLOAD_KEYSTORE_BASE64 }}
+          MIRROR_REQUIRE_RELEASE_SIGNING: '1'
+          MIRROR_UPLOAD_STORE_FILE: ${{ runner.temp }}/signing/release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           MIRROR_UPLOAD_STORE_PASSWORD: ${{ secrets.MIRROR_UPLOAD_STORE_PASSWORD }}
           MIRROR_UPLOAD_KEY_ALIAS: ${{ secrets.MIRROR_UPLOAD_KEY_ALIAS }}
           MIRROR_UPLOAD_KEY_PASSWORD: ${{ secrets.MIRROR_UPLOAD_KEY_PASSWORD }}
         run: |
+          set -eo pipefail
+          node scripts/release/verify-signing-env.mjs --allow-store-file
           cd apps/mobile/android
-          if [ -n "$MIRROR_UPLOAD_KEYSTORE_BASE64" ] && [ -n "$MIRROR_UPLOAD_STORE_PASSWORD" ] && [ -n "$MIRROR_UPLOAD_KEY_ALIAS" ]; then
-            UPLOAD_KS=$(mktemp /tmp/mirror-upload-XXXXXX.keystore)
-            trap 'rm -f "$UPLOAD_KS"' EXIT
-            echo "$MIRROR_UPLOAD_KEYSTORE_BASE64" | base64 -d > "$UPLOAD_KS"
-            export MIRROR_UPLOAD_STORE_FILE="$UPLOAD_KS"
-            export MIRROR_UPLOAD_KEY_PASSWORD="${MIRROR_UPLOAD_KEY_PASSWORD:-$MIRROR_UPLOAD_STORE_PASSWORD}"
-            ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon 2>&1 | tee ../../.reports/gradle-assembleRelease.log
-            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.apk"
-            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
-            cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.aab"
-            rm -f "$UPLOAD_KS"
-          else
-            echo "::warning::MIRROR_UPLOAD_KEYSTORE_* not configured - building debug-signed mirror-test.apk"
-            ./gradlew :app:assembleRelease --no-daemon \
-              -Pandroid.injected.signing.store.file="$GITHUB_WORKSPACE/apps/mobile/android/app/debug.keystore" \
-              -Pandroid.injected.signing.store.password=android \
-              -Pandroid.injected.signing.key.alias=androiddebugkey \
-              -Pandroid.injected.signing.key.password=android 2>&1 | tee ../../.reports/gradle-assembleRelease.log
-            cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-test.apk"
+          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/.reports/gradle-assembleRelease.log"
+          APK_OUT="app/build/outputs/apk/release/app-release.apk"
+          AAB_OUT="app/build/outputs/bundle/release/app-release.aab"
+          if [ ! -s "$APK_OUT" ] || [ ! -s "$AAB_OUT" ]; then
+            echo "::error::Expected signed release artifacts missing ($APK_OUT / $AAB_OUT)"
+            exit 1
           fi
-          cp "$GITHUB_WORKSPACE/mirror-test.apk" "$GITHUB_WORKSPACE/.reports/mirror-test.apk" || true
-          ls -lh "$GITHUB_WORKSPACE"/mirror*.apk "$GITHUB_WORKSPACE"/mirror*.aab 2>/dev/null || true
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          if [ ! -x "$APKSIGNER" ]; then
+            APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          fi
+          CERT_REPORT=$("$APKSIGNER" verify --verbose --print-certs "$APK_OUT")
+          echo "$CERT_REPORT" | tee "$GITHUB_WORKSPACE/.reports/apksigner-verify.txt"
+          if echo "$CERT_REPORT" | grep -qi "CN=Android Debug"; then
+            echo "::error::Release APK is signed with Android Debug certificate! Refusing to publish."
+            exit 1
+          fi
+          cp "$APK_OUT" "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.apk"
+          cp "$AAB_OUT" "$GITHUB_WORKSPACE/mirror-${{ github.ref_name }}-release.aab"
+          cd "$GITHUB_WORKSPACE"
+          sha256sum "mirror-${{ github.ref_name }}-release.apk" "mirror-${{ github.ref_name }}-release.aab" > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          ls -lh "mirror-${{ github.ref_name }}-release.apk" "mirror-${{ github.ref_name }}-release.aab"
+
+      - name: Shred temporary release keystore
+        if: always()
+        run: |
+          if [ -d "$RUNNER_TEMP/signing" ]; then
+            shred -u "$RUNNER_TEMP/signing/"* 2>/dev/null || rm -f "$RUNNER_TEMP/signing/"*
+            rm -rf "$RUNNER_TEMP/signing"
+          fi
 
       - name: Generate changelog
         run: |
-          node scripts/release/changelog.mjs ${{ github.ref_name }}
+          node scripts/release/changelog.mjs "${{ github.ref_name }}"
           cat CHANGELOG.md
 
       - name: Create GitHub Release
@@ -147,14 +181,14 @@ jobs:
           files: |
             mirror-${{ github.ref_name }}-release.apk
             mirror-${{ github.ref_name }}-release.aab
-            mirror-test.apk
-            .reports/merged-manifest-debug.json
+            SHA256SUMS.txt
             .reports/merged-manifest-release.json
+            .reports/merged-manifest-debug.json
             CHANGELOG.md
             docs/deployment.md
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
 
-      - name: Upload artifacts (for debugging)
+      - name: Upload artifacts (for auditing)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -162,7 +196,7 @@ jobs:
           path: |
             mirror-${{ github.ref_name }}-release.apk
             mirror-${{ github.ref_name }}-release.aab
-            mirror-test.apk
+            SHA256SUMS.txt
             .reports/
             CHANGELOG.md
           if-no-files-found: warn

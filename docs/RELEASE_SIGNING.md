@@ -102,35 +102,25 @@ npm run android:manifest -- --variant release
 
 ---
 
-## 4. Wiring `ANDROID_KEYSTORE_*` in `.github/workflows/release.yml` (manual repo-owner edit)
+## 4. Fail-loud signing verification in `release.yml`
 
-GitHub App tokens without the `workflows` permission cannot push edits to `.github/workflows/*`.
-In `.github/workflows/release.yml`, replace the `debug.keystore` signing arguments in the
-`Build phone-testable APK` step (or add a signed release step) on `main` via GitHub's workflow editor:
+`infra/workflows/release.yml` (and `.github/workflows/release.yml`) enforces **four** layers of signing verification on every `v*` release tag and **never falls back to `debug.keystore`**:
 
-```yaml
-      - name: Restore release keystore
-        if: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' }}
-        run: |
-          install -m 700 -d "$RUNNER_TEMP/signing"
-          printf '%s' "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/signing/release.keystore"
-          chmod 600 "$RUNNER_TEMP/signing/release.keystore"
+1. **Fail-fast secret & keystore check (`scripts/release/verify-signing-env.mjs`):**
+   Runs immediately after `actions/setup-node` (before `npm ci` or Gradle). If any of `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, or `ANDROID_KEY_PASSWORD` is missing, empty, or does not decode to a valid PKCS#12/JKS keystore, the job **fails loudly (`exit 1` with `::error::`)** naming the missing secret(s) without printing any secret value. Valid keystores are materialized at `$RUNNER_TEMP/signing/release.keystore` (`0600`, strictly outside `$GITHUB_WORKSPACE`).
+2. **Gradle-level guard (`MIRROR_REQUIRE_RELEASE_SIGNING=1` in `with-release-signing.js`):**
+   Throws a `GradleException` inside `buildTypes.release` if `hasReleaseKey` is false, blocking silent fallback to `signingConfigs.debug`.
+3. **Post-build `apksigner verify` check:**
+   Verifies the built `app-release.apk` with `apksigner verify --verbose --print-certs` and aborts with `::error::` if signed by `CN=Android Debug`, then writes `SHA256SUMS.txt` for `mirror-vX.Y.Z-release.apk` and `mirror-vX.Y.Z-release.aab`.
+4. **Always-run keystore shredder (`if: always()`):**
+   Shreds and deletes `$RUNNER_TEMP/signing` even if an intermediate build step fails.
 
-      - name: Build signed release APK & AAB
-        env:
-          MIRROR_UPLOAD_STORE_FILE: ${{ runner.temp }}/signing/release.keystore
-          MIRROR_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          MIRROR_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          MIRROR_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          cd apps/mobile/android
-          ./gradlew :app:assembleRelease :app:bundleRelease --no-daemon
-          cp app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/mirror-release.apk"
-          cp app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/mirror-release.aab"
+> **Note on GitHub App workflow permissions:** If pushing commits that touch `.github/workflows/release.yml` is rejected by GitHub (`refusing to allow a GitHub App to create or update workflow without workflows permission`), copy `infra/workflows/release.yml` verbatim into `.github/workflows/release.yml` via the GitHub Web UI before pushing tag `v0.1.0`.
 
-      - name: Shred temporary keystore
-        if: always()
-        run: rm -rf "$RUNNER_TEMP/signing"
+You can also verify your local environment variables before tagging:
+
+```bash
+npm run release:verify-signing -- --allow-store-file
 ```
 
 ---

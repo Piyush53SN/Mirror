@@ -91,6 +91,7 @@ const filesToScan = [
   'apps/mobile/eas.json',
   '.github/workflows/android-build.yml',
   '.github/workflows/release.yml',
+  'infra/workflows/release.yml',
 ];
 
 for (const rel of filesToScan) {
