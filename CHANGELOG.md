@@ -15,6 +15,7 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- feat(release): enforce fail-loud release signing, tag lockstep check, and one-time idempotent session repair (9c555f3) 2026-10-29
 - fix(mobile): non-destructively repair missing sittings and add per-day/interval diagnostics (7a6f520) 2026-10-29
 - fix(analytics,store,mobile): fix ChatGPT 78m vs 47m lifecycle/store inflation and flag >max(10%,60s) OS discrepancies in DebugView (4f27118) 2026-10-28
 - feat(mobile,analytics,release): label Stored/Approximate older days, surface INTERVAL_DAILY bleed proof, remove OS-aggregate copy, and complete v0.1 Step 4 (0f01606) 2026-10-28
@@ -54,7 +55,6 @@ Range: initial..v0.1.0
 - Update android-build.yml (5ca1a67) 2026-10-21
 - lint: allow require in plugins, allow any in store, disable no-console in App.tsx for debug logs (1e119f8) 2026-10-21
 - round7: dynamic HOME launcher detection via CATEGORY_HOME, exclude POCO launcher com.mi.android.globallauncher, single-day view with day picker OS vs Mirror, collecting since line (first sync 1d back), readable fallback for com.flow.mobile, exclude Mirror itself, Honkai raw events logging and time-lost analysis (73ab439) 2026-10-21
-- Update android-build.yml (b44b70e) 2026-10-20
 
 ## v0.1 Checklist vs Spec
 

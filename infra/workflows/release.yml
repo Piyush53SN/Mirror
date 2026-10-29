@@ -1,4 +1,4 @@
-name: Release - tag-triggered, signed APK/AAB, guards, changelog, GitHub Release
+name: "Release - tag-triggered, signed APK/AAB, guards, changelog, GitHub Release"
 
 on:
   push:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   release:
-    name: Verify tag & signing secrets, build signed APK/AAB, publish GitHub Release
+    name: "Verify tag & signing secrets, build signed APK/AAB, publish GitHub Release"
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -176,7 +176,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }} - Mirror Android (Tier D on-device)
+          name: "${{ github.ref_name }} - Mirror Android (Tier D on-device)"
           body_path: CHANGELOG.md
           files: |
             mirror-${{ github.ref_name }}-release.apk

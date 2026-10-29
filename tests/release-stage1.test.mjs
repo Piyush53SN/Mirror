@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, rmSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -249,8 +250,12 @@ test('verify-signing-env fails loudly on missing/invalid secrets and release.yml
   assert.equal(writtenBytes.length, 64);
   assert.doesNotMatch(okRes.stdout + okRes.stderr, /not-a-real-/);
 
-  // 6. Tracked release workflow enforces fail-loud tag + signing gates and never debug-signs release artifacts
+  // 6. Tracked release workflow parses as valid YAML, enforces fail-loud tag + signing gates, and never debug-signs release artifacts
   const releaseWf = readFileSync(join(ROOT, 'infra', 'workflows', 'release.yml'), 'utf8');
+  const req = createRequire(import.meta.url);
+  const yaml = req(req.resolve('js-yaml', { paths: [join(ROOT, 'node_modules', '@eslint', 'eslintrc')] }));
+  const parsedWf = yaml.load(releaseWf);
+  assert.ok(parsedWf?.jobs?.release?.steps?.length >= 15, 'infra/workflows/release.yml parses cleanly as YAML');
   assert.match(releaseWf, /bump-version\.mjs --check --tag/);
   assert.match(releaseWf, /verify-signing-env\.mjs/);
   assert.match(releaseWf, /MIRROR_REQUIRE_RELEASE_SIGNING:\s*'1'/);
