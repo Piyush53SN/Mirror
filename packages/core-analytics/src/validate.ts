@@ -136,6 +136,7 @@ export type FlaggedAppDiscrepancy = {
   sittingSpanMs: number;
   rawBucketMs: number;
   preMidnightBucketMs: number;
+  sameDayBucketMs: number;
   mirrorMs: number;
   osMs: number;
   diffMs: number;
@@ -209,6 +210,8 @@ export function evaluateAppOsDiscrepancies(input: {
     const rawDiag = rawDiagMap.get(app);
     const rawBucketMs = rawDiag?.totalMs ?? 0;
     const preMidnightBucketMs = rawDiag?.preMidnightBucketMs ?? 0;
+    const sameDayBucketMs =
+      rawDiag?.sameDayBucketMs ?? Math.max(0, rawBucketMs - preMidnightBucketMs);
 
     type Candidate = {
       mirrorMs: number;
@@ -238,19 +241,30 @@ export function evaluateAppOsDiscrepancies(input: {
     }
 
     if (hasRawBucketBaseline && (displayedMs > 0 || rawBucketMs > 0)) {
-      const cleanSameDayBucket = rawBucketMs > 0 && preMidnightBucketMs === 0;
-      const mirrorExceedsEvenBleedBucket =
-        rawBucketMs > 0 && preMidnightBucketMs > 0 && displayedMs > rawBucketMs;
-      const mirrorOnlyPhantom = rawBucketMs === 0 && displayedMs > 0 && !hasDayFgBaseline;
-      if (
-        (cleanSameDayBucket || mirrorExceedsEvenBleedBucket || mirrorOnlyPhantom) &&
-        !isWithinDailyTotalTolerance(displayedMs, rawBucketMs)
-      ) {
-        candidates.push({
-          mirrorMs: displayedMs,
-          osMs: rawBucketMs,
-          comparison: 'Home vs OS UsageStats',
-        });
+      if (sameDayBucketMs > 0) {
+        if (!isWithinDailyTotalTolerance(displayedMs, sameDayBucketMs)) {
+          candidates.push({
+            mirrorMs: displayedMs,
+            osMs: sameDayBucketMs,
+            comparison: 'Home vs OS UsageStats',
+          });
+        }
+      } else if (preMidnightBucketMs > 0) {
+        if (displayedMs > rawBucketMs && !isWithinDailyTotalTolerance(displayedMs, rawBucketMs)) {
+          candidates.push({
+            mirrorMs: displayedMs,
+            osMs: rawBucketMs,
+            comparison: 'Home vs OS UsageStats',
+          });
+        }
+      } else if (rawBucketMs === 0 && displayedMs > 0 && !hasDayFgBaseline) {
+        if (!isWithinDailyTotalTolerance(displayedMs, 0)) {
+          candidates.push({
+            mirrorMs: displayedMs,
+            osMs: 0,
+            comparison: 'Home vs OS UsageStats',
+          });
+        }
       }
     }
 
@@ -273,6 +287,7 @@ export function evaluateAppOsDiscrepancies(input: {
       sittingSpanMs,
       rawBucketMs,
       preMidnightBucketMs,
+      sameDayBucketMs,
       mirrorMs: worst.mirrorMs,
       osMs: worst.osMs,
       diffMs,

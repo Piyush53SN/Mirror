@@ -155,3 +155,23 @@ export type StoreResetAudit = {
   detail?: string;
 };
 
+export type DayStoreRowCounts = {
+  day: string;
+  events: number;
+  fgEvents: number;
+  bgEvents: number;
+  labelEvents: number;
+  otherEvents: number;
+  sessions: number;
+};
+
+export type SessionRepairSnapshot = {
+  at: number;
+  day: string;
+  recoveredFgEvents: number;
+  rebuiltDays: number;
+  before: DayStoreRowCounts[];
+  after: DayStoreRowCounts[];
+};
+
+

@@ -27,10 +27,12 @@ import type {
   ConsentEntry,
   CursorState,
   DataGap,
+  DayStoreRowCounts,
   GapReason,
   ImportRecord,
   RandomBytes,
   RollupRecord,
+  SessionRepairSnapshot,
   SessionRow,
   SqlDriver,
   StoredEvent,
@@ -212,6 +214,14 @@ export class MirrorStore {
 
     // Group incoming `[app_foreground, app_background]` pairs whose closing
     // `app_background` falls inside `[window.fromMs, window.toMs)`.
+    // Note: `iso(ms)` truncates sub-second ms on `.at` while `duration_ms` preserves
+    // exact `end - start`, so `Date.parse(bg.at) - duration_ms` can sit in
+    // `[fgAtMs - 999, fgAtMs + 999]`; check both surrounding whole-second keys.
+    const fgCandidateKeys = (app: string, approxStartMs: number): string[] => {
+      const lo = Math.floor(approxStartMs / 1000) * 1000;
+      const hi = Math.ceil(approxStartMs / 1000) * 1000;
+      return lo === hi ? [`${app}\u0000${lo}`] : [`${app}\u0000${lo}`, `${app}\u0000${hi}`];
+    };
     const fgByAppAndStart = new Map<string, MirrorEvent>();
     for (const ev of validated) {
       if (ev.kind === 'app_foreground') {
@@ -227,8 +237,12 @@ export class MirrorStore {
       if (!Number.isFinite(endMs) || endMs < window.fromMs || endMs >= window.toMs) continue;
       const app = (ev as { app?: string }).app ?? '';
       const dur = Number((ev as { duration_ms?: number }).duration_ms ?? 0);
-      const startMs = endMs - dur;
-      const fg = fgByAppAndStart.get(`${app}\u0000${startMs}`);
+      const approxStartMs = endMs - dur;
+      let fg: MirrorEvent | undefined;
+      for (const key of fgCandidateKeys(app, approxStartMs)) {
+        fg = fgByAppAndStart.get(key);
+        if (fg) break;
+      }
       if (fg && !keepIds.has(fg.id)) {
         keepIds.add(fg.id);
         targetEvents.push(fg);
@@ -270,16 +284,16 @@ export class MirrorStore {
         if (payload.kind !== 'app_background') continue;
         const endMs = item.at;
         const dur = Number(payload.duration_ms ?? 0);
-        const startMs = endMs - dur;
+        const approxStartMs = endMs - dur;
         const app = payload.app ?? '';
-        const fgKey = `${app}\u0000${startMs}`;
+        const keys = fgCandidateKeys(app, approxStartMs);
         if (endMs >= window.fromMs && endMs < window.toMs) {
           if (!keepIds.has(item.id)) {
             deleteIds.add(item.id);
-            staleFgKeys.add(fgKey);
+            for (const k of keys) staleFgKeys.add(k);
           }
         } else {
-          protectedFgKeys.add(fgKey);
+          for (const k of keys) protectedFgKeys.add(k);
         }
       }
 
@@ -759,6 +773,103 @@ export class MirrorStore {
     );
     const val = rows[0]?.min_start;
     return val === null || val === undefined ? null : Number(val);
+  }
+
+  /**
+   * Per-local-day `events` (`fgEvents`, `bgEvents`, `labelEvents`, `otherEvents`)
+   * and `sessions` row counts across the entire store via indexed plaintext columns
+   * (`at`, `kind`, `start_ms`) — zero payload decryption.
+   */
+  async dayRowCounts(utcOffsetMinutes = 0): Promise<DayStoreRowCounts[]> {
+    const offsetMs = Number.isFinite(utcOffsetMinutes) ? utcOffsetMinutes * 60_000 : 0;
+    const toDay = (ms: number): string => new Date(ms + offsetMs).toISOString().slice(0, 10);
+
+    const eventRows = await this.driver.all<{ at: number; kind: string }>(
+      `SELECT at, kind FROM events ORDER BY at ASC`,
+    );
+    const sessionRows = await this.driver.all<{ start_ms: number }>(
+      `SELECT start_ms FROM sessions ORDER BY start_ms ASC`,
+    );
+
+    const byDay = new Map<string, DayStoreRowCounts>();
+    const ensure = (day: string): DayStoreRowCounts => {
+      let row = byDay.get(day);
+      if (!row) {
+        row = {
+          day,
+          events: 0,
+          fgEvents: 0,
+          bgEvents: 0,
+          labelEvents: 0,
+          otherEvents: 0,
+          sessions: 0,
+        };
+        byDay.set(day, row);
+      }
+      return row;
+    };
+
+    for (const r of eventRows) {
+      const ms = Number(r.at);
+      if (!Number.isFinite(ms)) continue;
+      const entry = ensure(toDay(ms));
+      entry.events += 1;
+      if (r.kind === 'app_foreground') entry.fgEvents += 1;
+      else if (r.kind === 'app_background') entry.bgEvents += 1;
+      else if (r.kind === 'intent_label') entry.labelEvents += 1;
+      else entry.otherEvents += 1;
+    }
+
+    for (const r of sessionRows) {
+      const ms = Number(r.start_ms);
+      if (!Number.isFinite(ms)) continue;
+      const entry = ensure(toDay(ms));
+      entry.sessions += 1;
+    }
+
+    return [...byDay.values()].sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  /**
+   * Persist the one-time non-destructive session repair row-count snapshot
+   * (`before` vs `after` per local day — counts and `YYYY-MM-DD` strings only,
+   * never package names or personal content) so `DebugView` and `Share diagnostic JSON`
+   * can report exact pre-repair and post-repair row counts.
+   */
+  async recordSessionRepairSnapshot(snapshot: SessionRepairSnapshot): Promise<void> {
+    if (!Number.isFinite(snapshot.at) || snapshot.at < 0) {
+      throw new Error(`invalid repair snapshot timestamp ${snapshot.at}`);
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.day)) {
+      throw new Error(`invalid repair snapshot day ${snapshot.day}`);
+    }
+    await writeMeta(this.driver, 'session_repair_v29', JSON.stringify(snapshot));
+  }
+
+  async lastSessionRepairSnapshot(): Promise<SessionRepairSnapshot | null> {
+    const raw = await readMeta(this.driver, 'session_repair_v29');
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<SessionRepairSnapshot>;
+      if (
+        typeof parsed.at !== 'number' ||
+        typeof parsed.day !== 'string' ||
+        !Array.isArray(parsed.before) ||
+        !Array.isArray(parsed.after)
+      ) {
+        return null;
+      }
+      return {
+        at: parsed.at,
+        day: parsed.day,
+        recoveredFgEvents: Number(parsed.recoveredFgEvents ?? 0),
+        rebuiltDays: Number(parsed.rebuiltDays ?? 0),
+        before: parsed.before as DayStoreRowCounts[],
+        after: parsed.after as DayStoreRowCounts[],
+      };
+    } catch {
+      return null;
+    }
   }
 
   /* ----------------------------------------------------------- cursor state */

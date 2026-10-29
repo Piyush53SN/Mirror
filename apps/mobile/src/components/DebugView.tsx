@@ -31,6 +31,10 @@ export function DebugView(): React.ReactElement {
     singleDayRows,
     honkaiDebug,
     debugEvents,
+    storeDayRowCounts = [],
+    sessionRepairSnapshot,
+    tracedAppIntervals = [],
+    dayOptions,
     copyRawEvents,
     copyStatus,
     quality,
@@ -157,16 +161,26 @@ export function DebugView(): React.ReactElement {
         <Card theme={theme} elevated>
           <SectionHeader
             theme={theme}
-            title={`Single-day OS vs Mirror – ${selectedDay}`}
-            caption={`Source: ${dailyTotalsSource} · last sync cursor ${collectingSince ?? 'unknown'}`}
+            title={`Single-day Mirror vs OS – ${selectedDay}`}
+            caption={`Source: ${dailyTotalsSource} · flags gap > max(10%, 60s) · cursor ${collectingSince ?? 'unknown'}`}
           />
           <Text role="micro" tone="muted" theme={theme} style={{ marginBottom: theme.space(1.5) }}>
             {
-              'Column key: Home = total shown on Home; Day fg = live OS UsageEvents clipped to [00:00, 24:00); Stored = Mirror SQLite foreground clipped + interval-unioned; Sittings = merged <=15m sitting spans; Raw INTERVAL_DAILY = unclipped OS daily buckets. Rows exceeding max(10%, 60s) are sorted first and marked [FLAGGED].'
+              'Per app: Mirror total (Home) vs OS total (same-day UsageStats bucket when present, else live Day fg), flagged whenever |Mirror - OS| exceeds max(10%, 60s). Trace line shows Home, Day fg (OS UsageEvents), Stored (SQLite), Sittings, and Raw INTERVAL_DAILY.'
             }
           </Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1.5), marginBottom: theme.space(2), alignItems: 'center' }}>
+            <Pill theme={theme} onPress={copyRawEvents}>
+              Share diagnostic JSON
+            </Pill>
+            {copyStatus ? (
+              <Text role="micro" tone="muted" theme={theme}>
+                {copyStatus}
+              </Text>
+            ) : null}
+          </View>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1), marginBottom: theme.space(2) }}>
-            {lastNDays(14).map((day) => (
+            {(dayOptions ?? lastNDays(14)).map((day) => (
               <Pill key={day} theme={theme} onPress={() => setSelectedDay(day)}>
                 {day === selectedDay ? `● ${day}` : day}
               </Pill>
@@ -178,6 +192,20 @@ export function DebugView(): React.ReactElement {
             </Text>
           ) : (
             singleDayRows.slice(0, 30).map((r) => {
+              const mirrorTotalMs = typeof r.displayedMs === 'number' ? r.displayedMs : r.mirrorMs;
+              const sameDayOsMs =
+                typeof r.sameDayBucketMs === 'number' && r.sameDayBucketMs > 0
+                  ? r.sameDayBucketMs
+                  : r.osMs;
+              const gapMs = mirrorTotalMs - sameDayOsMs;
+              const gapLimitMs = Math.max(sameDayOsMs * 0.1, 60_000);
+              const isRowFlagged = Boolean(r.flagged) || Math.abs(gapMs) > gapLimitMs;
+              const gapPct =
+                sameDayOsMs > 0
+                  ? (gapMs / sameDayOsMs) * 100
+                  : mirrorTotalMs > 0
+                    ? 100
+                    : 0;
               const bucketStartNote =
                 typeof r.earliestBucketStartMs === 'number'
                   ? `from ${new Date(r.earliestBucketStartMs).toLocaleString([], {
@@ -189,19 +217,17 @@ export function DebugView(): React.ReactElement {
                   : '';
               const bleedNote =
                 typeof r.preMidnightBucketMs === 'number' && r.preMidnightBucketMs > 0
-                  ? ` (pre-00:00 bucket +${formatDuration(r.preMidnightBucketMs)}${bucketStartNote ? `, ${bucketStartNote}` : ''}${typeof r.bucketCount === 'number' && r.bucketCount > 0 ? `, ${r.bucketCount} buckets` : ''})`
+                  ? ` (same-day ${formatDuration(r.sameDayBucketMs ?? 0)} + pre-00:00 bucket ${formatDuration(r.preMidnightBucketMs)}${bucketStartNote ? `, ${bucketStartNote}` : ''})`
                   : typeof r.bucketCount === 'number' && r.bucketCount > 0
                     ? ` (${r.bucketCount} bucket${r.bucketCount === 1 ? '' : 's'}${bucketStartNote ? `, ${bucketStartNote}` : ''})`
                     : '';
-              const homeSegment =
-                typeof r.displayedMs === 'number' ? `Home ${formatDuration(r.displayedMs)} · ` : '';
               return (
                 <View key={r.app} style={{ paddingVertical: theme.space(1) }}>
-                  <Text role="micro" weight={r.flagged ? 'medium' : 'auto'} theme={theme}>
-                    {`${r.flagged ? '[FLAGGED > max(10%, 60s)] ' : ''}${r.label} – ${homeSegment}Day fg ${formatDuration(r.osMs)} / Stored ${formatDuration(r.mirrorMs)} diff ${r.diffPct >= 0 ? '+' : ''}${r.diffPct.toFixed(1)}% ${r.status}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}${bleedNote}` : ''}`}
+                  <Text role="micro" weight={isRowFlagged ? 'medium' : 'auto'} theme={theme}>
+                    {`${isRowFlagged ? '[FLAGGED > max(10%, 60s)] ' : '[OK] '}${r.label} – Mirror ${formatDuration(mirrorTotalMs)} vs OS ${formatDuration(sameDayOsMs)} (gap ${formatSignedDuration(gapMs)}, ${gapPct >= 0 ? '+' : ''}${gapPct.toFixed(1)}%, limit ${formatDuration(gapLimitMs)})`}
                   </Text>
                   <Text role="micro" tone="muted" theme={theme}>
-                    {r.flagReason ? `${r.app} · ${r.flagReason}` : r.app}
+                    {`${r.app} · Home ${formatDuration(mirrorTotalMs)} · Day fg ${formatDuration(r.osMs)} · Stored ${formatDuration(r.mirrorMs)}${typeof r.sittingSpanMs === 'number' ? ` · Sittings ${formatDuration(r.sittingSpanMs)}` : ''}${typeof r.rawBucketMs === 'number' ? ` · Raw INTERVAL_DAILY ${formatDuration(r.rawBucketMs)}${bleedNote}` : ''}${r.flagReason ? ` · ${r.flagReason}` : ''}`}
                   </Text>
                 </View>
               );
@@ -209,11 +235,68 @@ export function DebugView(): React.ReactElement {
           )}
         </Card>
 
+        <Card theme={theme} elevated>
+          <SectionHeader
+            theme={theme}
+            title={`Store rows per local day (${storeDayRowCounts.length} day${storeDayRowCounts.length === 1 ? '' : 's'})`}
+            caption="SQLite events (fg / bg / labels) vs derived sessions per day"
+          />
+          {storeDayRowCounts.length === 0 ? (
+            <Text role="micro" tone="muted" theme={theme}>
+              No rows stored yet
+            </Text>
+          ) : (
+            storeDayRowCounts.map((row) => (
+              <Text key={row.day} role="micro" theme={theme} style={{ paddingVertical: theme.space(0.5) }}>
+                {`${row.day}: events=${row.events} (fg=${row.fgEvents}, bg=${row.bgEvents}${row.labelEvents > 0 ? `, labels=${row.labelEvents}` : ''}) · sessions=${row.sessions}`}
+              </Text>
+            ))
+          )}
+          {sessionRepairSnapshot && sessionRepairSnapshot.before.length > 0 ? (
+            <View style={{ marginTop: theme.space(1.5), paddingTop: theme.space(1), borderTopWidth: 1, borderTopColor: theme.color.borderHairline, gap: theme.space(0.5) }}>
+              <Text role="micro" weight="medium" theme={theme}>
+                {`One-time non-destructive repair (${sessionRepairSnapshot.day}): appended +${sessionRepairSnapshot.recoveredFgEvents} missing fg events, rebuilt ${sessionRepairSnapshot.rebuiltDays} days, 0 events deleted`}
+              </Text>
+              {sessionRepairSnapshot.before.map((b) => {
+                const a = sessionRepairSnapshot.after.find((x) => x.day === b.day);
+                return (
+                  <Text key={`snap_${b.day}`} role="micro" tone="muted" theme={theme}>
+                    {`${b.day}: before events=${b.events} (fg=${b.fgEvents}, bg=${b.bgEvents}) sessions=${b.sessions} -> after events=${a?.events ?? b.events} (fg=${a?.fgEvents ?? b.fgEvents}, bg=${a?.bgEvents ?? b.bgEvents}) sessions=${a?.sessions ?? b.sessions}`}
+                  </Text>
+                );
+              })}
+            </View>
+          ) : null}
+        </Card>
+
+        {tracedAppIntervals.length > 0 ? (
+          <Card theme={theme} elevated>
+            <SectionHeader
+              theme={theme}
+              title={`Foreground interval trace on ${selectedDay} (${tracedAppIntervals.length})`}
+              caption="start, end, duration, classes, open/close event types, screen-off & keyguard flags"
+            />
+            {tracedAppIntervals.map((iv, idx) => (
+              <View key={`${iv.app}_${iv.startMs}_${idx}`} style={{ paddingVertical: theme.space(1), gap: theme.space(0.25) }}>
+                <Text role="micro" weight="medium" theme={theme}>
+                  {`#${idx + 1} ${labels[iv.app] ?? iv.app} (${iv.app}): ${new Date(iv.startMs).toLocaleTimeString()} -> ${new Date(iv.endMs).toLocaleTimeString()} · day=${formatDuration(iv.clippedDayMs)} (full=${formatDuration(iv.durationMs)})`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`open=${iv.openEventType}:${iv.openEventName} · close=${iv.closeEventType}:${iv.closeEventName} by ${iv.closePackage}${iv.closeClassName ? `/${iv.closeClassName.split('.').pop()}` : ''} · classes=[${iv.classNames.map((c) => c.split('.').pop()).join(', ')}]`}
+                </Text>
+                <Text role="micro" tone="muted" theme={theme}>
+                  {`screenOff=${iv.screenOffDuring ? `YES (${formatDuration(iv.msWhileScreenOff)})` : 'no'} · keyguardLocked=${iv.keyguardLockedDuring ? `YES (${formatDuration(iv.msWhileKeyguardLocked)})` : 'no'}`}
+                </Text>
+              </View>
+            ))}
+          </Card>
+        ) : null}
+
         {honkaiDebug.length > 0 ? (
           <Card theme={theme} elevated>
             <SectionHeader
               theme={theme}
-              title={`Inspected & flagged app raw events last 24h (${honkaiDebug.length})`}
+              title={`Inspected & flagged app raw events on ${selectedDay} (${honkaiDebug.length})`}
               caption="ChatGPT, flagged apps, and Honkai/Genshin RESUMED/PAUSED/STOPPED + class names"
             />
             {honkaiDebug.map((e, idx) => (

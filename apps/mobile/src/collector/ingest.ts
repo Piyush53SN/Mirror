@@ -11,9 +11,14 @@
  * reads it once per pass), so a phone that travels does not silently rewrite
  * yesterday.
  */
-import { ingest, dayStartMs, DEFAULT_MAX_INTERVAL_MS } from '@mirror/core-analytics';
+import {
+  ingest,
+  dayStartMs,
+  DEFAULT_MAX_INTERVAL_MS,
+  recoverMissingForegroundEvents,
+} from '@mirror/core-analytics';
 import type { MirrorEvent } from '@mirror/shared-types';
-import type { MirrorStore } from '@mirror/store';
+import type { MirrorStore, SessionRepairSnapshot } from '@mirror/store';
 
 const DAY_MS = 86_400_000;
 
@@ -90,17 +95,74 @@ export async function ingestDay(store: MirrorStore, day: string, utcOffsetMinute
 }
 
 /**
- * Ingest today, yesterday and the day before, in the phone's current offset.
+ * One-time non-destructive session repair (`session_repair_v29`).
  *
- * Three days: today is partial (its rollup is not written, but its sessions are,
- * so the UI shows today's sessions immediately), and yesterday + day-before are
- * complete days that may need re-computation if a sync missed midnight. Running
- * this on every app open keeps the derived tables warm without a second
- * background job.
+ * Reconstructs any missing `app_foreground` partners dropped by `4f27118`'s
+ * sub-second millisecond truncation via `store.appendEvents` (pure `INSERT OR IGNORE`,
+ * **never deletes events**), rebuilds `sessions` and complete-day `daily_rollups`
+ * for every local day that has stored usage events, and records the `before` / `after`
+ * per-day row-count snapshot in `meta` for `DebugView`.
+ */
+export async function repairSessionsFromStoredEvents(
+  store: MirrorStore,
+  now: number,
+  utcOffsetMinutes: number,
+): Promise<SessionRepairSnapshot> {
+  const existing = await store.lastSessionRepairSnapshot();
+  if (existing) return existing;
+
+  const before = await store.dayRowCounts(utcOffsetMinutes);
+  let recoveredFgEvents = 0;
+
+  if (before.some((r) => r.bgEvents > 0)) {
+    const allStored = await store.events();
+    const candidates = allStored.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      origin: typeof row.payload.origin === 'string' ? row.payload.origin : undefined,
+      app: typeof row.payload.app === 'string' ? row.payload.app : undefined,
+      at: typeof row.payload.at === 'string' ? row.payload.at : new Date(row.at).toISOString(),
+      duration_ms:
+        typeof row.payload.duration_ms === 'number' ? row.payload.duration_ms : undefined,
+    }));
+    const missingFg = recoverMissingForegroundEvents(candidates);
+    if (missingFg.length > 0) {
+      const appended = await store.appendEvents(missingFg);
+      recoveredFgEvents = appended.inserted;
+    }
+  }
+
+  const afterRecover =
+    recoveredFgEvents > 0 ? await store.dayRowCounts(utcOffsetMinutes) : before;
+  let rebuiltDays = 0;
+  for (const row of afterRecover) {
+    if (row.fgEvents > 0 || row.bgEvents > 0 || row.otherEvents > 0) {
+      await ingestDay(store, row.day, utcOffsetMinutes);
+      rebuiltDays += 1;
+    }
+  }
+
+  const after = await store.dayRowCounts(utcOffsetMinutes);
+  const snapshot: SessionRepairSnapshot = {
+    at: now,
+    day: localDayKey(now, utcOffsetMinutes),
+    recoveredFgEvents,
+    rebuiltDays,
+    before,
+    after,
+  };
+  await store.recordSessionRepairSnapshot(snapshot);
+  return snapshot;
+}
+
+/**
+ * Ingest today, yesterday and the day before, in the phone's current offset,
+ * plus any older local day across the entire SQLite history that has stored
+ * usage events (`fgEvents`/`bgEvents`) and `0` derived `sessions`.
  *
- * Before this fix, only yesterday and day-before were ingested, so today's
- * sessions appeared only after the day completed — the finding "today's sessions
- * appear only after day completes" was correct.
+ * Never deletes stored `events`. If any day has orphaned `app_background`
+ * events without matching `app_foreground` events, missing `app_foreground`
+ * rows are appended non-destructively before session derivation.
  */
 export async function ingestRecentDays(store: MirrorStore, now: number, utcOffsetMinutes: number): Promise<IngestDayResult[]> {
   const today = localDayKey(now, utcOffsetMinutes);
@@ -108,26 +170,34 @@ export async function ingestRecentDays(store: MirrorStore, now: number, utcOffse
   const dayBefore = localDayKey(now - 2 * DAY_MS, utcOffsetMinutes);
 
   const results: IngestDayResult[] = [];
-  // If earlier `events` exist without derived `sessions` (for example after the
-  // one-time 6-day raw-stream backfill in `lifecycle_repair_v27`), ingest those
-  // missing days once so `sessions` and `historyStartDay` cover the full stored
-  // event span rather than stopping at `now - 2 days`.
   try {
-    const earliestEvMs = await store.earliestEventAt();
-    if (earliestEvMs !== null) {
-      const earliestEvDay = localDayKey(earliestEvMs, utcOffsetMinutes);
-      if (earliestEvDay < dayBefore) {
-        const earliestSessMs = await store.earliestSessionStart();
-        const earliestSessDay =
-          earliestSessMs !== null ? localDayKey(earliestSessMs, utcOffsetMinutes) : null;
-        if (earliestSessDay === null || earliestEvDay < earliestSessDay) {
-          for (let d = 30; d >= 3; d -= 1) {
-            const candidateDay = localDayKey(now - d * DAY_MS, utcOffsetMinutes);
-            if (candidateDay < earliestEvDay) continue;
-            if (earliestSessDay !== null && candidateDay >= earliestSessDay) continue;
-            results.push(await ingestDay(store, candidateDay, utcOffsetMinutes));
-          }
-        }
+    await repairSessionsFromStoredEvents(store, now, utcOffsetMinutes);
+
+    let dayCounts = await store.dayRowCounts(utcOffsetMinutes);
+    if (dayCounts.some((row) => row.bgEvents > row.fgEvents)) {
+      const allStored = await store.events();
+      const missingFg = recoverMissingForegroundEvents(
+        allStored.map((row) => ({
+          id: row.id,
+          kind: row.kind,
+          origin: typeof row.payload.origin === 'string' ? row.payload.origin : undefined,
+          app: typeof row.payload.app === 'string' ? row.payload.app : undefined,
+          at: typeof row.payload.at === 'string' ? row.payload.at : new Date(row.at).toISOString(),
+          duration_ms:
+            typeof row.payload.duration_ms === 'number' ? row.payload.duration_ms : undefined,
+        })),
+      );
+      if (missingFg.length > 0) {
+        await store.appendEvents(missingFg);
+        dayCounts = await store.dayRowCounts(utcOffsetMinutes);
+      }
+    }
+
+    for (const row of dayCounts) {
+      if (row.day >= dayBefore) continue;
+      const hasUsageEvents = row.fgEvents > 0 || row.bgEvents > 0 || row.otherEvents > 0;
+      if (hasUsageEvents && row.sessions === 0) {
+        results.push(await ingestDay(store, row.day, utcOffsetMinutes));
       }
     }
   } catch {

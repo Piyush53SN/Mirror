@@ -171,14 +171,28 @@ test('evaluateAppOsDiscrepancies flags ChatGPT 78m vs OS 47m (> max(10%, 60s)) a
   assert.equal(flaggedFromStored[0].diffMs, 31 * MIN);
 
   // Case 3: Clean post-fix state where Home=47m, Day fg=47m, Stored=47m, and Raw INTERVAL_DAILY=78m
-  // solely from pre-midnight bucket bleed (preMidnightBucketMs = 31m > 0) -> 0 false flags!
+  // solely from pre-midnight bucket bleed (preMidnightBucketMs = 31m > 0, sameDayBucketMs = 47m) -> 0 false flags!
   const cleanWithBleed = evaluateAppOsDiscrepancies({
     displayedTotals: [{ app: CHATGPT, totalMs: 47 * MIN }],
     dayFgTotals: [{ packageName: CHATGPT, totalMs: 47 * MIN }],
     storedTotals: [{ packageName: CHATGPT, totalMs: 47 * MIN }],
-    rawBucketDiagnostics: [{ packageName: CHATGPT, totalMs: 78 * MIN, preMidnightBucketMs: 31 * MIN, bucketCount: 2 }],
+    rawBucketDiagnostics: [{ packageName: CHATGPT, totalMs: 78 * MIN, preMidnightBucketMs: 31 * MIN, sameDayBucketMs: 47 * MIN, bucketCount: 2 }],
     labels,
   });
   assert.equal(cleanWithBleed.length, 0, 'pre-midnight bucket bleed does not false-flag when Mirror matches OS UsageEvents');
+
+  // Case 4: Real IST (UTC+05:30) scenario where ChatGPT was ALSO used yesterday (preMidnightBucketMs = 40m)
+  // AND today's OS bucket is 47m (totalMs = 87m > displayedMs 78m), while Mirror shows 78m -> STILL FLAGGED (+31m)!
+  const flaggedInIstWithYesterdayBleed = evaluateAppOsDiscrepancies({
+    displayedTotals: [{ app: CHATGPT, totalMs: 78 * MIN }],
+    dayFgTotals: [{ packageName: CHATGPT, totalMs: 78 * MIN }],
+    storedTotals: [{ packageName: CHATGPT, totalMs: 78 * MIN }],
+    rawBucketDiagnostics: [{ packageName: CHATGPT, totalMs: 87 * MIN, preMidnightBucketMs: 40 * MIN, sameDayBucketMs: 47 * MIN, bucketCount: 2 }],
+    labels,
+  });
+  assert.equal(flaggedInIstWithYesterdayBleed.length, 1);
+  assert.equal(flaggedInIstWithYesterdayBleed[0].app, CHATGPT);
+  assert.equal(flaggedInIstWithYesterdayBleed[0].osMs, 47 * MIN);
+  assert.equal(flaggedInIstWithYesterdayBleed[0].diffMs, 31 * MIN);
 });
 

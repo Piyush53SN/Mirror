@@ -27,6 +27,8 @@ export function SessionsTab(): React.ReactElement {
   const {
     selectedDay,
     scaledSessions,
+    dailyTotals,
+    hasEventsWithoutSittings,
     intentLabels,
     labelSaving,
     expandedSessionId,
@@ -243,11 +245,24 @@ export function SessionsTab(): React.ReactElement {
         />
 
         {visibleSessions.length === 0 ? (
-          <EmptyState
-            title={`No opens for ${selectedDay}`}
-            body="App open times appear here as soon as Android records foreground usage events on this day. Per-app totals on Home sum day-clipped OS foreground events (or Stored / Approximate fallback on older days)."
-            theme={theme}
-          />
+          hasEventsWithoutSittings ? (
+            <EmptyState
+              title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+              body={`${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} recorded foreground time on ${selectedDay}, while derived sittings are empty. Tap Refresh to rebuild sittings from stored events.`}
+              action={
+                <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                  Refresh sittings
+                </Pill>
+              }
+              theme={theme}
+            />
+          ) : (
+            <EmptyState
+              title={`No opens for ${selectedDay}`}
+              body="App open times appear here as soon as Android records foreground usage events on this day. Per-app totals on Home sum day-clipped OS foreground events (or Stored / Approximate fallback on older days)."
+              theme={theme}
+            />
+          )
         ) : (
           <View style={{ gap: theme.space(1) }}>
             {visibleSessions.map((s, idx) => {

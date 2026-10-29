@@ -11,7 +11,13 @@
  */
 /* eslint-disable no-console */
 import * as SQLite from 'expo-sqlite';
-import { MirrorStore, type StoreResetAudit, type StoreResetReason } from '@mirror/store';
+import {
+  MirrorStore,
+  type DayStoreRowCounts,
+  type SessionRepairSnapshot,
+  type StoreResetAudit,
+  type StoreResetReason,
+} from '@mirror/store';
 import {
   DEFAULT_MAX_INTERVAL_MS,
   buildUsageEvents,
@@ -21,12 +27,14 @@ import {
   describeGapSummary,
   resolveDayForegroundTotals,
   summarizeUsageStatsBucketsForDay,
+  traceAppForegroundIntervals,
   validateDailyTotals,
 } from '@mirror/core-analytics';
 import type {
   OsTotal,
   RawUsageBucketDiagnostic,
   ResolvedDayForegroundTotals,
+  TracedAppInterval,
 } from '@mirror/core-analytics';
 import { expoDriver } from './storage/expoDriver';
 import { secureStoreKeys, osRandom } from './storage/keys';
@@ -61,6 +69,15 @@ export type MirrorRuntime = {
   storedForegroundTotals(range: { fromMs: number; toMs: number }): Promise<OsTotal[]>;
   /** Raw unclipped `queryUsageStats(INTERVAL_DAILY)` bucket diagnostics for debug comparison */
   rawBucketTotals(range: { fromMs: number; toMs: number }): Promise<RawUsageBucketDiagnostic[]>;
+  /** Read-only forensic trace of raw foreground intervals for `targetApp` across `range` */
+  traceAppDayIntervals(
+    targetApp: string,
+    range: { fromMs: number; toMs: number },
+  ): Promise<TracedAppInterval[]>;
+  /** Per-local-day `events` vs `sessions` counts in SQLite (indexed plaintext scan) */
+  storeDayRowCounts(utcOffsetMinutes?: number): Promise<DayStoreRowCounts[]>;
+  /** One-time non-destructive `session_repair_v29` before/after row-count snapshot */
+  sessionRepairSnapshot(): Promise<SessionRepairSnapshot | null>;
   /** Validate Mirror vs OS totals */
   validate(range: { fromMs: number; toMs: number }): Promise<ReturnType<typeof validateDailyTotals>>;
   /** Cursor state – where collection started, for "collecting since" line */
@@ -141,15 +158,9 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         collectInFlight = (async () => {
           const launcherPkgs = await resolveLaunchers();
           const res = await collectUsage(usage, store, { now, ignorePackages: launcherPkgs });
-          // Keep stored `events` and `data_gaps` truthful to the authoritative raw
-          // UsageEvents stream:
-          //   1. One-time 7-day repair (`lifecycle_repair_v28`) atomically replaces
-          //      leftover/duplicate pre-fix `app_foreground`/`app_background` intervals
-          //      and stale gap rows on recent days still held in Android's UsageEvents
-          //      buffer, then re-ingests derived sessions for days t-6..t-3.
-          //   2. Every sync reconciles today's `[fromDayMs, toDayMs)` OS usage events
-          //      and gap rows from a single full-day raw-stream pass so incremental
-          //      overlap syncs never leave duplicate `app_background` intervals behind.
+          // Refresh today's `data_gaps` summary from a clean single-day pass so stale
+          // pre-fix gap rows from earlier today cannot block P3 cards (`data_gaps` only;
+          // NEVER deletes rows from `events`).
           try {
             if (await usage.hasPermission()) {
               const todayStart = new Date(now);
@@ -159,33 +170,6 @@ export async function createRuntime(options: { allowContent?: boolean; retention
               nextDay.setDate(nextDay.getDate() + 1);
               const toDayMs = nextDay.getTime();
 
-              const repairMarker = await store.getCursor('lifecycle_repair_v28');
-              if (repairMarker === null) {
-                for (let d = 6; d >= 1; d -= 1) {
-                  const dStartDate = new Date(todayStart);
-                  dStartDate.setDate(dStartDate.getDate() - d);
-                  const dEndDate = new Date(dStartDate);
-                  dEndDate.setDate(dEndDate.getDate() + 1);
-                  const dStart = dStartDate.getTime();
-                  const dEnd = dEndDate.getTime();
-                  const rawDay = await usage.queryEvents(dStart - DEFAULT_MAX_INTERVAL_MS, dEnd);
-                  if (rawDay.length > 0) {
-                    const rebuiltDay = buildUsageEvents(rawDay, {
-                      sinceMs: dStart - DEFAULT_MAX_INTERVAL_MS,
-                      untilMs: dEnd,
-                      ignorePackages: launcherPkgs,
-                      gapFloorMs: dStart,
-                    });
-                    await store.replaceUsageEventsForWindow({ fromMs: dStart, toMs: dEnd }, rebuiltDay.events);
-                    await store.replaceGapsForWindow('usage_stats', { fromMs: dStart, toMs: dEnd }, rebuiltDay.gaps, dEnd - 1);
-                    if (d >= 3) {
-                      await ingestDay(store, localDayKey(dStart, offsetNow()), offsetNow());
-                    }
-                  }
-                }
-                await store.setCursor('lifecycle_repair_v28', now);
-              }
-
               const rawToday = await usage.queryEvents(fromDayMs - DEFAULT_MAX_INTERVAL_MS, now);
               if (rawToday.length > 0) {
                 const rebuiltToday = buildUsageEvents(rawToday, {
@@ -194,8 +178,12 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                   ignorePackages: launcherPkgs,
                   gapFloorMs: fromDayMs,
                 });
-                await store.replaceUsageEventsForWindow({ fromMs: fromDayMs, toMs: toDayMs }, rebuiltToday.events);
-                await store.replaceGapsForWindow('usage_stats', { fromMs: fromDayMs, toMs: toDayMs }, rebuiltToday.gaps, now);
+                await store.replaceGapsForWindow(
+                  'usage_stats',
+                  { fromMs: fromDayMs, toMs: toDayMs },
+                  rebuiltToday.gaps,
+                  now,
+                );
               }
             }
           } catch {}
@@ -288,6 +276,43 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           });
         } catch {
           return [];
+        }
+      },
+      traceAppDayIntervals: async (targetApp, range) => {
+        try {
+          const now = Date.now();
+          const effectiveToMs = Math.min(range.toMs, now);
+          if (!targetApp || effectiveToMs <= range.fromMs) return [];
+          const hasPerm = await usage.hasPermission().catch(() => false);
+          if (!hasPerm) return [];
+          const launcherPkgs = await resolveLaunchers();
+          const queryUntilMs = Math.min(range.toMs + DEFAULT_MAX_INTERVAL_MS, now);
+          const rawRows = await usage
+            .queryEvents(range.fromMs - DEFAULT_MAX_INTERVAL_MS, queryUntilMs)
+            .catch(() => []);
+          if (rawRows.length === 0) return [];
+          return traceAppForegroundIntervals(rawRows, targetApp, {
+            window: range,
+            nowMs: now,
+            lookbackMs: DEFAULT_MAX_INTERVAL_MS,
+            ignorePackages: launcherPkgs,
+          });
+        } catch {
+          return [];
+        }
+      },
+      storeDayRowCounts: async (utcOffsetMinutes = offsetNow()) => {
+        try {
+          return await store.dayRowCounts(utcOffsetMinutes);
+        } catch {
+          return [];
+        }
+      },
+      sessionRepairSnapshot: async () => {
+        try {
+          return await store.lastSessionRepairSnapshot();
+        } catch {
+          return null;
         }
       },
       osTotalsWithSource: async (range) => {
@@ -439,7 +464,14 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           // the previous 1–6 days from Android's UsageEvents buffer.
           await store.setCursorState('usage_stats', { at: now, open: [] });
           await store.setCursor('lifecycle_repair_v27', now);
-          await store.setCursor('lifecycle_repair_v28', now);
+          await store.recordSessionRepairSnapshot({
+            at: now,
+            day,
+            recoveredFgEvents: 0,
+            rebuiltDays: 0,
+            before: [],
+            after: [],
+          });
         }
         await store.recordResetAudit(audit);
         return audit;

@@ -1,7 +1,13 @@
 /* eslint-disable no-console */
 import * as React from 'react';
 import { AppState, Share } from 'react-native';
-import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
+import type {
+  DayStoreRowCounts,
+  SessionRepairSnapshot,
+  SessionRow,
+  StoreResetAudit,
+  StoreResetReason,
+} from '@mirror/store';
 import type {
   CuriositySplit,
   DayTotalsSource,
@@ -16,10 +22,12 @@ import type {
   Score,
   ScoreGap,
   ScoredSession,
+  TracedAppInterval,
   ValidationResult,
   WhatIfResult,
 } from '@mirror/core-analytics';
 import {
+  DEFAULT_MAX_INTERVAL_MS,
   buildCanonicalDaySittings,
   buildUsageEvents,
   computeDiscoveryJourney,
@@ -43,6 +51,7 @@ import {
   MirrorAppContext,
   dayEndMs,
   dayStartMs,
+  formatDuration,
   lastNDays,
   toDayStr,
   type DailyTotal,
@@ -73,8 +82,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [copyStatus, setCopyStatus] = React.useState<string | null>(null);
   const [keyMismatch, setKeyMismatch] = React.useState<{ oldKey: string; newKey: string } | null>(null);
   const [lastReset, setLastReset] = React.useState<StoreResetAudit | null>(null);
+  const [todayStr, setTodayStr] = React.useState<string>(() => toDayStr(Date.now()));
   const [selectedDay, setSelectedDay] = React.useState<string>(() => toDayStr(Date.now()));
   const [singleDayRows, setSingleDayRows] = React.useState<SingleDayRow[]>([]);
+  const [storeDayRowCounts, setStoreDayRowCounts] = React.useState<DayStoreRowCounts[]>([]);
+  const [sessionRepairSnapshot, setSessionRepairSnapshot] =
+    React.useState<SessionRepairSnapshot | null>(null);
+  const [tracedAppIntervals, setTracedAppIntervals] = React.useState<TracedAppInterval[]>([]);
   const [collectingSince, setCollectingSince] = React.useState<string | null>(null);
   const [honkaiDebug, setHonkaiDebug] = React.useState<DebugRawEvent[]>([]);
   const [showDebug, setShowDebug] = React.useState(false);
@@ -105,10 +119,20 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
   const hasLoadedOnceRef = React.useRef(false);
   const loadSeqRef = React.useRef(0);
+  const lastKnownTodayRef = React.useRef<string>(toDayStr(Date.now()));
 
   const checkPermissionAndCollect = React.useCallback(async () => {
     const seq = ++loadSeqRef.current;
     const isCurrent = () => loadSeqRef.current === seq;
+    const currentToday = toDayStr(Date.now());
+    setTodayStr((prev) => (prev === currentToday ? prev : currentToday));
+    if (lastKnownTodayRef.current !== currentToday) {
+      lastKnownTodayRef.current = currentToday;
+      if (selectedDay !== currentToday) {
+        setSelectedDay(currentToday);
+        return;
+      }
+    }
     const targetDay = selectedDay;
     try {
       if (!hasLoadedOnceRef.current) {
@@ -223,6 +247,17 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
 
       await runtime.ingestRecent();
       if (!isCurrent()) return;
+
+      try {
+        const [rowCounts, repairSnap] = await Promise.all([
+          runtime.storeDayRowCounts(),
+          runtime.sessionRepairSnapshot(),
+        ]);
+        if (isCurrent()) {
+          setStoreDayRowCounts(rowCounts);
+          setSessionRepairSnapshot(repairSnap);
+        }
+      } catch {}
 
       let flaggedAppsForDebug = new Set<string>();
       try {
@@ -449,14 +484,23 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               const osMs = effectiveDayFgMap.get(app) ?? 0;
               const rawDiag = rawBucketMap.get(app);
               const rawBucketMs = rawDiag?.totalMs ?? 0;
+              const preMidnightBucketMs = rawDiag?.preMidnightBucketMs ?? 0;
+              const sameDayBucketMs =
+                rawDiag?.sameDayBucketMs ?? Math.max(0, rawBucketMs - preMidnightBucketMs);
               const appSittingSpanMs = sittingMap.get(app) ?? 0;
-              const diff = osMs > 0 ? ((mirrorMs - osMs) / osMs) * 100 : mirrorMs > 0 ? 100 : 0;
+              const referenceOsMs = sameDayBucketMs > 0 ? sameDayBucketMs : osMs;
+              const diff =
+                referenceOsMs > 0
+                  ? ((displayedMs - referenceOsMs) / referenceOsMs) * 100
+                  : displayedMs > 0
+                    ? 100
+                    : 0;
               const disc = discrepancyByApp.get(app);
               const status = disc
                 ? disc.status
-                : Math.abs(mirrorMs - osMs) <= Math.max(osMs * 0.1, 60_000)
+                : Math.abs(displayedMs - referenceOsMs) <= Math.max(referenceOsMs * 0.1, 60_000)
                   ? 'ok'
-                  : mirrorMs < osMs
+                  : displayedMs < referenceOsMs
                     ? 'low'
                     : 'high';
               return {
@@ -466,7 +510,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
                 mirrorMs,
                 osMs,
                 rawBucketMs,
-                preMidnightBucketMs: rawDiag?.preMidnightBucketMs ?? 0,
+                preMidnightBucketMs,
+                sameDayBucketMs,
                 bucketCount: rawDiag?.bucketCount ?? 0,
                 earliestBucketStartMs: rawDiag?.earliestBucketStartMs,
                 latestBucketEndMs: rawDiag?.latestBucketEndMs,
@@ -475,7 +520,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
                 status,
                 flagged: Boolean(disc),
                 flagReason: disc
-                  ? `${disc.comparison}: ${disc.diffMs >= 0 ? '+' : '-'}${Math.round(Math.abs(disc.diffMs) / 1000)}s (${disc.diffPct.toFixed(1)}%)`
+                  ? `${disc.comparison}: Mirror ${formatDuration(disc.mirrorMs)} vs OS ${formatDuration(disc.osMs)}, ${disc.diffMs >= 0 ? '+' : '-'}${Math.round(Math.abs(disc.diffMs) / 1000)}s (${disc.diffPct >= 0 ? '+' : ''}${disc.diffPct.toFixed(1)}%)`
                   : undefined,
               };
             })
@@ -497,16 +542,28 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
 
       try {
         const now = Date.now();
-        const since24h = now - 24 * 3_600_000;
-        const debug = await usage.queryEventsDebug(since24h, now);
-        if (isCurrent()) setDebugEvents(debug.slice(-100));
-        console.log('RAW UsageEvents debug (last 24h, count):', debug.length, JSON.stringify(debug.slice(-30), null, 2));
+        const dayFrom = dayStartMs(targetDay);
+        const dayTo = dayEndMs(targetDay);
+        const debugFrom = dayFrom - DEFAULT_MAX_INTERVAL_MS;
+        const debugTo = Math.min(dayTo + DEFAULT_MAX_INTERVAL_MS, now);
+        const debug = debugTo > debugFrom ? await usage.queryEventsDebug(debugFrom, debugTo) : [];
+        if (isCurrent()) setDebugEvents(debug.slice(-120));
+        console.log(
+          `RAW UsageEvents debug (${targetDay}, count):`,
+          debug.length,
+          JSON.stringify(debug.slice(-30), null, 2),
+        );
         try {
           let launcherPkgs: string[] = [];
           try {
             launcherPkgs = await usage.getLauncherPackages();
           } catch {}
-          const built24h = buildUsageEvents(debug, {
+          const since24h = now - 24 * 3_600_000;
+          const debug24h =
+            targetDay === toDayStr(now)
+              ? debug.filter((e) => e.timeStamp >= since24h)
+              : await usage.queryEventsDebug(since24h, now);
+          const built24h = buildUsageEvents(debug24h, {
             sinceMs: since24h,
             untilMs: now,
             ignorePackages: launcherPkgs,
@@ -520,6 +577,24 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             setRaw24hOrphans(summarizeOrphanDrops(built24h.dropped, orphanLabels, 8));
           }
         } catch {}
+
+        const traceApps = [...new Set<string>(['com.openai.chatgpt', ...flaggedAppsForDebug])];
+        try {
+          const allTraced = await Promise.all(
+            traceApps.map((pkg) => runtime.traceAppDayIntervals(pkg, { fromMs: dayFrom, toMs: dayTo })),
+          );
+          const flatTraced = allTraced.flat();
+          if (isCurrent()) {
+            setTracedAppIntervals(flatTraced);
+            if (flatTraced.length > 0) {
+              console.log(
+                `Traced foreground intervals (${targetDay}):`,
+                JSON.stringify(flatTraced, null, 2),
+              );
+            }
+          }
+        } catch {}
+
         const inspectedPkgs = new Set<string>([
           'com.openai.chatgpt',
           'com.HoYoverse.hkrpgoversea',
@@ -537,9 +612,12 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             e.packageName.toLowerCase().includes('genshin'),
         );
         if (isCurrent()) {
-          setHonkaiDebug(inspected.slice(-120));
+          setHonkaiDebug(inspected.slice(-200));
           if (inspected.length > 0) {
-            console.log('Inspected/Flagged app raw events (last 24h):', JSON.stringify(inspected.slice(-60), null, 2));
+            console.log(
+              `Inspected/Flagged app raw events (${targetDay}):`,
+              JSON.stringify(inspected.slice(-80), null, 2),
+            );
           }
         }
       } catch {}
@@ -587,6 +665,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     checkPermissionAndCollect();
     const sub = AppState.addEventListener('change', (next) => {
       if (next === 'active') {
+        const currentToday = toDayStr(Date.now());
+        setTodayStr((prev) => (prev === currentToday ? prev : currentToday));
+        if (lastKnownTodayRef.current !== currentToday) {
+          lastKnownTodayRef.current = currentToday;
+          setSelectedDay(currentToday);
+          return;
+        }
         checkPermissionAndCollect();
       }
     });
@@ -829,8 +914,16 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
 
   const copyRawEvents = React.useCallback(async () => {
     try {
-      const json = JSON.stringify(
-        debugEvents.map((e) => ({
+      const payload = {
+        selectedDay,
+        exportedAt: new Date().toISOString(),
+        utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        storeDayRowCounts,
+        sessionRepairSnapshot,
+        flaggedDiscrepancies,
+        singleDayRows,
+        tracedAppIntervals,
+        inspectedRawEvents: honkaiDebug.map((e) => ({
           eventType: e.eventType,
           typeName: e.typeName,
           packageName: e.packageName,
@@ -838,16 +931,34 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           timeStamp: e.timeStamp,
           iso: new Date(e.timeStamp).toISOString(),
         })),
-        null,
-        2,
-      );
+        recentRawEvents: debugEvents.map((e) => ({
+          eventType: e.eventType,
+          typeName: e.typeName,
+          packageName: e.packageName,
+          className: e.className ?? '',
+          timeStamp: e.timeStamp,
+          iso: new Date(e.timeStamp).toISOString(),
+        })),
+      };
+      const json = JSON.stringify(payload, null, 2);
       await Share.share({ message: json });
-      setCopyStatus(`Shared ${debugEvents.length} events`);
+      setCopyStatus(
+        `Shared diagnostics (${storeDayRowCounts.length} store days, ${tracedAppIntervals.length} traced intervals, ${honkaiDebug.length} inspected events)`,
+      );
       setTimeout(() => setCopyStatus(null), 3000);
     } catch (e: unknown) {
       setCopyStatus(`Share failed: ${e instanceof Error ? e.message : String(e)}`);
     }
-  }, [debugEvents]);
+  }, [
+    selectedDay,
+    storeDayRowCounts,
+    sessionRepairSnapshot,
+    flaggedDiscrepancies,
+    singleDayRows,
+    tracedAppIntervals,
+    honkaiDebug,
+    debugEvents,
+  ]);
 
   const handleBuildTap = React.useCallback(() => {
     const next = buildTapCount + 1;
@@ -859,10 +970,22 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     setTimeout(() => setBuildTapCount(0), 3000);
   }, [buildTapCount]);
 
-  const dayOptions = React.useMemo(() => lastNDays(14), [selectedDay]);
+  const dayOptions = React.useMemo(() => lastNDays(14, todayStr), [todayStr]);
+  const selectedDayStoreRow = React.useMemo(
+    () => storeDayRowCounts.find((r) => r.day === selectedDay) ?? null,
+    [storeDayRowCounts, selectedDay],
+  );
+  const selectedDayStoredUsageEvents =
+    (selectedDayStoreRow?.fgEvents ?? 0) +
+    (selectedDayStoreRow?.bgEvents ?? 0) +
+    (selectedDayStoreRow?.otherEvents ?? 0);
+  const hasEventsWithoutSittings =
+    dayReady &&
+    dayScoredSessions.length === 0 &&
+    (selectedDayStoredUsageEvents > 0 || dailyTotals.length > 0);
   const storedOrphanCount = quality?.byReason?.orphan_background ?? 0;
   const storedTotalGaps = quality?.count ?? 0;
-  const isTodaySelected = selectedDay === toDayStr(Date.now());
+  const isTodaySelected = selectedDay === todayStr;
   const orphanCount =
     isTodaySelected && raw24hOrphans !== null
       ? Math.min(storedOrphanCount, raw24hOrphans.total)
@@ -899,6 +1022,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       debugEvents,
       honkaiDebug,
       invalidTop,
+      storeDayRowCounts,
+      sessionRepairSnapshot,
+      tracedAppIntervals,
+      hasEventsWithoutSittings,
       copyStatus,
       scaledSessions,
       iqs,
@@ -964,6 +1091,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       debugEvents,
       honkaiDebug,
       invalidTop,
+      storeDayRowCounts,
+      sessionRepairSnapshot,
+      tracedAppIntervals,
+      hasEventsWithoutSittings,
       copyStatus,
       scaledSessions,
       iqs,

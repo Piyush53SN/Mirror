@@ -34,7 +34,7 @@ before(async () => {
   const ROOT = join(UI, '../..');
   writeFileSync(
     entry,
-    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\n`,
+    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext, lastNDays } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\n`,
   );
   await esbuild.build({
     entryPoints: [entry],
@@ -871,3 +871,132 @@ test('mobile 5-tab shell populated cards, expanded session pills, TabBar switchi
   );
   debugRenderer.unmount();
 });
+
+test('day picker defaults to today, events-without-sittings renders plain message (never "—"), and DebugView flags per-app Mirror vs OS > max(10%, 60s)', () => {
+  const MIN = 60_000;
+  const days = ui.lastNDays(14, '2026-10-29');
+  assert.equal(days.length, 14);
+  assert.equal(days[0], '2026-10-29', 'dayOptions starts with today');
+  assert.equal(days[1], '2026-10-28');
+
+  for (const activeTab of ['home', 'insights', 'sessions']) {
+    const noSittingsCtx = makeMockMobileContext({
+      activeTab,
+      selectedDay: '2026-10-28',
+      dayOptions: days,
+      hasEventsWithoutSittings: true,
+      dailyTotals: [
+        { app: 'com.google.android.youtube', label: 'YouTube', totalMs: 80 * MIN },
+        { app: 'com.openai.chatgpt', label: 'ChatGPT', totalMs: 78 * MIN },
+        { app: 'com.discord', label: 'Discord', totalMs: 27 * MIN },
+      ],
+      dayScoredSessions: [],
+      scaledSessions: [],
+      sessions: [],
+    });
+    const renderer = create(
+      React.createElement(
+        ui.ThemeProvider,
+        { initialTheme: 'dark' },
+        React.createElement(
+          ui.MirrorAppContext.Provider,
+          { value: noSittingsCtx },
+          React.createElement(ui.MirrorTabShell),
+        ),
+      ),
+    );
+    const textNodes = collectText(renderer.toJSON());
+    const text = textNodes.join(' ');
+    assert.ok(
+      text.includes('Usage events recorded on 2026-10-28, but no sittings were built yet'),
+      `${activeTab} must show plain message when events exist without sittings`,
+    );
+    assert.ok(
+      !textNodes.some((n) => n.trim() === '—'),
+      `${activeTab} must not render standalone "—" placeholder when events exist without sittings`,
+    );
+    renderer.unmount();
+  }
+
+  const debugCtx = makeMockMobileContext({
+    showDebug: true,
+    selectedDay: '2026-10-28',
+    dayOptions: days,
+    singleDayRows: [
+      {
+        app: 'com.openai.chatgpt',
+        label: 'ChatGPT',
+        displayedMs: 78 * MIN,
+        mirrorMs: 78 * MIN,
+        osMs: 78 * MIN,
+        rawBucketMs: 87 * MIN,
+        preMidnightBucketMs: 40 * MIN,
+        sameDayBucketMs: 47 * MIN,
+        bucketCount: 2,
+        sittingSpanMs: 78 * MIN,
+        diffPct: (31 / 47) * 100,
+        status: 'over',
+        flagged: true,
+        flagReason: 'Home vs OS UsageStats: Mirror 1h 18m vs OS 47m, +1860s (+66.0%)',
+      },
+      {
+        app: 'com.google.android.youtube',
+        label: 'YouTube',
+        displayedMs: 80 * MIN,
+        mirrorMs: 80 * MIN,
+        osMs: 80 * MIN,
+        rawBucketMs: 80 * MIN,
+        preMidnightBucketMs: 0,
+        sameDayBucketMs: 80 * MIN,
+        bucketCount: 1,
+        sittingSpanMs: 74 * MIN,
+        diffPct: 0,
+        status: 'ok',
+        flagged: false,
+      },
+    ],
+    storeDayRowCounts: [
+      { day: '2026-10-28', events: 110, fgEvents: 55, bgEvents: 55, labelEvents: 0, otherEvents: 0, sessions: 43 },
+      { day: '2026-10-29', events: 2, fgEvents: 1, bgEvents: 1, labelEvents: 0, otherEvents: 0, sessions: 1 },
+    ],
+    tracedAppIntervals: [
+      {
+        app: 'com.openai.chatgpt',
+        startMs: Date.parse('2026-10-28T03:50:00.000Z'),
+        endMs: Date.parse('2026-10-28T04:37:00.000Z'),
+        startIso: '2026-10-28T03:50:00.000Z',
+        endIso: '2026-10-28T04:37:00.000Z',
+        durationMs: 47 * MIN,
+        clippedDayMs: 47 * MIN,
+        classNames: ['com.openai.chatgpt.MainActivity'],
+        openEventType: 1,
+        openEventName: 'ACTIVITY_RESUMED',
+        closeEventType: 2,
+        closeEventName: 'ACTIVITY_PAUSED',
+        closePackage: 'com.openai.chatgpt',
+        screenOffDuring: false,
+        msWhileScreenOff: 0,
+        keyguardLockedDuring: false,
+        msWhileKeyguardLocked: 0,
+      },
+    ],
+  });
+  const debugRenderer = create(
+    React.createElement(
+      ui.ThemeProvider,
+      { initialTheme: 'dark' },
+      React.createElement(
+        ui.MirrorAppContext.Provider,
+        { value: debugCtx },
+        React.createElement(ui.MirrorTabShell),
+      ),
+    ),
+  );
+  const debugText = collectText(debugRenderer.toJSON()).join(' ');
+  assert.ok(debugText.includes('[FLAGGED > max(10%, 60s)] ChatGPT – Mirror 1h 18m vs OS 47m'));
+  assert.ok(debugText.includes('[OK] YouTube – Mirror 1h 20m vs OS 1h 20m'));
+  assert.ok(debugText.includes('2026-10-28: events=110 (fg=55, bg=55) · sessions=43'));
+  assert.ok(debugText.includes('Foreground interval trace on 2026-10-28 (1)'));
+  debugRenderer.unmount();
+});
+

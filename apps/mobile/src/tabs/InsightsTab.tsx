@@ -44,7 +44,9 @@ export function InsightsTab(): React.ReactElement {
     depthBands,
     dayScoredSessions,
     sittingSpanMs,
+    dailyTotals,
     dailyTotalsSource,
+    hasEventsWithoutSittings,
     whatIf,
     whatIfCapMin,
     setWhatIfCapMin,
@@ -146,6 +148,17 @@ export function InsightsTab(): React.ReactElement {
             <Callout theme={theme} tone="limit">
               {`Paused until session boundaries pass the orphan gate — ${P3_GUARD_SHORT(orphanCount, totalGaps)}.`}
             </Callout>
+          ) : hasEventsWithoutSittings ? (
+            <EmptyState
+              title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+              body={`What-if simulations need derived sittings on ${selectedDay} (${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'} recorded foreground time on Home). Tap Refresh to rebuild sittings from stored events.`}
+              action={
+                <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                  Refresh sittings
+                </Pill>
+              }
+              theme={theme}
+            />
           ) : !whatIf || !whatIf.hasBaseline ? (
             <EmptyState
               title={`No usage data yet on ${selectedDay}`}
@@ -201,7 +214,7 @@ export function InsightsTab(): React.ReactElement {
                 </View>
                 <Divider theme={theme} />
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Baseline IQS: ${whatIf.baselineIqs.value === null ? '—' : Math.round(whatIf.baselineIqs.value)} / ${whatIf.baselineIqs.max} (${whatIf.baselineIqs.band}, ${whatIf.baselineIqs.confidence.level} confidence — sum of measured parts, never rescaled to 100)`}
+                  {`Baseline IQS: ${whatIf.baselineIqs.value === null ? 'Not yet scored' : `${Math.round(whatIf.baselineIqs.value)} / ${whatIf.baselineIqs.max}`} (${whatIf.baselineIqs.band}, ${whatIf.baselineIqs.confidence.level} confidence — sum of measured parts, never rescaled to 100)`}
                 </Text>
               </View>
 
@@ -347,7 +360,18 @@ export function InsightsTab(): React.ReactElement {
               caption={`every measured part on ${selectedDay} (${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) — unmeasured factors drop out of the max`}
             />
           </View>
-          {iqs ? (
+          {hasEventsWithoutSittings ? (
+            <EmptyState
+              title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+              body="Factor scores require derived sittings on this day. Tap Refresh to rebuild sittings from stored events."
+              action={
+                <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                  Refresh sittings
+                </Pill>
+              }
+              theme={theme}
+            />
+          ) : iqs ? (
             <WhySheet
               score={iqs.value ?? 0}
               maxScore={iqs.max}
@@ -529,6 +553,17 @@ export function InsightsTab(): React.ReactElement {
                   />
                 ))}
               </View>
+            ) : hasEventsWithoutSittings ? (
+              <EmptyState
+                title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+                body="Sitting-length bands require derived sittings on this day. Tap Refresh to rebuild sittings from stored events."
+                action={
+                  <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                    Refresh sittings
+                  </Pill>
+                }
+                theme={theme}
+              />
             ) : (
               <EmptyState
                 title={`No sittings recorded yet on ${selectedDay}`}

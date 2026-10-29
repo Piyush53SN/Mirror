@@ -1,5 +1,11 @@
 import * as React from 'react';
-import type { SessionRow, StoreResetAudit, StoreResetReason } from '@mirror/store';
+import type {
+  DayStoreRowCounts,
+  SessionRepairSnapshot,
+  SessionRow,
+  StoreResetAudit,
+  StoreResetReason,
+} from '@mirror/store';
 import {
   formatDurationShort,
   type CuriositySplit,
@@ -14,6 +20,7 @@ import {
   type Score,
   type ScoreGap,
   type ScoredSession,
+  type TracedAppInterval,
   type ValidationResult,
   type WhatIfResult,
 } from '@mirror/core-analytics';
@@ -33,6 +40,7 @@ export type SingleDayRow = {
   osMs: number;
   rawBucketMs?: number;
   preMidnightBucketMs?: number;
+  sameDayBucketMs?: number;
   bucketCount?: number;
   earliestBucketStartMs?: number;
   latestBucketEndMs?: number;
@@ -88,13 +96,12 @@ export function toDayStr(ms: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
 }
 
-export function lastNDays(n: number): string[] {
+export function lastNDays(n: number, baseDay = toDayStr(Date.now())): string[] {
+  const [y, m, d] = baseDay.split('-').map(Number);
   const out: string[] = [];
-  const now = new Date();
   for (let i = 0; i < n; i += 1) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    out.push(toDayStr(d.getTime()));
+    const dt = new Date(y!, m! - 1, d! - i, 12, 0, 0, 0);
+    out.push(toDayStr(dt.getTime()));
   }
   return out;
 }
@@ -150,6 +157,10 @@ export type MirrorAppContextValue = {
   debugEvents: DebugRawEvent[];
   honkaiDebug: DebugRawEvent[];
   invalidTop: { pkg: string; count: number }[];
+  storeDayRowCounts: DayStoreRowCounts[];
+  sessionRepairSnapshot: SessionRepairSnapshot | null;
+  tracedAppIntervals: TracedAppInterval[];
+  hasEventsWithoutSittings: boolean;
   copyStatus: string | null;
 
   scaledSessions: ScaledSessionRow[];

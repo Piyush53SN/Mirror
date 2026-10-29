@@ -114,8 +114,8 @@ function IqsHeroGauge({
           justifyContent: 'center',
         }}
       >
-        <Text role="title-lg" theme={theme}>
-          {hasScore && iqs.value !== null ? String(Math.round(iqs.value)) : '—'}
+        <Text role={hasScore && iqs.value !== null ? 'title-lg' : 'micro'} theme={theme}>
+          {hasScore && iqs.value !== null ? String(Math.round(iqs.value)) : 'Pending'}
         </Text>
         <Text role="micro" tone="muted" theme={theme}>
           {iqs && iqs.max > 0 ? `/ ${iqs.max}` : 'Tier D'}
@@ -143,6 +143,7 @@ export function HomeTab(): React.ReactElement {
     setShowWhy,
     dailyTotals,
     dailyTotalsSource,
+    hasEventsWithoutSittings,
     orphanCount,
     totalGaps,
     p3Reliable,
@@ -258,7 +259,18 @@ export function HomeTab(): React.ReactElement {
           <ConfidenceChip tiers={['D']} label="Tier D · OS usage, no content" theme={theme} />
         </View>
 
-        {iqs ? (
+        {hasEventsWithoutSittings ? (
+          <EmptyState
+            title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
+            body={`Per-app screen time is available below (${formatDuration(totalScreenMs)} across ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}), while derived sittings for ${selectedDay} are empty. Tap Refresh to rebuild sittings from stored events.`}
+            action={
+              <Pill theme={theme} onPress={checkPermissionAndCollect}>
+                Refresh sittings
+              </Pill>
+            }
+            theme={theme}
+          />
+        ) : iqs ? (
           <View style={{ gap: theme.space(3) }}>
             <View
               style={{
@@ -270,8 +282,8 @@ export function HomeTab(): React.ReactElement {
               <IqsHeroGauge iqs={iqs} theme={theme} />
               <View style={{ flex: 1, gap: theme.space(1) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-                  <Text role="display" theme={theme}>
-                    {iqs.value === null ? '—' : String(Math.round(iqs.value))}
+                  <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={theme}>
+                    {iqs.value === null ? 'Not enough activity yet' : String(Math.round(iqs.value))}
                   </Text>
                   {iqs.value !== null ? (
                     <Text role="label" tone="muted" theme={theme}>

@@ -27,6 +27,12 @@ const store = await bundleTs(join(PKG, 'src/index.ts'), { outfile: join(HERE, '.
 const { NodeSqliteDriver, TEST_ROOT_KEY, counterRandom } = await bundleTs(join(PKG, 'testing/node-driver.ts'), {
   outfile: join(HERE, '.build', 'driver.mjs'),
 });
+const core = await bundleTs(join(PKG, '../core-analytics/src/index.ts'), {
+  outfile: join(HERE, '.build', 'core.mjs'),
+});
+const mobileIngest = await bundleTs(join(PKG, '../../apps/mobile/src/collector/ingest.ts'), {
+  outfile: join(HERE, '.build', 'mobile-ingest.mjs'),
+});
 
 const { MirrorStore, seal, open, deriveKeys, itemHash, DecryptionError } = store;
 
@@ -740,4 +746,191 @@ test('replaceUsageEventsForWindow purges leftover/duplicate OS intervals (e.g. f
     close();
   }
 });
+
+test('(d) 14 days of stored events -> ingest builds sittings for all 14 days, and reopening the app across days never reduces them', async () => {
+  const { s, close } = await makeStore();
+  const IST_OFFSET = 330; // Asia/Calcutta (+05:30)
+  const DAY = 86_400_000;
+  const MIN = 60_000;
+  try {
+    // Populate 14 consecutive local days (2026-10-16 .. 2026-10-29 IST) with realistic sub-second UsageEvents
+    const allDays = [];
+    for (let i = 0; i < 14; i += 1) {
+      const day = mobileIngest.localDayKey(Date.parse('2026-10-16T06:00:00.000Z') + i * DAY, IST_OFFSET);
+      allDays.push(day);
+      const dStart = core.dayStartMs(day, IST_OFFSET);
+      const rawRows = [
+        { packageName: 'com.google.android.youtube', className: '.WatchActivity', eventType: 1, timeStamp: dStart + 9 * 3_600_000 + 123 },
+        { packageName: 'com.google.android.youtube', className: '.WatchActivity', eventType: 2, timeStamp: dStart + 9 * 3_600_000 + 25 * MIN + 789 },
+        { packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 1, timeStamp: dStart + 13 * 3_600_000 + 850 },
+        { packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 2, timeStamp: dStart + 13 * 3_600_000 + 22 * MIN + 120 },
+        { packageName: 'com.discord', className: '.MainActivity', eventType: 1, timeStamp: dStart + 19 * 3_600_000 + 444 },
+        { packageName: 'com.discord', className: '.MainActivity', eventType: 2, timeStamp: dStart + 19 * 3_600_000 + 15 * MIN + 912 },
+      ];
+      const built = core.buildUsageEvents(rawRows, { sinceMs: dStart, untilMs: dStart + DAY });
+      await s.appendEvents(built.events);
+    }
+
+    const initialEventCount = (await s.counts()).total;
+    assert.equal(initialEventCount, 14 * 6, 'all 14 days have 3 fg + 3 bg = 6 stored events each');
+
+    // Run ingest on 2026-10-29 12:21 IST
+    const nowOct29 = Date.parse('2026-10-29T06:51:00.000Z');
+    await mobileIngest.ingestRecentDays(s, nowOct29, IST_OFFSET);
+
+    const afterInitial = await s.dayRowCounts(IST_OFFSET);
+    assert.equal(afterInitial.length, 14);
+    for (const row of afterInitial) {
+      assert.equal(row.events, 6, `${row.day} keeps all 6 events`);
+      assert.equal(row.sessions, 3, `${row.day} has all 3 sittings built`);
+    }
+
+    const focusInitial = core.computeFocusWindows({
+      sessions: (await s.sessions()).map((r) => ({ id: r.id, app: r.app, startMs: r.start_ms, endMs: r.end_ms })),
+      utcOffsetMinutes: IST_OFFSET,
+    });
+    assert.equal(focusInitial.distinctDays, 14, 'Focus Windows sees all 14 days');
+
+    // Simulate reopening the app later on Oct 29, then Oct 30 (when Android's 7-day UsageEvents buffer
+    // only retains Oct 24..30 and older days Oct 16..23 have rolled off OS buffer), then Nov 3:
+    await mobileIngest.ingestRecentDays(s, Date.parse('2026-10-29T15:30:00.000Z'), IST_OFFSET);
+
+    const nowOct30 = Date.parse('2026-10-30T06:51:00.000Z');
+    const oct30Start = core.dayStartMs('2026-10-30', IST_OFFSET);
+    const mockUsageSource = {
+      available: true,
+      hasPermission: async () => true,
+      openSettings: () => {},
+      getLauncherPackages: async () => ['com.mi.android.globallauncher'],
+      queryUsageStats: async () => [],
+      queryEventsDebug: async () => [],
+      queryEvents: async () => [
+        { packageName: 'com.whatsapp', className: '.HomeActivity', eventType: 1, timeStamp: oct30Start + 10 * 3_600_000 + 333 },
+        { packageName: 'com.whatsapp', className: '.HomeActivity', eventType: 2, timeStamp: oct30Start + 10 * 3_600_000 + 12 * MIN + 777 },
+      ],
+    };
+    await core.collectUsage(mockUsageSource, s, { now: nowOct30, ignorePackages: ['com.mi.android.globallauncher'] });
+    await mobileIngest.ingestRecentDays(s, nowOct30, IST_OFFSET);
+    await mobileIngest.ingestRecentDays(s, Date.parse('2026-11-03T04:00:00.000Z'), IST_OFFSET);
+
+    const afterReopens = await s.dayRowCounts(IST_OFFSET);
+    const byDay = new Map(afterReopens.map((r) => [r.day, r]));
+    for (const day of allDays) {
+      const row = byDay.get(day);
+      assert.ok(row, `day ${day} still present after app reopens`);
+      assert.equal(row.events, 6, `${day} never lost any stored events`);
+      assert.equal(row.sessions, 3, `${day} never lost any derived sittings`);
+    }
+    assert.equal(byDay.get('2026-10-30')?.sessions, 1, 'new day sitting also added cleanly');
+  } finally {
+    close();
+  }
+});
+
+test('(c) one-time non-destructive session repair restores 4f27118 sub-second truncated sittings (0 -> 43 on 2026-10-28, 3 -> 10 days) without deleting events', async () => {
+  const { s, close } = await makeStore();
+  const IST_OFFSET = 330;
+  const DAY = 86_400_000;
+  const MIN = 60_000;
+  try {
+    // 1. Build 9 complete days (2026-10-20 .. 2026-10-28) + 2026-10-29 with sub-second timestamps,
+    //    matching 2026-10-28's 55 raw opens -> 43 merged sittings and YouTube 80m, ChatGPT 78m, Discord 27m:
+    const originalOct28SessionIds = [];
+    for (let d = 9; d >= 0; d -= 1) {
+      const day = mobileIngest.localDayKey(Date.parse('2026-10-29T06:51:00.000Z') - d * DAY, IST_OFFSET);
+      const dStart = core.dayStartMs(day, IST_OFFSET);
+      const rawRows = [];
+      if (day === '2026-10-28') {
+        let cursor = dStart + 8 * 3_600_000 + 347;
+        for (let i = 0; i < 20; i += 1) {
+          const dur = 4 * MIN + (i % 2 === 0 ? 112 : -112);
+          rawRows.push({ packageName: 'com.google.android.youtube', className: '.Watch', eventType: 1, timeStamp: cursor });
+          rawRows.push({ packageName: 'com.google.android.youtube', className: '.Watch', eventType: 2, timeStamp: cursor + dur });
+          cursor += dur + (i < 6 ? 5 * MIN + 231 : 18 * MIN + 231);
+        }
+        for (let i = 0; i < 20; i += 1) {
+          const dur = Math.round(3.9 * MIN) + (i % 2 === 0 ? 419 : -419);
+          rawRows.push({ packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 1, timeStamp: cursor });
+          rawRows.push({ packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 2, timeStamp: cursor + dur });
+          cursor += dur + (i < 6 ? 4 * MIN + 613 : 16 * MIN + 613);
+        }
+        for (let i = 0; i < 15; i += 1) {
+          const dur = Math.round(1.8 * MIN) + (i % 3 === 0 ? 508 : -254);
+          rawRows.push({ packageName: 'com.discord', className: '.Main', eventType: 1, timeStamp: cursor });
+          rawRows.push({ packageName: 'com.discord', className: '.Main', eventType: 2, timeStamp: cursor + dur });
+          cursor += dur + 16 * MIN + 119;
+        }
+      } else if (day === '2026-10-29') {
+        rawRows.push({ packageName: 'com.whatsapp', className: '.Home', eventType: 1, timeStamp: dStart + 3 * 3_600_000 + 412 });
+        rawRows.push({ packageName: 'com.whatsapp', className: '.Home', eventType: 2, timeStamp: dStart + 3 * 3_600_000 + 6 * MIN + 881 });
+      } else {
+        let cursor = dStart + 9 * 3_600_000 + 219;
+        for (let i = 0; i < 13; i += 1) {
+          const app = i % 2 === 0 ? 'com.google.android.youtube' : 'com.discord';
+          const dur = 5 * MIN + 333;
+          rawRows.push({ packageName: app, className: '.Main', eventType: 1, timeStamp: cursor });
+          rawRows.push({ packageName: app, className: '.Main', eventType: 2, timeStamp: cursor + dur });
+          cursor += dur + (i === 0 ? 4 * MIN : 20 * MIN) + 147;
+        }
+      }
+
+      const built = core.buildUsageEvents(rawRows, { sinceMs: dStart, untilMs: dStart + DAY });
+      if (day === '2026-10-28') {
+        for (const ses of core.sessionize(built.events).sessions) {
+          originalOct28SessionIds.push(ses.id);
+        }
+        assert.equal(originalOct28SessionIds.length, 43);
+      }
+
+      if (day <= '2026-10-22') {
+        // Untouched older days outside 4f27118's 6-day loop: both fg and bg + sessions intact
+        await s.appendEvents(built.events);
+        await mobileIngest.ingestDay(s, day, IST_OFFSET);
+      } else {
+        // Damaged days (2026-10-23 .. 2026-10-29): 4f27118 dropped app_foreground rows and wiped sessions to 0
+        await s.appendEvents(built.events.filter((e) => e.kind === 'app_background'));
+      }
+    }
+
+    const damagedCounts = await s.dayRowCounts(IST_OFFSET);
+    const oct28Before = damagedCounts.find((r) => r.day === '2026-10-28');
+    assert.equal(oct28Before.fgEvents, 0);
+    assert.equal(oct28Before.bgEvents, 55);
+    assert.equal(oct28Before.sessions, 0);
+    const damagedEventsTotal = (await s.counts()).total;
+    assert.equal(damagedEventsTotal, 199);
+
+    // 2. Run ingestRecentDays -> triggers one-time non-destructive repairSessionsFromStoredEvents
+    const nowOct29 = Date.parse('2026-10-29T06:51:00.000Z');
+    await mobileIngest.ingestRecentDays(s, nowOct29, IST_OFFSET);
+
+    const postRepairTotal = (await s.counts()).total;
+    assert.equal(postRepairTotal, 320, '0 events deleted; +121 missing app_foreground events appended');
+
+    const repairedCounts = await s.dayRowCounts(IST_OFFSET);
+    const oct28After = repairedCounts.find((r) => r.day === '2026-10-28');
+    assert.equal(oct28After.fgEvents, 55);
+    assert.equal(oct28After.bgEvents, 55);
+    assert.equal(oct28After.sessions, 43, 'all 43 sittings on 2026-10-28 restored');
+    for (const row of repairedCounts) {
+      assert.ok(row.sessions > 0, `${row.day} has derived sittings restored`);
+    }
+
+    const oct28From = core.dayStartMs('2026-10-28', IST_OFFSET);
+    const restoredOct28Sessions = await s.sessions({ fromMs: oct28From, toMs: oct28From + DAY });
+    assert.deepEqual(
+      restoredOct28Sessions.map((r) => r.id),
+      originalOct28SessionIds,
+      'restored session IDs on 2026-10-28 match original sittings byte-for-byte',
+    );
+
+    const snap = await s.lastSessionRepairSnapshot();
+    assert.ok(snap);
+    assert.equal(snap.recoveredFgEvents, 121);
+    assert.equal(snap.rebuiltDays, 10);
+  } finally {
+    close();
+  }
+});
+
 
