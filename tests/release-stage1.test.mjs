@@ -80,19 +80,37 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
   assert.match(repoCheck.stdout, /Version check OK: v0\.1\.0 \(versionCode 1\)/);
 
-  // Matching --tag v0.1.0 passes; mismatched or malformed --tag fails loudly
+  // Matching --tag v0.1.0 passes; suffixed pre-release tags with same base version pass; mismatched or malformed --tag fails loudly
   const tagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0'], { encoding: 'utf8' });
   assert.equal(tagOk.status, 0, tagOk.stdout + tagOk.stderr);
   assert.match(tagOk.stdout, /\[tag v0\.1\.0 verified\]/);
+
+  const rcTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0-rc1'], { encoding: 'utf8' });
+  assert.equal(rcTagOk.status, 0, rcTagOk.stdout + rcTagOk.stderr);
+  assert.match(rcTagOk.stdout, /\[tag v0\.1\.0-rc1 verified, pre-release suffix "-rc1"\]/);
+
+  const betaTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0-beta.2'], { encoding: 'utf8' });
+  assert.equal(betaTagOk.status, 0, betaTagOk.stdout + betaTagOk.stderr);
+  assert.match(betaTagOk.stdout, /\[tag v0\.1\.0-beta\.2 verified, pre-release suffix "-beta\.2"\]/);
+
+  const rcBaseMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0-rc1'], { encoding: 'utf8' });
+  assert.equal(rcBaseMismatch.status, 1);
+  assert.match(rcBaseMismatch.stderr, /::error::Version\/tag check FAILED/);
+  assert.match(
+    rcBaseMismatch.stderr,
+    /git tag "v0\.2\.0-rc1" base version "v0\.2\.0" does not match apps\/mobile\/app\.json version "v0\.1\.0"/,
+  );
 
   const tagMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0'], { encoding: 'utf8' });
   assert.equal(tagMismatch.status, 1);
   assert.match(tagMismatch.stderr, /::error::Version\/tag check FAILED/);
   assert.match(tagMismatch.stderr, /does not match apps\/mobile\/app\.json version "v0\.1\.0"/);
 
-  const tagMalformed = spawnSync(process.execPath, [bumpScript, '--check', '--tag', '0.1.0'], { encoding: 'utf8' });
-  assert.equal(tagMalformed.status, 1);
-  assert.match(tagMalformed.stderr, /is not a valid v<semver> release tag/);
+  for (const badTag of ['0.1.0', '0.1.0-rc1', 'v0.1.0-', 'v0.1.0--rc1', 'v0.1.0-.1']) {
+    const tagMalformed = spawnSync(process.execPath, [bumpScript, '--check', '--tag', badTag], { encoding: 'utf8' });
+    assert.equal(tagMalformed.status, 1, `expected ${badTag} to fail`);
+    assert.match(tagMalformed.stderr, /is not a valid v<semver> release tag/);
+  }
 
   const dir = mkdtempSync(join(tmpdir(), 'mirror-version-'));
   mkdirSync(join(dir, 'apps', 'mobile', 'android', 'app'), { recursive: true });
@@ -250,12 +268,13 @@ test('verify-signing-env fails loudly on missing/invalid secrets and release.yml
   assert.equal(writtenBytes.length, 64);
   assert.doesNotMatch(okRes.stdout + okRes.stderr, /not-a-real-/);
 
-  // 6. Tracked release workflow parses as valid YAML, enforces fail-loud tag + signing gates, and never debug-signs release artifacts
+  // 6. Tracked release workflow parses as valid YAML, enforces fail-loud tag + signing gates, marks any suffixed tag as pre-release, and never debug-signs release artifacts
   const releaseWf = readFileSync(join(ROOT, 'infra', 'workflows', 'release.yml'), 'utf8');
   const req = createRequire(import.meta.url);
   const yaml = req(req.resolve('js-yaml', { paths: [join(ROOT, 'node_modules', '@eslint', 'eslintrc')] }));
   const parsedWf = yaml.load(releaseWf);
-  assert.ok(parsedWf?.jobs?.release?.steps?.length >= 15, 'infra/workflows/release.yml parses cleanly as YAML');
+  const releaseSteps = parsedWf?.jobs?.release?.steps ?? [];
+  assert.ok(releaseSteps.length >= 15, 'infra/workflows/release.yml parses cleanly as YAML');
   assert.match(releaseWf, /bump-version\.mjs --check --tag/);
   assert.match(releaseWf, /verify-signing-env\.mjs/);
   assert.match(releaseWf, /MIRROR_REQUIRE_RELEASE_SIGNING:\s*'1'/);
@@ -263,6 +282,38 @@ test('verify-signing-env fails loudly on missing/invalid secrets and release.yml
   assert.match(releaseWf, /CN=Android Debug/);
   assert.match(releaseWf, /fail_on_unmatched_files:\s*true/);
   assert.doesNotMatch(releaseWf, /android\.injected\.signing\.store\.file/);
+
+  const tagMetaStep = releaseSteps.find((s) => s.id === 'tag_meta');
+  assert.ok(tagMetaStep, 'release.yml defines id: tag_meta step');
+  assert.match(tagMetaStep.run, /\[\[ "\$TAG" == \*-\* \]\]/);
+  assert.match(tagMetaStep.run, /prerelease=true/);
+  assert.match(tagMetaStep.run, /make_latest=false/);
+
+  const ghReleaseStep = releaseSteps.find((s) => String(s.uses ?? '').startsWith('softprops/action-gh-release@'));
+  assert.ok(ghReleaseStep, 'release.yml defines softprops/action-gh-release step');
+  assert.equal(ghReleaseStep.with?.prerelease, "${{ contains(github.ref_name, '-') }}");
+  assert.equal(ghReleaseStep.with?.make_latest, '${{ steps.tag_meta.outputs.make_latest }}');
+
+  // 6b. changelog.mjs renders a pre-release banner for suffixed tags and omits it for final tags
+  const clDir = mkdtempSync(join(tmpdir(), 'mirror-changelog-'));
+  const rcChangelogPath = join(clDir, 'CHANGELOG-rc.md');
+  const finalChangelogPath = join(clDir, 'CHANGELOG-final.md');
+  const changelogScript = join(ROOT, 'scripts', 'release', 'changelog.mjs');
+  const rcClRes = spawnSync(process.execPath, [changelogScript, 'v0.1.0-rc1', '--out', rcChangelogPath], {
+    encoding: 'utf8',
+  });
+  const finalClRes = spawnSync(process.execPath, [changelogScript, 'v0.1.0', '--out', finalChangelogPath], {
+    encoding: 'utf8',
+  });
+  const rcClBody = readFileSync(rcChangelogPath, 'utf8');
+  const finalClBody = readFileSync(finalChangelogPath, 'utf8');
+  rmSync(clDir, { recursive: true, force: true });
+  assert.equal(rcClRes.status, 0, rcClRes.stdout + rcClRes.stderr);
+  assert.equal(finalClRes.status, 0, finalClRes.stdout + finalClRes.stderr);
+  assert.match(rcClBody, /^# Changelog v0\.1\.0-rc1/m);
+  assert.match(rcClBody, /\*\*Pre-release \(v0\.1\.0-rc1\)\*\*/);
+  assert.match(finalClBody, /^# Changelog v0\.1\.0/m);
+  assert.doesNotMatch(finalClBody, /\*\*Pre-release/);
 
   // 7. Gradle signing plugin enforces MIRROR_REQUIRE_RELEASE_SIGNING=1
   const signingPlugin = readFileSync(join(ROOT, 'apps', 'mobile', 'plugins', 'with-release-signing.js'), 'utf8');

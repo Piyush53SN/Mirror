@@ -28,7 +28,20 @@ const releaseTags = sh('git tag --sort=-v:refname')
   .map((t) => t.trim())
   .filter((t) => /^v\d+\.\d+\.\d+$/.test(t));
 
-const requestedTag = process.argv[2] || releaseTags[0] || 'v0.1.0';
+const rawArgs = process.argv.slice(2);
+let outPathArg = null;
+const positionalArgs = [];
+for (let i = 0; i < rawArgs.length; i += 1) {
+  if (rawArgs[i] === '--out') {
+    outPathArg = rawArgs[++i] ? resolve(rawArgs[i]) : null;
+  } else {
+    positionalArgs.push(rawArgs[i]);
+  }
+}
+
+const requestedTag = positionalArgs[0] || releaseTags[0] || 'v0.1.0';
+const isPrerelease = requestedTag.includes('-');
+const baseReleaseVersion = requestedTag.replace(/^v/, '').split('-')[0];
 const endRef = refExists(requestedTag) ? requestedTag : 'HEAD';
 
 let prevTag = '';
@@ -47,11 +60,15 @@ const commits = sh(`git log ${logRange} --no-merges --max-count=40 --pretty=form
 const shortlog = commits || '- Initial release';
 const generatedDate = sh('git log -1 --format=%ad --date=short HEAD') || new Date().toISOString().split('T')[0];
 
+const prereleaseBanner = isPrerelease
+  ? `\n> **Pre-release (${requestedTag})** — release candidate build (base version \`v${baseReleaseVersion}\`) published for on-device verification before cutting final \`v${baseReleaseVersion}\`.\n`
+  : '';
+
 const changelog = `# Changelog ${requestedTag}
 
 Generated: ${generatedDate}
 Range: ${prevTag || 'initial'}..${requestedTag}
-
+${prereleaseBanner}
 ## Highlights (v0.1 — Android On-Device Tier D)
 
 - **Day-clipped OS foreground totals (Digital Wellbeing parity) & append-only local history:** Per-app daily totals sum raw \`UsageEvents\` foreground intervals clipped strictly to \`[00:00 local, min(now, 24:00 local)]\` with symmetric 6h lookaround, \`CONTINUE_PREVIOUS_DAY\` handling, unioned per-package stored intervals, non-destructive append-only \`MirrorStore\` sync (with one-time idempotent \`session_repair_v29\` recovery), and headless \`WorkManager\` launcher fallback — matching Digital Wellbeing within \`max(10%, 60s)\`. Excludes launchers (\`CATEGORY_HOME\`), Mirror itself, Settings, Play Store/Services, and Android/OEM Package installers.
@@ -84,6 +101,6 @@ ${shortlog}
 - \`node scripts/android/check-offline.mjs\`: PASSED
 `;
 
-const outPath = resolve(ROOT, 'CHANGELOG.md');
+const outPath = outPathArg ?? resolve(ROOT, 'CHANGELOG.md');
 writeFileSync(outPath, changelog, 'utf8');
 console.log(`Wrote ${outPath}`);

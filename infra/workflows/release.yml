@@ -30,9 +30,23 @@ jobs:
           node-version: '22.13.0'
           cache: npm
 
-      - name: Verify manifest versions match git tag (fail loudly on mismatch)
+      - name: Verify manifest versions match git tag & classify pre-release suffix
+        id: tag_meta
         run: |
-          node scripts/release/bump-version.mjs --check --tag "${{ github.ref_name }}"
+          set -eo pipefail
+          TAG="${{ github.ref_name }}"
+          node scripts/release/bump-version.mjs --check --tag "$TAG"
+          if [[ "$TAG" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "make_latest=false" >> "$GITHUB_OUTPUT"
+            echo "release_kind=Pre-release" >> "$GITHUB_OUTPUT"
+            echo "Detected suffixed tag '$TAG' -> publishing as GitHub pre-release (prerelease=true, make_latest=false)."
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "make_latest=true" >> "$GITHUB_OUTPUT"
+            echo "release_kind=Tier D on-device" >> "$GITHUB_OUTPUT"
+            echo "Detected stable tag '$TAG' -> publishing as full GitHub release (prerelease=false, make_latest=true)."
+          fi
 
       - name: Verify release signing secrets (fail loudly if missing)
         env:
@@ -176,12 +190,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "${{ github.ref_name }} - Mirror Android (Tier D on-device)"
+          name: "${{ github.ref_name }} - Mirror Android (${{ steps.tag_meta.outputs.release_kind }})"
           body_path: CHANGELOG.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ steps.tag_meta.outputs.make_latest }}
           files: |
             mirror-${{ github.ref_name }}-release.apk
             mirror-${{ github.ref_name }}-release.aab
             SHA256SUMS.txt
+            .reports/apksigner-verify.txt
             .reports/merged-manifest-release.json
             .reports/merged-manifest-debug.json
             CHANGELOG.md

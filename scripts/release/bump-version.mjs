@@ -5,14 +5,14 @@
  * (100% offline — never requires registry network access).
  *
  * Usage:
- *   node scripts/release/bump-version.mjs --check [--tag <vX.Y.Z>] [--root <dir>]
+ *   node scripts/release/bump-version.mjs --check [--tag <vX.Y.Z|vX.Y.Z-suffix>] [--root <dir>]
  *   node scripts/release/bump-version.mjs <semver|vSemver> [--version-code <int>] [--root <dir>]
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
-const TAG_RE = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
+const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$/;
+const TAG_RE = /^v(\d+\.\d+\.\d+)(?:-([0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*))?$/;
 
 const RELEASE_JSON_MANIFESTS = [
   'package.json',
@@ -103,12 +103,27 @@ function main() {
         failures.push(`apps/mobile/android/app/build.gradle versionName=${mName?.[1]} != ${currentVersion}`);
       }
     }
+    let verifiedTagSummary = '';
     if (tag !== null) {
       const tagMatch = TAG_RE.exec(tag);
+      const currentBaseVersion = String(currentVersion ?? '').split('-')[0];
       if (!tagMatch) {
-        failures.push(`git tag "${tag}" is not a valid v<semver> release tag (expected vX.Y.Z)`);
-      } else if (tagMatch[1] !== currentVersion) {
-        failures.push(`git tag "${tag}" does not match apps/mobile/app.json version "v${currentVersion}"`);
+        failures.push(`git tag "${tag}" is not a valid v<semver> release tag (expected vX.Y.Z or vX.Y.Z-<suffix>)`);
+      } else {
+        const [, tagBase, tagSuffix] = tagMatch;
+        if (!tagSuffix) {
+          if (tagBase !== currentVersion) {
+            failures.push(`git tag "${tag}" does not match apps/mobile/app.json version "v${currentVersion}"`);
+          } else {
+            verifiedTagSummary = ` [tag ${tag} verified]`;
+          }
+        } else if (tagBase !== currentBaseVersion) {
+          failures.push(
+            `git tag "${tag}" base version "v${tagBase}" does not match apps/mobile/app.json version "v${currentVersion}"`,
+          );
+        } else {
+          verifiedTagSummary = ` [tag ${tag} verified, pre-release suffix "-${tagSuffix}"]`;
+        }
       }
     }
     if (failures.length > 0) {
@@ -117,7 +132,7 @@ function main() {
       process.exit(1);
     }
     console.log(
-      `Version check OK: v${currentVersion} (versionCode ${currentCode})${tag ? ` [tag ${tag} verified]` : ''} aligned across ${jsonFiles.length + 1} manifests${existsSync(gradlePath) ? ' + build.gradle' : ''}${existsSync(lockPath) ? ' + package-lock.json' : ''}.`,
+      `Version check OK: v${currentVersion} (versionCode ${currentCode})${verifiedTagSummary} aligned across ${jsonFiles.length + 1} manifests${existsSync(gradlePath) ? ' + build.gradle' : ''}${existsSync(lockPath) ? ' + package-lock.json' : ''}.`,
     );
     return;
   }

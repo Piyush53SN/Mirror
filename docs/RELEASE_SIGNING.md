@@ -115,7 +115,7 @@ npm run android:manifest -- --variant release
 4. **Always-run keystore shredder (`if: always()`):**
    Shreds and deletes `$RUNNER_TEMP/signing` even if an intermediate build step fails.
 
-> **Note on GitHub App workflow permissions:** If pushing commits that touch `.github/workflows/release.yml` is rejected by GitHub (`refusing to allow a GitHub App to create or update workflow without workflows permission`), copy `infra/workflows/release.yml` verbatim into `.github/workflows/release.yml` via the GitHub Web UI before pushing tag `v0.1.0`.
+> **Note on GitHub App workflow permissions:** If pushing commits that touch `.github/workflows/release.yml` is rejected by GitHub (`refusing to allow a GitHub App to create or update workflow without workflows permission`), copy `infra/workflows/release.yml` verbatim into `.github/workflows/release.yml` via the GitHub Web UI or a local push with `workflow` scope before pushing `v0.1.0-rc1` (or any `v*` tag). Any suffixed tag (`vX.Y.Z-<suffix>`, e.g. `v0.1.0-rc1`) is verified against the base version in `apps/mobile/app.json` and published as a GitHub pre-release (`prerelease: true`, `make_latest: false`).
 
 You can also verify your local environment variables before tagging:
 
