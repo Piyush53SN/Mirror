@@ -478,3 +478,41 @@ test('property: What-if invariants hold across arbitrary sessions, OS totals, la
     { numRuns: 200 },
   );
 });
+
+test('combinable scenarios: computeWhatIf combines multiple active scenarios and reports measured-only points without / 100', () => {
+  const dayStart = Date.parse('2026-10-28T00:00:00.000Z');
+  const window = { fromMs: dayStart, toMs: dayStart + 86_400_000 };
+  const MIN_MS = 60_000;
+  const sessions = [
+    // Late night 25m YouTube sitting (23:10..23:35)
+    { id: 's_yt_night', app: 'com.google.android.youtube', startMs: dayStart + (23 * 60 + 10) * MIN_MS, endMs: dayStart + (23 * 60 + 35) * MIN_MS },
+    // Daytime 22m Wikipedia sitting (14:00..14:22)
+    { id: 's_wk_day', app: 'org.wikipedia', startMs: dayStart + 14 * 60 * MIN_MS, endMs: dayStart + (14 * 60 + 22) * MIN_MS },
+    // 4 daytime sustained sittings (5m each) so >=5 sustained sittings remain after removing night sitting
+    { id: 's_wa_1', app: 'com.whatsapp', startMs: dayStart + 9 * 60 * MIN_MS, endMs: dayStart + (9 * 60 + 5) * MIN_MS },
+    { id: 's_wa_2', app: 'com.whatsapp', startMs: dayStart + 10 * 60 * MIN_MS, endMs: dayStart + (10 * 60 + 5) * MIN_MS },
+    { id: 's_wa_3', app: 'com.whatsapp', startMs: dayStart + 11 * 60 * MIN_MS, endMs: dayStart + (11 * 60 + 5) * MIN_MS },
+    { id: 's_wa_4', app: 'com.whatsapp', startMs: dayStart + 13 * 60 * MIN_MS, endMs: dayStart + (13 * 60 + 5) * MIN_MS },
+    // 1 brief 4s bounce
+    { id: 's_bounce', app: 'com.reddit.frontpage', startMs: dayStart + 12 * 60 * MIN_MS, endMs: dayStart + 12 * 60 * MIN_MS + 4_000 },
+  ];
+
+  const res = computeWhatIf({
+    window,
+    sessions,
+    utcOffsetMinutes: 0,
+    sittingCapMinutes: 10,
+    quietHours: { startHour: 23, endHour: 5 },
+    activeScenarioIds: ['cap_sittings', 'quiet_hours', 'skip_short_bounces'],
+  });
+
+  assert.ok(res.combinedScenario, 'combinedScenario must be populated when >=2 scenarios are active');
+  assert.equal(res.combinedScenario.id, 'combined');
+  assert.equal(res.combinedScenario.badge, 'Estimate');
+  assert.match(res.combinedScenario.title, /Combined/);
+  // Quiet hours removes 25m night sitting; cap 10m trims 22m daytime sitting by 12m; skip_short_bounces drops 4s bounce -> remaining = 10m + 20m = 30m!
+  assert.equal(res.combinedScenario.estimatedTimeMs, 30 * MIN_MS);
+  assert.match(res.combinedScenario.iqsEstimateLabel, /^Estimate: .* of 55 measured/);
+  assert.doesNotMatch(res.combinedScenario.iqsEstimateLabel, /\/ 100/);
+});
+

@@ -22,7 +22,12 @@ import {
 import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
-import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
+import {
+  formatDuration,
+  toDayStr,
+  useMirrorApp,
+  type CombinableWhatIfScenarioId,
+} from '../context/MirrorAppContext';
 
 type InsightsFilter = 'all' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
 
@@ -52,6 +57,8 @@ export function InsightsTab(): React.ReactElement {
     setWhatIfCapMin,
     whatIfQuietPreset,
     setWhatIfQuietPreset,
+    whatIfActiveScenarios,
+    toggleWhatIfScenario,
     intentLabels,
     p3Reliable,
     orphanCount,
@@ -60,6 +67,25 @@ export function InsightsTab(): React.ReactElement {
     setActiveTab,
   } = useMirrorApp();
   const [filter, setFilter] = React.useState<InsightsFilter>('all');
+  const [localScenarios, setLocalScenarios] = React.useState<CombinableWhatIfScenarioId[]>([
+    'cap_sittings',
+    'quiet_hours',
+  ]);
+  const activeScenarioIds = whatIfActiveScenarios ?? localScenarios;
+  const handleToggleScenario = React.useCallback(
+    (id: CombinableWhatIfScenarioId) => {
+      if (toggleWhatIfScenario) {
+        toggleWhatIfScenario(id);
+      } else {
+        setLocalScenarios((prev) =>
+          prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+        );
+      }
+    },
+    [toggleWhatIfScenario],
+  );
+  const isToday = selectedDay === toDayStr(Date.now());
+  const quietLabel = whatIfQuietPreset === '22-07' ? '22:00–07:00' : '23:00–05:00';
 
   const explicitLabelCount = React.useMemo(
     () =>
@@ -175,13 +201,16 @@ export function InsightsTab(): React.ReactElement {
                 What-if Simulator
               </Text>
               <Text role="label" tone="muted" theme={theme}>
-                {`Estimates from ${selectedDay}'s usage — measured factors only on the fixed 100-point scale`}
+                {`Estimates from ${selectedDay}'s usage — measured factors only, never rescaled`}
               </Text>
             </View>
             <TierBadge tier="D" theme={theme} />
           </View>
 
           <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+            {(isToday || iqs?.provisional) ? (
+              <Chip static label="Today so far, provisional" theme={theme} />
+            ) : null}
             <Chip static label="Estimate" theme={theme} />
             <Chip static label="Measured factors only" theme={theme} />
             {whatIf?.smallSampleBaseline ? <Chip static label="Small sample" theme={theme} /> : null}
@@ -258,45 +287,180 @@ export function InsightsTab(): React.ReactElement {
                 </View>
                 <Divider theme={theme} />
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Baseline score: ${whatIf.baselineIqs.value === null ? 'Not yet scored' : `${Math.round(whatIf.baselineIqs.value)} / ${whatIf.baselineIqs.max > 0 ? whatIf.baselineIqs.max : 100}`} (${whatIf.baselineIqs.band}, ${whatIf.baselineIqs.confidence.level} confidence — ${whatIf.baselineIqs.measuredMax ?? iqsMeasuredMax} pts measured today)`}
+                  {`Baseline score: ${
+                    whatIf.baselineIqs.value === null
+                      ? 'Not yet scored'
+                      : `${Math.round(whatIf.baselineIqs.value)} of ${whatIf.baselineIqs.measuredMax ?? iqsMeasuredMax} measured`
+                  } (${Math.max(0, 100 - (whatIf.baselineIqs.measuredMax ?? iqsMeasuredMax))} pts not measured · ${whatIf.baselineIqs.band}, ${whatIf.baselineIqs.confidence.level} confidence)`}
                 </Text>
               </View>
 
-              {/* Scenario preset controls */}
-              <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-                <Pill
-                  theme={theme}
-                  variant={whatIfCapMin === 10 ? 'primary' : 'secondary'}
-                  onPress={() => setWhatIfCapMin(10)}
-                >
-                  Cap 10m
-                </Pill>
-                <Pill
-                  theme={theme}
-                  variant={whatIfCapMin === 20 ? 'primary' : 'secondary'}
-                  onPress={() => setWhatIfCapMin(20)}
-                >
-                  Cap 20m
-                </Pill>
-                <Pill
-                  theme={theme}
-                  variant={whatIfQuietPreset === '23-05' ? 'primary' : 'secondary'}
-                  onPress={() => setWhatIfQuietPreset('23-05')}
-                >
-                  Quiet 23:00–05:00
-                </Pill>
-                <Pill
-                  theme={theme}
-                  variant={whatIfQuietPreset === '22-07' ? 'primary' : 'secondary'}
-                  onPress={() => setWhatIfQuietPreset('22-07')}
-                >
-                  Quiet 22:00–07:00
-                </Pill>
+              {/* Combinable scenario toggles + one-line descriptions + presets */}
+              <View
+                testID="whatif-combinable-scenarios"
+                style={{
+                  borderRadius: theme.radius.md,
+                  backgroundColor: theme.color.card,
+                  borderWidth: 1,
+                  borderColor: theme.color.borderCard,
+                  padding: theme.space(3),
+                  gap: theme.space(2),
+                }}
+              >
+                <Text role="label" theme={theme}>
+                  Scenarios (you can combine)
+                </Text>
+                <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+                  {(
+                    [
+                      {
+                        id: 'cap_sittings' as const,
+                        title: `Cap sittings (${whatIfCapMin}m)`,
+                      },
+                      {
+                        id: 'quiet_hours' as const,
+                        title: `Quiet hours (${quietLabel})`,
+                      },
+                      {
+                        id: 'skip_short_bounces' as const,
+                        title: 'Skip short bounces',
+                      },
+                    ]
+                  ).map((item) => {
+                    const isOn = activeScenarioIds.includes(item.id);
+                    return (
+                      <Pill
+                        key={item.id}
+                        theme={theme}
+                        variant={isOn ? 'primary' : 'secondary'}
+                        accessibilityLabel={`${item.title}, ${isOn ? 'On' : 'Off'}. Activate to toggle scenario`}
+                        onPress={() => handleToggleScenario(item.id)}
+                      >
+                        {`${item.title} · ${isOn ? 'On' : 'Off'}`}
+                      </Pill>
+                    );
+                  })}
+                </View>
+
+                <View style={{ gap: theme.space(0.5) }}>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`· Cap sittings (${activeScenarioIds.includes('cap_sittings') ? 'On' : 'Off'}): trims each sitting longer than ${whatIfCapMin} min down to ${whatIfCapMin} min.`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`· Quiet hours (${activeScenarioIds.includes('quiet_hours') ? 'On' : 'Off'}): removes sittings during ${quietLabel} local time.`}
+                  </Text>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`· Skip short bounces (${activeScenarioIds.includes('skip_short_bounces') ? 'On' : 'Off'}): drops brief opens shorter than 8 seconds.`}
+                  </Text>
+                </View>
+
+                <Divider theme={theme} />
+                <Text role="micro" tone="muted" theme={theme}>
+                  Adjust cap & quiet-hour presets:
+                </Text>
+                <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+                  <Pill
+                    theme={theme}
+                    variant={whatIfCapMin === 10 ? 'primary' : 'secondary'}
+                    onPress={() => setWhatIfCapMin(10)}
+                  >
+                    Cap 10m
+                  </Pill>
+                  <Pill
+                    theme={theme}
+                    variant={whatIfCapMin === 20 ? 'primary' : 'secondary'}
+                    onPress={() => setWhatIfCapMin(20)}
+                  >
+                    Cap 20m
+                  </Pill>
+                  <Pill
+                    theme={theme}
+                    variant={whatIfQuietPreset === '23-05' ? 'primary' : 'secondary'}
+                    onPress={() => setWhatIfQuietPreset('23-05')}
+                  >
+                    Quiet 23:00–05:00
+                  </Pill>
+                  <Pill
+                    theme={theme}
+                    variant={whatIfQuietPreset === '22-07' ? 'primary' : 'secondary'}
+                    onPress={() => setWhatIfQuietPreset('22-07')}
+                  >
+                    Quiet 22:00–07:00
+                  </Pill>
+                </View>
               </View>
+
+              {/* Combined counterfactual estimate when 2+ scenarios are toggled On */}
+              {activeScenarioIds.length >= 2 && whatIf.combinedScenario ? (
+                <View
+                  testID="whatif-combined-card"
+                  style={{
+                    borderRadius: theme.radius.md,
+                    backgroundColor: theme.color.card,
+                    borderWidth: 1,
+                    borderColor: theme.color.anchor,
+                    padding: theme.space(3),
+                    gap: theme.space(1.5),
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'flex-start',
+                      flexWrap: 'wrap',
+                      gap: theme.space(2),
+                    }}
+                  >
+                    <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 160 }}>
+                      {whatIf.combinedScenario.title}
+                    </Text>
+                    <Chip static label={whatIf.combinedScenario.badge} theme={theme} />
+                  </View>
+                  <Text role="body" theme={theme}>
+                    {whatIf.combinedScenario.timeEstimateLabel}
+                  </Text>
+                  <Meter
+                    theme={theme}
+                    value={
+                      whatIf.combinedScenario.baselineTimeMs > 0
+                        ? Math.min(
+                            1,
+                            Math.max(
+                              0,
+                              whatIf.combinedScenario.estimatedTimeMs /
+                                whatIf.combinedScenario.baselineTimeMs,
+                            ),
+                          )
+                        : 0
+                    }
+                    label="Combined remaining span"
+                    caption={
+                      whatIf.combinedScenario.deltaTimeMs < 0
+                        ? `-${formatDuration(Math.abs(whatIf.combinedScenario.deltaTimeMs))} · Estimate`
+                        : '0s change · Estimate'
+                    }
+                    tone={whatIf.combinedScenario.deltaTimeMs < 0 ? 'anchor' : 'muted'}
+                  />
+                  <Text role="micro" theme={theme}>
+                    {whatIf.combinedScenario.iqsEstimateLabel}
+                  </Text>
+                  {whatIf.combinedScenario.noChangeReason ? (
+                    <Text role="micro" tone="muted" theme={theme}>
+                      {whatIf.combinedScenario.noChangeReason}
+                    </Text>
+                  ) : null}
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`Assumption: ${whatIf.combinedScenario.assumption}`}
+                  </Text>
+                </View>
+              ) : null}
 
               {/* Individual counterfactual estimate sub-panels */}
               <View style={{ gap: theme.space(2.5) }}>
                 {whatIf.scenarios.map((sc) => {
+                  const isScenarioOn =
+                    sc.id !== 'combined' && activeScenarioIds.includes(sc.id);
                   const baseMs = typeof sc.baselineTimeMs === 'number' ? sc.baselineTimeMs : whatIf.baselineTimeMs;
                   const estMs = typeof sc.estimatedTimeMs === 'number' ? sc.estimatedTimeMs : baseMs;
                   const deltaMs = typeof sc.deltaTimeMs === 'number' ? sc.deltaTimeMs : 0;
@@ -312,7 +476,7 @@ export function InsightsTab(): React.ReactElement {
                         borderRadius: theme.radius.md,
                         backgroundColor: theme.color.card,
                         borderWidth: 1,
-                        borderColor: theme.color.borderCard,
+                        borderColor: isScenarioOn ? theme.color.anchor : theme.color.borderCard,
                         padding: theme.space(3),
                         gap: theme.space(1.5),
                       }}
@@ -329,7 +493,10 @@ export function InsightsTab(): React.ReactElement {
                         <Text role="label" theme={theme} style={{ flex: 1, flexShrink: 1, minWidth: 160 }}>
                           {sc.title}
                         </Text>
-                        <Chip static label={sc.badge} theme={theme} />
+                        <View style={{ flexDirection: 'row', gap: theme.space(1), flexWrap: 'wrap' }}>
+                          <Chip static label={isScenarioOn ? 'On' : 'Off'} theme={theme} />
+                          <Chip static label={sc.badge} theme={theme} />
+                        </View>
                       </View>
 
                       <Text role="body" theme={theme}>
@@ -393,12 +560,12 @@ export function InsightsTab(): React.ReactElement {
         <Card theme={theme} style={{ marginBottom: 0 }}>
           <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
             <Text role="micro" tone="muted" theme={theme}>
-              SCORE DECOMPOSITION · FIXED 0–100 SCALE
+              SCORE DECOMPOSITION · MEASURED VS NOT MEASURED
             </Text>
             <SectionHeader
               theme={theme}
               title="Score Factor Breakdown"
-              caption={`measured parts vs unmeasured parts on ${selectedDay} (${sittingCount} sitting${sittingCount === 1 ? '' : 's'})`}
+              caption={`measured points vs unmeasured points on ${selectedDay} (${sittingCount} sitting${sittingCount === 1 ? '' : 's'})`}
             />
           </View>
           {hasEventsWithoutSittings ? (

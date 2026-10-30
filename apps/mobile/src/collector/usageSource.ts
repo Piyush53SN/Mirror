@@ -22,6 +22,7 @@ export type UsageSource = UsageSourcePort & {
   queryEventsDebug(sinceMs: number, untilMs: number): Promise<DebugUsageRow[]>;
   getLauncherPackages(): Promise<string[]>;
   getWindowInsets(): NativeWindowInsets | null;
+  saveExportJson(fileName: string, content: string): Promise<boolean | null>;
 };
 
 export function nativeUsageSource(): UsageSource {
@@ -54,6 +55,14 @@ export function nativeUsageSource(): UsageSource {
     getWindowInsets(): NativeWindowInsets | null {
       try {
         return native && typeof native.getWindowInsets === 'function' ? native.getWindowInsets() : null;
+      } catch {
+        return null;
+      }
+    },
+    async saveExportJson(fileName: string, content: string): Promise<boolean | null> {
+      try {
+        if (!native || typeof native.saveExportJson !== 'function') return null;
+        return await native.saveExportJson(fileName, content);
       } catch {
         return null;
       }

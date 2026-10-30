@@ -78,6 +78,10 @@ export type ScoreInput = {
   lateNight?: { startHour?: number; endHour?: number };
   /** If true, session boundaries come from reconstructed OS usage events (not exact per-sitting durations) – confidence capped at 0.49 */
   approximate?: boolean;
+  /** True when scoring an unfinished local day ("Today so far, provisional"); holds out late-night and scales sample-size confidence to elapsed time. */
+  provisional?: boolean;
+  /** Optional current epoch ms used to measure how much of an unfinished local day has elapsed so far. */
+  nowMs?: number;
 };
 
 export type Factor = {
@@ -123,6 +127,8 @@ export type Score = {
   measuredMax: number;
   /** Sum of maxima of the unmeasured factors (`100 - measuredMax`), shown separately and never scored as zero. */
   unmeasuredMax: number;
+  /** True when computed over an unfinished local day ("Today so far, provisional"). */
+  provisional?: boolean;
   band: string;
   factors: Factor[];
   confidence: Confidence;
@@ -474,6 +480,13 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
 export function scoreIqs(input: ScoreInput): Score {
   const window = input.window;
   const windowMs = Math.max(1, window.toMs - window.fromMs);
+  const isProvisional =
+    Boolean(input.provisional) ||
+    (input.nowMs !== undefined && Number.isFinite(input.nowMs) && input.nowMs < window.toMs);
+  const effectiveWindowEndMs =
+    isProvisional && input.nowMs !== undefined && Number.isFinite(input.nowMs)
+      ? Math.max(window.fromMs + MINUTE_MS, Math.min(window.toMs, input.nowMs))
+      : window.toMs;
   const sessions = sessionsInWindow(input.sessions, window).filter((s) => !isIgnoredSystemApp(s.app));
   const totalMs = sessions.reduce((sum, session) => sum + ms(session), 0);
   const offset = input.utcOffsetMinutes ?? 0;
@@ -533,22 +546,31 @@ export function scoreIqs(input: ScoreInput): Score {
 
   const lateMs = sessions.reduce((sum, session) => sum + lateNightMs(session.startMs, session.endMs, offset, input.lateNight?.startHour, input.lateNight?.endHour), 0);
   const lateMeasurable =
-    totalMs >= MIN_LATE_NIGHT_ACTIVE_MS || sustainedCount >= MIN_SESSION_MIX_SITTINGS;
+    !isProvisional &&
+    (totalMs >= MIN_LATE_NIGHT_ACTIVE_MS || sustainedCount >= MIN_SESSION_MIX_SITTINGS);
   const lateRatio = clamp01(lateMs / LATE_NIGHT_SATURATION_MS);
   const lateMinRounded = Math.round(lateMs / MINUTE_MS);
+  const lateSoFarLabel =
+    lateMs === 0
+      ? '0 min'
+      : lateMinRounded > 0
+        ? `${lateMinRounded} min`
+        : `${Math.max(1, Math.round(lateMs / 1000))} s`;
   const lateFactor: Factor = {
     id: 'late_night',
     label: 'Late-night quiet hours',
     points: lateMeasurable ? round1(15 * (1 - lateRatio)) : 0,
     max: 15,
     tier: 'D',
-    detail: lateMeasurable
-      ? lateMs === 0
-        ? '0 min between 23:00 and 05:00 local (full 15 pts; reaches 0 at 60 min).'
-        : `${lateMinRounded > 0 ? `${lateMinRounded} min` : `${Math.max(1, Math.round(lateMs / 1000))} s`} between 23:00 and 05:00 local (${Math.round(lateRatio * 100)}% of 60 min quiet-hours budget).`
-      : totalMs === 0
-        ? 'Not measured: no sitting spans.'
-        : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min across ${sustainedCount} sustained sitting${sustainedCount === 1 ? '' : 's'} (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min or ${MIN_SESSION_MIX_SITTINGS} sustained sittings needed).`,
+    detail: isProvisional
+      ? `Today so far, provisional: ${lateSoFarLabel} recorded between 23:00 and 05:00 so far; late-night quiet hours are held out until the local day finishes.`
+      : lateMeasurable
+        ? lateMs === 0
+          ? '0 min between 23:00 and 05:00 local (full 15 pts; reaches 0 at 60 min).'
+          : `${lateMinRounded > 0 ? `${lateMinRounded} min` : `${Math.max(1, Math.round(lateMs / 1000))} s`} between 23:00 and 05:00 local (${Math.round(lateRatio * 100)}% of 60 min quiet-hours budget).`
+        : totalMs === 0
+          ? 'Not measured: no sitting spans.'
+          : `Not measured: ${Math.max(1, Math.round(totalMs / MINUTE_MS))} min across ${sustainedCount} sustained sitting${sustainedCount === 1 ? '' : 's'} (at least ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min or ${MIN_SESSION_MIX_SITTINGS} sustained sittings needed).`,
     measurable: lateMeasurable,
   };
 
@@ -608,22 +630,25 @@ export function scoreIqs(input: ScoreInput): Score {
     measured.length / factors.length,
     measuredMax,
     windowMs,
+    isProvisional,
+    effectiveWindowEndMs,
   );
   if (unmeasuredMax > 0 && value !== null) {
     confidence.reasons.push(
-      `${measuredMax} of ${FIXED_SCORE_MAX} points measured today; ${unmeasuredMax} points remain unmeasured and are shown separately rather than scored as zero.`,
+      `${measuredMax} points measured${isProvisional ? ' so far today' : ''}; ${unmeasuredMax} points remain unmeasured and are listed separately rather than scored as zero.`,
     );
   }
 
   const totalMinLabel = totalMs < MINUTE_MS ? `${Math.max(1, Math.round(totalMs / 1000))} s` : `${Math.round(totalMs / MINUTE_MS)} min`;
+  const provisionalPrefix = isProvisional ? 'Today so far, provisional · ' : '';
   const caveat =
     value === null
       ? sessions.length === 0
-        ? 'Not enough data to score. Mirror will not fill the gap with an estimate.'
-        : `Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SWITCHING_SITTINGS} non-utility sittings, ${MIN_SESSION_MIX_SITTINGS} sittings, or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min before scoring; small-sample rates are hidden rather than guessed).`
+        ? `${provisionalPrefix}Not enough data to score. Mirror will not fill the gap with an estimate.`
+        : `${provisionalPrefix}Minimum activity not met yet (${totalMinLabel} across ${sessions.length} sitting${sessions.length === 1 ? '' : 's'} — needs at least ${MIN_SWITCHING_SITTINGS} non-utility sittings${isProvisional ? '' : `, ${MIN_SESSION_MIX_SITTINGS} sittings, or ${Math.round(MIN_LATE_NIGHT_ACTIVE_MS / MINUTE_MS)} min`} before scoring; small-sample rates are hidden rather than guessed).`
       : unmeasuredMax > 0
-        ? `Fixed 100-point scale: ${measuredMax} pts measured today and ${unmeasuredMax} pts unmeasured (${unmeasured.map((f) => `${f.label.toLowerCase()} ${f.max} pts`).join(', ')}). Unmeasured parts are shown separately — never counted as zero and never rescaled.`
-        : 'All 100 points are measured today. The measured parts add up to the exact score.';
+        ? `${provisionalPrefix}${Math.round(value)} of ${measuredMax} measured points (${unmeasuredMax} points not measured: ${unmeasured.map((f) => `${f.label.toLowerCase()} ${f.max} pts`).join(', ')}). Unmeasured parts are listed separately — never counted as zero and never rescaled.`
+        : `${provisionalPrefix}All 100 points are measured. The measured parts add up to the exact score.`;
 
   return {
     id: 'iqs',
@@ -632,7 +657,15 @@ export function scoreIqs(input: ScoreInput): Score {
     max: FIXED_SCORE_MAX,
     measuredMax,
     unmeasuredMax,
-    band: value === null ? 'not measured' : measuredMax >= FIXED_SCORE_MAX ? 'full band' : 'usage-only band',
+    provisional: isProvisional,
+    band:
+      value === null
+        ? 'not measured'
+        : isProvisional
+          ? 'today so far, provisional'
+          : measuredMax >= FIXED_SCORE_MAX
+            ? 'full band'
+            : 'usage-only band',
     factors,
     confidence,
     caveat,
@@ -647,20 +680,30 @@ function confidenceFor(
   tierCompleteness: number,
   measuredMax: number,
   windowMs: number,
+  isProvisional: boolean,
+  effectiveWindowEndMs: number,
 ): Confidence {
   const window = input.window;
+  const elapsedWindowMs = isProvisional
+    ? Math.max(MINUTE_MS, effectiveWindowEndMs - window.fromMs)
+    : windowMs;
+  const elapsedFraction = isProvisional
+    ? input.nowMs !== undefined && Number.isFinite(input.nowMs)
+      ? Math.min(1, Math.max(1 / 24, elapsedWindowMs / windowMs))
+      : 0.5
+    : 1;
   let gapMs = 0;
   let gapCount = 0;
   for (const gap of input.gaps ?? []) {
     gapCount += Math.max(0, gap.count);
     if (gap.fromMs !== undefined && gap.toMs !== undefined) {
-      gapMs += overlap(gap.fromMs, gap.toMs, window.fromMs, window.toMs);
+      gapMs += overlap(gap.fromMs, gap.toMs, window.fromMs, isProvisional ? effectiveWindowEndMs : window.toMs);
     }
   }
-  const coverage = clamp01(1 - gapMs / windowMs);
+  const coverage = clamp01(1 - gapMs / elapsedWindowMs);
   const gapReason =
     gapMs > 0
-      ? `${Math.round((gapMs / windowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`
+      ? `${Math.round((gapMs / elapsedWindowMs) * 100)}% of this window could not be measured (${gapCount} counted gap${gapCount === 1 ? '' : 's'}).`
       : gapCount > 0
         ? `${gapCount} unmatched OS event${gapCount === 1 ? '' : 's'} recorded (point-in-time boundary events, not lost usage time).`
         : 'No collection gaps in this window.';
@@ -673,8 +716,9 @@ function confidenceFor(
       activeMs: 0,
       smallSample: true,
       labels,
-      explanation:
-        'Confidence is 0% (none) because no complete sittings were recorded in this window yet. Confidence measures how complete the data behind the score is — never how good or bad your phone use was.',
+      explanation: isProvisional
+        ? 'Today so far, provisional: confidence is 0% (none) because no complete sittings have been recorded today yet. Confidence measures how complete the data behind the score is — never how good or bad your phone use was.'
+        : 'Confidence is 0% (none) because no complete sittings were recorded in this window yet. Confidence measures how complete the data behind the score is — never how good or bad your phone use was.',
       reasons: [
         gapReason,
         'No complete sittings in this window.',
@@ -683,13 +727,26 @@ function confidenceFor(
       ],
     };
   }
-  const smallSample = sessions.length < SMALL_SAMPLE_SITTINGS || totalMs < SMALL_SAMPLE_ACTIVE_MS;
-  const sampleScore = clamp01(sessions.length / 30);
+  const sampleTarget = isProvisional ? Math.max(5, Math.round(30 * elapsedFraction)) : 30;
+  const smallSampleSittingFloor = isProvisional
+    ? Math.max(3, Math.round(SMALL_SAMPLE_SITTINGS * elapsedFraction))
+    : SMALL_SAMPLE_SITTINGS;
+  const smallSampleMsFloor = isProvisional
+    ? Math.max(5 * MINUTE_MS, Math.round(SMALL_SAMPLE_ACTIVE_MS * elapsedFraction))
+    : SMALL_SAMPLE_ACTIVE_MS;
+  const smallSample = sessions.length < smallSampleSittingFloor || totalMs < smallSampleMsFloor;
+  const sampleScore = clamp01(sessions.length / sampleTarget);
   const labelScore = clamp01(labels / 20);
   let score = round1((0.4 * coverage + 0.25 * sampleScore + 0.2 * labelScore + 0.15 * clamp01(tierCompleteness)) * 100) / 100;
 
   const activeMinLabel = totalMs < MINUTE_MS ? `${Math.max(1, Math.round(totalMs / 1000))} s` : `${Math.round(totalMs / MINUTE_MS)} min`;
   const reasons: string[] = [gapReason];
+  if (isProvisional) {
+    const elapsedHrs = Math.max(1, Math.round(elapsedWindowMs / HOUR_MS));
+    reasons.push(
+      `Today so far, provisional (${elapsedHrs}h elapsed): late-night quiet hours are held out until the day finishes, and sample-size confidence is compared against ${sampleTarget} sittings so far rather than a full 24-hour day.`,
+    );
+  }
   reasons.push(
     `${sessions.length} complete sitting${sessions.length === 1 ? '' : 's'} (${activeMinLabel} sitting spans)${smallSample ? ' — a small sample' : ''}.`,
   );
@@ -719,10 +776,14 @@ function confidenceFor(
     capCauses.length > 0
       ? ` Capped at ${pct}% (${level}) because of ${capCauses.join(' and ')}.`
       : '';
+  const provisionalSentence = isProvisional
+    ? 'Today so far, provisional — late-night quiet hours wait until midnight and sample expectations scale to elapsed hours today. '
+    : '';
   const explanation =
+    provisionalSentence +
     `Confidence (${pct}% · ${level}) reflects how complete the inputs behind this score are — never a judgement of your screen time. ` +
-    `It weighs window coverage (${Math.round(coverage * 100)}%), sample size (${sessions.length} of 30 sittings), ` +
-    `explicit intent labels (${labels} of 20), and measured scale (${measuredMax} of ${FIXED_SCORE_MAX} pts).` +
+    `It weighs window coverage (${Math.round(coverage * 100)}%), sample size (${sessions.length} of ${sampleTarget} sittings${isProvisional ? ' so far' : ''}), ` +
+    `explicit intent labels (${labels} of 20), and measured points (${measuredMax} measured, ${Math.max(0, FIXED_SCORE_MAX - measuredMax)} not measured).` +
     capSentence;
 
   return { score, level, coverage, sample: sessions.length, activeMs: totalMs, smallSample, labels, explanation, reasons };

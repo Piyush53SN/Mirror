@@ -1055,5 +1055,37 @@ test('keystore invalidation recovery: verifyKeyIntegrity detects rotated key bef
   }
 });
 
+test('export bundle encryption: passphrase-protected export uses XChaCha20-Poly1305, hides plaintext app names, and rejects wrong passphrases', () => {
+  const sampleBundle = JSON.stringify({
+    format: 'mirror-export-v3',
+    encrypted: false,
+    exportedAt: '2026-10-30T10:00:00.000Z',
+    events: [{ id: 'evt_1', app: 'com.whatsapp', kind: 'app_background', duration_ms: 42000 }],
+    sessions: [{ id: 'ses_1', app: 'com.whatsapp', start_ms: 1000, end_ms: 43000 }],
+  });
+
+  const envelope = store.encryptExportBundle(sampleBundle, 'correct horse battery staple', counterRandom(), {
+    iterations: 10_000,
+    exportedAt: '2026-10-30T10:00:00.000Z',
+  });
+
+  assert.equal(envelope.format, 'mirror-export-encrypted-v1');
+  assert.equal(envelope.encrypted, true);
+  assert.equal(envelope.cipher, 'XChaCha20-Poly1305');
+  assert.equal(envelope.kdf, 'PBKDF2-HMAC-SHA256');
+  const serialized = JSON.stringify(envelope);
+  assert.ok(!serialized.includes('com.whatsapp'), 'encrypted export must not leak app names in plaintext');
+  assert.ok(!serialized.includes('evt_1'), 'encrypted export must not leak event IDs in plaintext');
+
+  const decrypted = store.decryptExportBundle(envelope, 'correct horse battery staple');
+  assert.equal(decrypted, sampleBundle);
+
+  assert.throws(
+    () => store.decryptExportBundle(envelope, 'wrong passphrase'),
+    /wrong passphrase|tampered/i,
+  );
+});
+
+
 
 

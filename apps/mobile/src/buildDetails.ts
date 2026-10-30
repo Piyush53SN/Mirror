@@ -7,9 +7,9 @@
 export const BUILD_SHORT = [
   'Per-app totals from day-clipped OS foreground events (matches Digital Wellbeing; older days labelled Stored or Approximate)',
   'App opens show start times only — durations are never invented or scaled',
-  'Interaction Quality Score on a fixed 0–100 scale with unmeasured parts shown separately',
-  'Intent labeling is optional — only your explicit intentional or mindless labels count',
-  'All behaviour data stays encrypted on this phone (backup and telemetry disabled)',
+  'Attention signal shows measured points (e.g. 44 of 55 measured) with unmeasured points listed separately',
+  'Intent labeling is optional — duration hints stay hidden until you label a sitting',
+  'All behaviour data stays encrypted on this phone with XChaCha20-Poly1305 (no internet permission in release builds)',
 ].join('\n');
 
 export const BUILD_FULL = [
@@ -50,7 +50,7 @@ export const J9_FULL = [
 
 export const J11_FULL = [
   'Rabbit Hole requires clean session boundaries (unmatched ≤50, total ≤100) and multi-day history (3+ distinct local days).',
-  'Spec bar: 4+ consecutive returns (8 s to under 15 min each, separated by at most 60 min) to the same non-utility app with no other app opened in between and over 30 minutes combined sitting time.',
+  'A rabbit-hole cluster is 5 or more raw opens (4+ returns) of at least 8 seconds to the same app within 30 minutes of each other before 15-minute merging, spanning over 30 minutes from first open to last close.',
   'Neutrality: clusters never penalise IQS, never trigger nudges or app blocks, and never appear on any public profile.',
 ].join('\n');
 

@@ -43,6 +43,8 @@ export function YouTab(): React.ReactElement {
     checkPermissionAndCollect,
   } = useMirrorApp();
 
+  const [confirmingExport, setConfirmingExport] = React.useState(false);
+  const [exportPassphrase, setExportPassphrase] = React.useState('');
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = React.useState('');
   const [confirmingClearLabels, setConfirmingClearLabels] = React.useState(false);
@@ -51,20 +53,40 @@ export function YouTab(): React.ReactElement {
 
   const deletePhraseMatches = deleteConfirmText.trim() === 'DELETE';
 
-  const handleExport = React.useCallback(async () => {
-    setBusyAction('export');
-    setPrivacyNotice(null);
-    try {
-      const ok = exportAllData ? await exportAllData() : false;
-      setPrivacyNotice(
-        ok
-          ? 'Export bundle ready — Android share sheet opened with your local JSON export.'
-          : 'Could not export local data right now.',
-      );
-    } finally {
-      setBusyAction('none');
-    }
-  }, [exportAllData]);
+  const handleRunExport = React.useCallback(
+    async (mode: 'save' | 'share') => {
+      setBusyAction('export');
+      setPrivacyNotice(null);
+      try {
+        const res = exportAllData
+          ? await exportAllData({ passphrase: exportPassphrase, mode })
+          : false;
+        const ok = typeof res === 'boolean' ? res : res.ok;
+        const encrypted = typeof res === 'boolean' ? exportPassphrase.trim().length > 0 : res.encrypted;
+        const via =
+          typeof res === 'boolean'
+            ? 'share_sheet'
+            : res.savedVia;
+        if (ok) {
+          setConfirmingExport(false);
+          setExportPassphrase('');
+          const encDesc = encrypted
+            ? 'encrypted with your passphrase (XChaCha20-Poly1305)'
+            : 'in plaintext JSON';
+          setPrivacyNotice(
+            via === 'save_dialog'
+              ? `Saved local export file ${encDesc}.`
+              : `Opened Android share sheet with your local export ${encDesc}.`,
+          );
+        } else {
+          setPrivacyNotice('Export was cancelled or could not be completed right now.');
+        }
+      } finally {
+        setBusyAction('none');
+      }
+    },
+    [exportAllData, exportPassphrase],
+  );
 
   const handleConfirmDeleteAll = React.useCallback(async () => {
     if (deleteConfirmText.trim() !== 'DELETE') return;
@@ -262,7 +284,7 @@ export function YouTab(): React.ReactElement {
 
         <View style={{ gap: theme.space(2.5) }}>
           <Text role="body" theme={theme}>
-            Mirror stores every event, derived sitting, and explicit intent label solely on this phone in an AES-256-GCM encrypted SQLite database. Release builds declare zero network permissions.
+            Mirror stores every event, derived sitting, and explicit intent label solely on this phone in an XChaCha20-Poly1305 encrypted SQLite database. Release builds declare no internet permission.
           </Text>
 
           {lastReset && resetDateLabel ? (
@@ -278,14 +300,20 @@ export function YouTab(): React.ReactElement {
           ) : null}
 
           <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
-            <Pill
-              theme={theme}
-              variant="secondary"
-              disabled={busyAction !== 'none'}
-              onPress={handleExport}
-            >
-              {busyAction === 'export' ? 'Preparing export…' : 'Export all local data (JSON)'}
-            </Pill>
+            {!confirmingExport ? (
+              <Pill
+                testID="export-data-trigger"
+                theme={theme}
+                variant="secondary"
+                disabled={busyAction !== 'none'}
+                onPress={() => {
+                  setPrivacyNotice(null);
+                  setConfirmingExport(true);
+                }}
+              >
+                Export all local data (JSON)
+              </Pill>
+            ) : null}
 
             {!confirmingClearLabels ? (
               <Pill
@@ -318,6 +346,67 @@ export function YouTab(): React.ReactElement {
               </Pill>
             ) : null}
           </View>
+
+          {confirmingExport ? (
+            <View
+              testID="export-data-panel"
+              style={{
+                borderRadius: theme.radius.md,
+                backgroundColor: theme.color.card,
+                borderWidth: 1,
+                borderColor: theme.color.borderCard,
+                padding: theme.space(3),
+                gap: theme.space(2),
+              }}
+            >
+              <Text role="label" theme={theme}>
+                Export local data (JSON)
+              </Text>
+              <Callout theme={theme} tone="limit">
+                Plaintext warning: Without a passphrase, your exported JSON contains readable app names, open timestamps, derived sittings, and manual intent labels. Add an optional passphrase below to encrypt the export with XChaCha20-Poly1305 before saving or sharing.
+              </Callout>
+              <TextField
+                testID="export-passphrase-input"
+                value={exportPassphrase}
+                onChangeText={setExportPassphrase}
+                placeholder="Optional passphrase (leave blank for plaintext)"
+                autoCapitalize="none"
+                secureTextEntry
+                accessibilityLabel="Optional passphrase to encrypt exported JSON"
+                theme={theme}
+              />
+              <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+                <Pill
+                  testID="export-save-btn"
+                  theme={theme}
+                  variant="primary"
+                  disabled={busyAction !== 'none'}
+                  onPress={() => handleRunExport('save')}
+                >
+                  {busyAction === 'export' ? 'Preparing export…' : 'Save JSON file'}
+                </Pill>
+                <Pill
+                  testID="export-share-btn"
+                  theme={theme}
+                  variant="secondary"
+                  disabled={busyAction !== 'none'}
+                  onPress={() => handleRunExport('share')}
+                >
+                  Share JSON
+                </Pill>
+                <LinkButton
+                  testID="export-cancel-btn"
+                  theme={theme}
+                  onPress={() => {
+                    setExportPassphrase('');
+                    setConfirmingExport(false);
+                  }}
+                >
+                  Cancel
+                </LinkButton>
+              </View>
+            </View>
+          ) : null}
 
           {confirmingClearLabels ? (
             <View
@@ -436,13 +525,7 @@ export function YouTab(): React.ReactElement {
                 </View>
                 <Chip
                   static
-                  label={
-                    meta.letter === 'D'
-                      ? 'Active on this phone'
-                      : meta.letter === 'A'
-                        ? 'Explicit labels active'
-                        : 'Not in v0.1'
-                  }
+                  label={meta.letter === 'D' ? 'Active on this phone' : 'Not in v0.1'}
                   theme={theme}
                 />
               </View>

@@ -147,12 +147,14 @@ export const TextInput = ({
   placeholder,
   onChangeText,
   editable = true,
+  secureTextEntry = false,
   ...props
 }: Common & {
   value?: string;
   placeholder?: string;
   onChangeText?: (text: string) => void;
   editable?: boolean;
+  secureTextEntry?: boolean;
 }) => {
   const clean = { ...props };
   delete clean.placeholderTextColor;
@@ -162,7 +164,7 @@ export const TextInput = ({
   const dom = domProps(clean);
   return (
     <input
-      type="text"
+      type={secureTextEntry ? 'password' : 'text'}
       data-input="1"
       value={typeof value === 'string' ? value : ''}
       placeholder={typeof placeholder === 'string' ? placeholder : undefined}

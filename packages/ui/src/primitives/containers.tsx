@@ -259,24 +259,28 @@ export function Toolbar({
       style={{
         minHeight: t.size.headerHeight,
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'space-between',
+        flexWrap: 'wrap',
         gap: t.space(3),
         paddingHorizontal: t.space(4),
+        paddingTop: t.space(1),
         paddingBottom: t.space(2),
       }}
     >
-      <View accessible accessibilityRole="header" style={{ flexShrink: 1 }}>
+      <View accessible accessibilityRole="header" style={{ flex: 1, flexShrink: 1, minWidth: 180 }}>
         <Text role="headline" theme={t}>
           {title}
         </Text>
         {subtitle ? (
-          <Text role="label" tone="muted" theme={t} numberOfLines={2}>
+          <Text role="label" tone="muted" theme={t}>
             {subtitle}
           </Text>
         ) : null}
       </View>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space(2) }}>{actions}</View>
+      {actions ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space(2), flexShrink: 0 }}>{actions}</View>
+      ) : null}
     </View>
   );
 }

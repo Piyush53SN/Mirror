@@ -36,7 +36,7 @@ before(async () => {
   const ROOT = join(UI, '../..');
   writeFileSync(
     entry,
-    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext, lastNDays, formatSpokenDay } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\n`,
+    `export * from '${join(UI, 'src/index.ts').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/index.tsx').replace(/\\/g, '/')}';\nexport * from '${join(UI, 'screens/render.tsx').replace(/\\/g, '/')}';\nexport { MirrorTabShell } from '${join(ROOT, 'apps/mobile/src/MirrorTabShell.tsx').replace(/\\/g, '/')}';\nexport { MirrorAppContext, lastNDays, formatSpokenDay } from '${join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx').replace(/\\/g, '/')}';\nexport { sessionize, computeInterestEvolution, computeDiscoveryJourney, computeRabbitHoles } from '${join(ROOT, 'packages/core-analytics/src/index.ts').replace(/\\/g, '/')}';\n`,
   );
   await esbuild.build({
     entryPoints: [entry],
@@ -510,7 +510,7 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
         explanation: 'Confidence is 49% (low): 100% day coverage across 18 sittings (40m active), and 1 of 5 explicit intent labels provided.',
         reasons: ['18 complete sittings (40 min sitting time).'],
       },
-      caveat: '44.5 / 100 on the fixed 0–100 scale (55 of 100 pts measured today; 45 pts not measured: deliberate share, topic depth — never counted as 0).',
+      caveat: '44.5 of 55 measured points (45 points not measured: deliberate share 20 pts, topic depth 25 pts). Unmeasured parts are listed separately — never counted as zero and never rescaled.',
     },
     curiosity: {
       deepMs: 1_200_000,
@@ -552,6 +552,9 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
           lastSeenDay: '2026-10-25',
           activeDays: 4,
           sessionCount: 9,
+          totalForegroundMs: 1_500_000,
+          avgDailyForegroundMs: 300_000,
+          foregroundShare: 0.62,
           totalSessionMs: 1_800_000,
           dominantBand: '5 – 20 min',
           trend: 'growing',
@@ -750,13 +753,16 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
       const gauges = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
-          String(el.props?.['aria-label'] ?? '').startsWith('Interaction quality score'),
+          String(el.props?.['aria-label'] ?? '').startsWith('Attention signal'),
       );
-      assert.equal(gauges.length, 1, 'HomeTab must render the Frosted Horizon IQS hero gauge');
-      assert.match(String(gauges[0].props['aria-label']), /out of 100/, 'IQS gauge must announce fixed 100 scale');
+      assert.equal(gauges.length, 1, 'HomeTab must render the Frosted Horizon Attention signal hero gauge');
+      assert.match(String(gauges[0].props['aria-label']), /of 55 measured/, 'Attention signal gauge must announce measured points (45 of 55 measured)');
+      assert.doesNotMatch(String(gauges[0].props['aria-label']), /\/ 100|out of 100/, 'Attention signal gauge must not read as / 100');
+      assert.equal(gauges[0].props['aria-valuenow'], '45', 'Gauge valuenow rounds 44.5 to 45');
+      assert.ok(fullText.includes('of 55 measured'), 'Home headline must show "45 of 55 measured"');
+      assert.ok(!/44[-–]89|45[-–]90/.test(fullText), 'Home must NOT show a score range');
+      assert.ok(fullText.includes('45 points not measured (listed separately)'), 'Home must list the unmeasured 45 points separately');
       assert.ok(fullText.includes('mostly in App 1'), 'Home plain sentence must name top app and duration');
-      assert.ok(fullText.includes('Measured today: up to 55 of 100 pts · Not measured: 45 pts'), 'Home must show measured vs unmeasured scale');
-      assert.ok(fullText.includes('Not measured today (45 of 100 pts excluded)'), 'Home must list unmeasured factors separately');
       assert.ok(fullText.includes('Confidence is 49% (low): 100% day coverage'), 'Home must render plain-language confidence explanation');
       assert.match(rawTree, /OS screen time/i, 'HomeTab must label OS screen time');
       assert.match(rawTree, /Sitting spans/i, 'HomeTab must label Sitting spans');
@@ -765,9 +771,14 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
 
     if (activeTab === 'insights') {
       assert.match(rawTree, /COUNTERFACTUAL ARITHMETIC/i, 'InsightsTab must render Frosted Horizon What-if hero');
+      assert.ok(fullText.includes('Scenarios (you can combine)'), 'InsightsTab What-if must label chips "Scenarios (you can combine)"');
+      assert.ok(fullText.includes('Cap sittings (10m) · On'), 'InsightsTab must show which scenarios are On');
+      assert.ok(fullText.includes('Skip short bounces · Off'), 'InsightsTab must show which scenarios are Off');
+      assert.ok(fullText.includes('trims each sitting longer than 10 min down to 10 min'), 'InsightsTab must explain what Cap sittings does in one line');
+      assert.ok(fullText.includes('drops brief opens shorter than 8 seconds'), 'InsightsTab must explain what Skip short bounces does in one line');
       assert.match(rawTree, /Sitting-length bands \(2 sittings\)/i, 'InsightsTab sitting-length bands must sum to canonical sitting count');
       assert.ok(fullText.includes('0.22 switches / sitting'), 'InsightsTab must display per-sitting switching rate');
-      assert.ok(fullText.includes('Not measured today (45 of 100 pts excluded, not counted as 0)'), 'Insights Score Breakdown must separate unmeasured factors');
+      assert.ok(fullText.includes('45 points not measured (listed separately, not counted as 0)'), 'Insights Score Breakdown must separate unmeasured factors');
       const remainingSpanMeters = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
@@ -780,7 +791,10 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
 
     if (activeTab === 'journey') {
       assert.match(rawTree, /MULTI-DAY RHYTHM/i, 'JourneyTab must render Frosted Horizon Interest Evolution hero');
-      assert.ok(fullText.includes('4+ returns across >30 min'), 'JourneyTab Rabbit Hole must state spec bar (4+ returns, >30 min)');
+      assert.ok(fullText.includes('Foreground share (62%)'), 'JourneyTab Interest Evolution must use day-clipped foreground share');
+      assert.ok(fullText.includes('5m/day foreground · 9 sittings'), 'JourneyTab Interest Evolution must use day-clipped foreground time and keep merged spans only for sitting counts');
+      assert.ok(fullText.includes('Repeat-app foreground share'), 'JourneyTab Discovery must use day-clipped foreground share');
+      assert.ok(fullText.includes('4+ returns across over 30 min on raw opens'), 'JourneyTab Rabbit Hole must state raw-open spec bar (4+ returns, >30 min)');
       assert.ok(fullText.includes('4×'), 'JourneyTab Rabbit Hole cluster must show 4+ returns');
       const routeMeters = renderer.root.findAll(
         (el) =>
@@ -792,6 +806,9 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
 
     if (activeTab === 'sessions') {
       assert.match(rawTree, /CHRONOLOGICAL LOG/i, 'SessionsTab must render Frosted Horizon hero');
+      // Item 7: Labeled row ('sess-alpha-01') may show hint AFTER labeling; unlabeled row ('sess-beta-02') must NOT show brief/long sitting hint!
+      assert.ok(fullText.includes('user label: intentional · long sitting'), 'Labeled sitting row shows hint only after user labels it');
+      assert.doesNotMatch(fullText, /unlabeled · hint:/, 'Unlabeled sitting rows must NOT show brief/long sitting hints before labeling');
       const thresholdMeters = renderer.root.findAll(
         (el) =>
           el.props?.role === 'progressbar' &&
@@ -812,7 +829,31 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
     if (activeTab === 'you') {
       assert.match(rawTree, /OBSERVED TIMING BLOCKS/i, 'YouTab must render Frosted Horizon Focus Windows hero');
       assert.match(rawTree, /Local Data & Privacy/i, 'YouTab must render Local Data & Privacy card');
+      // Item 5: Accurate encryption, permission, and Tier A copy
+      assert.ok(fullText.includes('XChaCha20-Poly1305'), 'YouTab must name XChaCha20-Poly1305');
+      assert.ok(!fullText.includes('AES-256-GCM'), 'YouTab must NOT claim AES-256-GCM');
+      assert.ok(fullText.includes('no internet permission'), 'YouTab must state "no internet permission"');
+      assert.ok(!fullText.includes('zero network permissions'), 'YouTab must NOT claim "zero network permissions"');
+      assert.ok(!fullText.includes('Explicit labels active'), 'Tier A must NOT say "Explicit labels active"');
       assert.match(rawTree, /Manual file import is not enabled in v0\.1 yet/i, 'YouTab must state Tier B is unavailable in v0.1');
+
+      // Item 9: Export JSON opens plaintext warning + optional passphrase + Save / Share buttons
+      const exportTrigger = renderer.root.find((el) => el.props?.['data-testid'] === 'export-data-trigger');
+      await TestRenderer.act(async () => {
+        exportTrigger.props.onPress();
+      });
+      const exportPanel = renderer.root.findAll((el) => el.props?.['data-testid'] === 'export-data-panel');
+      assert.equal(exportPanel.length, 1, 'tapping Export all local data must open inline export panel');
+      const exportText = collectText(renderer.toJSON()).join(' ');
+      assert.match(exportText, /Plaintext warning:/, 'Export panel must show plaintext warning');
+      const passInput = renderer.root.find((el) => el.props?.['data-testid'] === 'export-passphrase-input');
+      assert.equal(passInput.props.type, 'password', 'Optional passphrase input must mask characters');
+      assert.ok(renderer.root.find((el) => el.props?.['data-testid'] === 'export-save-btn'), 'Export panel must offer Save JSON file button');
+      assert.ok(renderer.root.find((el) => el.props?.['data-testid'] === 'export-share-btn'), 'Export panel must offer Share JSON button');
+      const cancelExportBtn = renderer.root.find((el) => el.props?.['data-testid'] === 'export-cancel-btn');
+      await TestRenderer.act(async () => {
+        cancelExportBtn.props.onPress();
+      });
 
       // Typed DELETE confirmation flow:
       // 1) First tap opens confirmation panel; confirm button starts disabled; wrong text cannot delete
@@ -1112,3 +1153,64 @@ test('day picker defaults to today, events-without-sittings renders plain messag
   assert.ok(debugText.includes('Foreground interval trace on 2026-10-28 (1)'));
   debugRenderer.unmount();
 });
+
+test('JourneyTab 11 days with ~10 min/day foreground time never renders hours in Interest Evolution or Discovery', async () => {
+  const MIN = 60_000;
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+  const base0 = Date.parse('2026-10-19T00:00:00.000Z');
+  const events = [];
+  for (let d = 0; d < 11; d += 1) {
+    const dayStart = base0 + d * DAY;
+    // 20 quick 30s WhatsApp opens, 8m apart -> 10m/day foreground, ~2h 32m/day merged sitting span (~28h over 11d)
+    for (let k = 0; k < 20; k += 1) {
+      const s = dayStart + 9 * HOUR + k * 8 * MIN;
+      events.push(
+        { schema_version: 1, id: `fg_wa_${d}_${k}`, kind: 'app_foreground', at: new Date(s).toISOString(), tier: 'D', origin: 'os', content: 'metadata', app: 'com.whatsapp' },
+        { schema_version: 1, id: `bg_wa_${d}_${k}`, kind: 'app_background', at: new Date(s + 30_000).toISOString(), tier: 'D', origin: 'os', content: 'metadata', app: 'com.whatsapp', duration_ms: 30_000 },
+      );
+    }
+    // 10m/day Wikipedia sitting
+    const wk = dayStart + 19 * HOUR;
+    events.push(
+      { schema_version: 1, id: `fg_wk_${d}`, kind: 'app_foreground', at: new Date(wk).toISOString(), tier: 'D', origin: 'os', content: 'metadata', app: 'org.wikipedia' },
+      { schema_version: 1, id: `bg_wk_${d}`, kind: 'app_background', at: new Date(wk + 10 * MIN).toISOString(), tier: 'D', origin: 'os', content: 'metadata', app: 'org.wikipedia', duration_ms: 10 * MIN },
+    );
+  }
+  const { sessions: merged } = ui.sessionize(events);
+  const scored = merged.map((s) => ({ id: s.id, app: s.app, startMs: s.startMs, endMs: s.endMs }));
+  const labels = { 'com.whatsapp': 'WhatsApp', 'org.wikipedia': 'Wikipedia' };
+  const evolution = ui.computeInterestEvolution({ sessions: scored, events, labels, utcOffsetMinutes: 0 });
+  const discovery = ui.computeDiscoveryJourney({ sessions: scored, events, labels, utcOffsetMinutes: 0 });
+  const rabbitHole = ui.computeRabbitHoles({ events, sessions: scored, labels, utcOffsetMinutes: 0 });
+
+  const ctx = makeMockMobileContext({
+    activeTab: 'journey',
+    selectedDay: '2026-10-29',
+    p3Reliable: true,
+    evolution,
+    discovery,
+    rabbitHole,
+  });
+  const renderer = create(
+    React.createElement(
+      ui.ThemeProvider,
+      { initialTheme: 'dark' },
+      React.createElement(
+        ui.MirrorAppContext.Provider,
+        { value: ctx },
+        React.createElement(ui.MirrorTabShell),
+      ),
+    ),
+  );
+  const journeyText = collectText(renderer.toJSON()).join(' ');
+  assert.ok(journeyText.includes('10m/day foreground · 11 sittings'), `expected 10m/day foreground · 11 sittings in: ${journeyText}`);
+  assert.ok(journeyText.includes('Foreground share (50%)'), `expected 50% foreground share in: ${journeyText}`);
+  assert.doesNotMatch(
+    journeyText,
+    /\b\d+h\b/,
+    `11 days with ~10 min/day foreground must NEVER show hours on JourneyTab; got: ${journeyText}`,
+  );
+  renderer.unmount();
+});
+

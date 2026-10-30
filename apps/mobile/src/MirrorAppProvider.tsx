@@ -1,12 +1,13 @@
 /* eslint-disable no-console */
 import * as React from 'react';
 import { AppState, Share } from 'react-native';
-import type {
-  DayStoreRowCounts,
-  SessionRepairSnapshot,
-  SessionRow,
-  StoreResetAudit,
-  StoreResetReason,
+import {
+  encryptExportBundle,
+  type DayStoreRowCounts,
+  type SessionRepairSnapshot,
+  type SessionRow,
+  type StoreResetAudit,
+  type StoreResetReason,
 } from '@mirror/store';
 import type {
   CuriositySplit,
@@ -46,6 +47,7 @@ import {
   summarizeOrphanDrops,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
+import { osRandom } from './storage/keys';
 import {
   defineUsageTask,
   provideRuntime,
@@ -61,8 +63,11 @@ import {
   formatDuration,
   lastNDays,
   toDayStr,
+  type CombinableWhatIfScenarioId,
   type DailyTotal,
   type DebugRawEvent,
+  type ExportDataOptions,
+  type ExportDataResult,
   type MirrorAppContextValue,
   type PermissionState,
   type ScaledSessionRow,
@@ -117,6 +122,16 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [launcherPackages, setLauncherPackages] = React.useState<string[]>([]);
   const [whatIfCapMin, setWhatIfCapMin] = React.useState<10 | 20>(10);
   const [whatIfQuietPreset, setWhatIfQuietPreset] = React.useState<'23-05' | '22-07'>('23-05');
+  const [whatIfActiveScenarios, setWhatIfActiveScenarios] = React.useState<CombinableWhatIfScenarioId[]>([
+    'cap_sittings',
+    'quiet_hours',
+  ]);
+
+  const toggleWhatIfScenario = React.useCallback((id: CombinableWhatIfScenarioId) => {
+    setWhatIfActiveScenarios((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  }, []);
   const [latestSyncOrphans, setLatestSyncOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
   const [raw24hOrphans, setRaw24hOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
@@ -354,9 +369,38 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         try {
           const histFrom = dayTo - 30 * 86_400_000;
           const focusHistFrom = dayTo - 84 * 86_400_000;
-          const allHistSessions = await runtime.store.sessions({ fromMs: focusHistFrom, toMs: dayTo });
+          const [allHistSessions, storedHistBgRows] = await Promise.all([
+            runtime.store.sessions({ fromMs: focusHistFrom, toMs: dayTo }),
+            runtime.store.events({
+              from: histFrom - DEFAULT_MAX_INTERVAL_MS,
+              to: dayTo + DEFAULT_MAX_INTERVAL_MS,
+              kind: 'app_background',
+            }),
+          ]);
+          const histEvents = storedHistBgRows
+            .map(
+              (r) =>
+                r.payload as unknown as {
+                  id?: string;
+                  kind: string;
+                  app?: string;
+                  at: string;
+                  duration_ms?: number;
+                },
+            )
+            .filter(
+              (ev) =>
+                ev.kind === 'app_background' &&
+                typeof ev.app === 'string' &&
+                typeof ev.duration_ms === 'number' &&
+                Date.parse(ev.at) > histFrom &&
+                Date.parse(ev.at) - ev.duration_ms < dayTo,
+            );
           const histSessions = allHistSessions.filter((s) => s.end_ms > histFrom && s.start_ms < dayTo);
-          const histApps = [...new Set(allHistSessions.map((s) => s.app))].filter(
+          const eventApps = histEvents
+            .map((ev) => (typeof ev.app === 'string' ? ev.app : null))
+            .filter((pkg): pkg is string => pkg !== null);
+          const histApps = [...new Set([...allHistSessions.map((s) => s.app), ...eventApps])].filter(
             (app) => !isExcludedApp(app, { ignorePackages: sharedIgnore }),
           );
           const histResolved = await resolveAppLabels(histApps);
@@ -376,9 +420,12 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             endMs: s.end_ms,
           }));
           const utcOffsetMinutes = -new Date().getTimezoneOffset();
+          const evalNowMs = Math.min(Date.now(), dayTo);
           setEvolution(
             computeInterestEvolution({
               sessions: histScored,
+              events: histEvents,
+              nowMs: evalNowMs,
               utcOffsetMinutes,
               labels: mergedLabels,
               ignorePackages: sharedIgnore,
@@ -387,6 +434,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setDiscovery(
             computeDiscoveryJourney({
               sessions: histScored,
+              events: histEvents,
+              nowMs: evalNowMs,
               osTotals: totals,
               intentLabels: loadedLabels,
               labelWindow: { fromMs: dayFrom, toMs: dayTo },
@@ -397,7 +446,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           );
           setRabbitHole(
             computeRabbitHoles({
+              events: histEvents,
               sessions: histScored,
+              nowMs: evalNowMs,
               intentLabels: loadedLabels,
               labels: mergedLabels,
               ignorePackages: sharedIgnore,
@@ -706,7 +757,34 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         const utcOffsetMinutes = -new Date().getTimezoneOffset();
         const histFrom = dayTo - 30 * 86_400_000;
         const sharedIgnore = [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launcherPkgs])];
-        const allHistSessions = await rt.store.sessions({ fromMs: dayTo - 84 * 86_400_000, toMs: dayTo });
+        const [allHistSessions, storedHistBgRows] = await Promise.all([
+          rt.store.sessions({ fromMs: dayTo - 84 * 86_400_000, toMs: dayTo }),
+          rt.store.events({
+            from: histFrom - DEFAULT_MAX_INTERVAL_MS,
+            to: dayTo + DEFAULT_MAX_INTERVAL_MS,
+            kind: 'app_background',
+          }),
+        ]);
+        const histEvents = storedHistBgRows
+          .map(
+            (r) =>
+              r.payload as unknown as {
+                id?: string;
+                kind: string;
+                app?: string;
+                at: string;
+                duration_ms?: number;
+              },
+          )
+          .filter(
+            (ev) =>
+              ev.kind === 'app_background' &&
+              typeof ev.app === 'string' &&
+              typeof ev.duration_ms === 'number' &&
+              Date.parse(ev.at) > histFrom &&
+              Date.parse(ev.at) - ev.duration_ms < dayTo,
+          );
+        const evalNowMs = Math.min(Date.now(), dayTo);
         const histScored: ScoredSession[] = allHistSessions
           .filter((x) => x.end_ms > histFrom && x.start_ms < dayTo)
           .map((x) => ({
@@ -724,6 +802,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setDiscovery(
           computeDiscoveryJourney({
             sessions: histScored,
+            events: histEvents,
+            nowMs: evalNowMs,
             osTotals: dailyTotals,
             intentLabels: updatedLabels,
             labelWindow: { fromMs: dayFrom, toMs: dayTo },
@@ -734,7 +814,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         );
         setRabbitHole(
           computeRabbitHoles({
+            events: histEvents,
             sessions: histScored,
+            nowMs: evalNowMs,
             intentLabels: updatedLabels,
             labels,
             ignorePackages: sharedIgnore,
@@ -781,30 +863,57 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     await recomputeFromLabels({});
   }, [recomputeFromLabels]);
 
-  const exportAllData = React.useCallback(async (): Promise<boolean> => {
-    try {
-      const rt = runtimeRef.current ?? (await createRuntime());
-      runtimeRef.current = rt;
-      const [exportedEvents, exportedSessions, exportedGaps, resetAudit] = await Promise.all([
-        rt.store.events(),
-        rt.store.sessions(),
-        rt.store.gaps(),
-        rt.store.lastResetAudit(),
-      ]);
-      const bundle = {
-        exportedAt: new Date().toISOString(),
-        schemaVersion: 3,
-        events: exportedEvents,
-        sessions: exportedSessions,
-        gaps: exportedGaps,
-        lastReset: resetAudit,
-      };
-      await Share.share({ message: JSON.stringify(bundle, null, 2) });
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
+  const exportAllData = React.useCallback(
+    async (opts?: ExportDataOptions): Promise<ExportDataResult> => {
+      const passphrase = opts?.passphrase?.trim() ?? '';
+      const encrypted = passphrase.length > 0;
+      const mode = opts?.mode ?? 'share';
+      try {
+        const rt = runtimeRef.current ?? (await createRuntime());
+        runtimeRef.current = rt;
+        const [exportedEvents, exportedSessions, exportedGaps, resetAudit] = await Promise.all([
+          rt.store.events(),
+          rt.store.sessions(),
+          rt.store.gaps(),
+          rt.store.lastResetAudit(),
+        ]);
+        const plainBundle = {
+          exportedAt: new Date().toISOString(),
+          schemaVersion: 3,
+          encryption: 'none' as const,
+          events: exportedEvents,
+          sessions: exportedSessions,
+          gaps: exportedGaps,
+          lastReset: resetAudit,
+        };
+        const plainJson = JSON.stringify(plainBundle, null, 2);
+        const json = encrypted
+          ? JSON.stringify(encryptExportBundle(plainJson, passphrase, osRandom), null, 2)
+          : plainJson;
+        const stamp = new Date().toISOString().slice(0, 10);
+        const fileName = encrypted
+          ? `mirror-export-${stamp}.encrypted.json`
+          : `mirror-export-${stamp}.json`;
+
+        if (mode === 'save') {
+          const safSaved = await rt.usage().saveExportJson(fileName, json);
+          if (safSaved === true) {
+            return { ok: true, encrypted, savedVia: 'save_dialog' };
+          }
+          if (safSaved === false) {
+            return { ok: false, encrypted, savedVia: 'failed' };
+          }
+          // `null` means SAF isn't linked in this host — fall back to system share sheet
+        }
+
+        await Share.share({ title: fileName, message: json });
+        return { ok: true, encrypted, savedVia: 'share_sheet' };
+      } catch {
+        return { ok: false, encrypted, savedVia: 'failed' };
+      }
+    },
+    [],
+  );
 
   const resetStoredData = React.useCallback(
     async (reason: StoreResetReason = 'user_delete_all') => {
@@ -867,6 +976,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     if (!dayReady) return null;
     try {
       const labelArray = Object.entries(intentLabels).map(([sessionId, label]) => ({ sessionId, label }));
+      const isProvisionalToday = dayWindow.day === todayStr;
       return scoreIqs({
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
         sessions: dayScoredSessions,
@@ -874,12 +984,14 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         gaps: dayScoreGaps,
         utcOffsetMinutes: -new Date().getTimezoneOffset(),
         approximate: true,
+        provisional: isProvisionalToday,
+        nowMs: isProvisionalToday ? Date.now() : undefined,
       });
     } catch (e) {
       console.log('IQS compute failed', e);
       return null;
     }
-  }, [dayReady, dayWindow, dayScoredSessions, intentLabels, dayScoreGaps]);
+  }, [dayReady, dayWindow, todayStr, dayScoredSessions, intentLabels, dayScoreGaps]);
 
   const whatIf: WhatIfResult | null = React.useMemo(() => {
     if (!dayReady) return null;
@@ -888,6 +1000,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         whatIfQuietPreset === '22-07'
           ? { startHour: 22, endHour: 7 }
           : { startHour: 23, endHour: 5 };
+      const isProvisionalToday = dayWindow.day === todayStr;
       return computeWhatIf({
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
         sessions: dayScoredSessions,
@@ -899,8 +1012,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         gaps: dayScoreGaps,
         utcOffsetMinutes: -new Date().getTimezoneOffset(),
         approximate: true,
+        provisional: isProvisionalToday,
+        nowMs: isProvisionalToday ? Date.now() : undefined,
         sittingCapMinutes: whatIfCapMin,
         quietHours,
+        activeScenarioIds: whatIfActiveScenarios,
       });
     } catch {
       return null;
@@ -908,6 +1024,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   }, [
     dayReady,
     dayWindow,
+    todayStr,
     dayScoredSessions,
     dailyTotals,
     dailyTotalsSource,
@@ -917,6 +1034,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     dayScoreGaps,
     whatIfCapMin,
     whatIfQuietPreset,
+    whatIfActiveScenarios,
   ]);
 
   const curiosity: CuriositySplit | null = React.useMemo(() => {
@@ -1090,6 +1208,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       setWhatIfCapMin,
       whatIfQuietPreset,
       setWhatIfQuietPreset,
+      whatIfActiveScenarios,
+      toggleWhatIfScenario,
       latestSyncOrphans,
       raw24hOrphans,
       showWhy,
@@ -1162,6 +1282,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       whatIf,
       whatIfCapMin,
       whatIfQuietPreset,
+      whatIfActiveScenarios,
+      toggleWhatIfScenario,
       latestSyncOrphans,
       raw24hOrphans,
       showWhy,

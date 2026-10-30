@@ -380,6 +380,7 @@ export function TabBar({
   active,
   onChange,
   bottomOffset,
+  opaque = true,
   theme,
 }: {
   items: TabItem[];
@@ -387,6 +388,8 @@ export function TabBar({
   onChange: (id: string) => void;
   /** Granted by useLiveBlur(); false paints the pre-composited fill instead. */
   liveBlur?: boolean;
+  /** Solid surface so scrolling text underneath cannot bleed through the bar. */
+  opaque?: boolean;
   /** Distance from the bottom edge in dp (defaults to 16dp, or safe-area bottom + 8dp on device). */
   bottomOffset?: number;
   theme?: MirrorTheme;
@@ -407,9 +410,9 @@ export function TabBar({
         alignItems: 'center',
         paddingHorizontal: t.space(1),
         borderRadius: t.radius.pill,
-        backgroundColor: t.glass.tabbar.fill,
+        backgroundColor: opaque ? t.color.card : t.glass.tabbar.fill,
         borderWidth: 1,
-        borderColor: t.color.borderHairline,
+        borderColor: opaque ? t.color.borderCard : t.color.borderHairline,
       }}
     >
       {/*
@@ -525,6 +528,7 @@ export type TextFieldProps = {
   placeholder?: string;
   accessibilityLabel: string;
   autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
+  secureTextEntry?: boolean;
   editable?: boolean;
   testID?: string;
   theme?: MirrorTheme;
@@ -540,6 +544,7 @@ export function TextField({
   placeholder,
   accessibilityLabel,
   autoCapitalize = 'characters',
+  secureTextEntry = false,
   editable = true,
   testID,
   theme,
@@ -555,6 +560,7 @@ export function TextField({
       placeholderTextColor={t.color.inkMuted}
       autoCapitalize={autoCapitalize}
       autoCorrect={false}
+      secureTextEntry={secureTextEntry}
       editable={editable}
       accessibilityLabel={coerceLabel(accessibilityLabel)}
       style={{

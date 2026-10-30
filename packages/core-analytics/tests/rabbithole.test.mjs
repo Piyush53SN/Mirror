@@ -6,7 +6,7 @@ import fc from 'fast-check';
 import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const { computeRabbitHoles, MIN_RABBIT_HOLE_DAYS } = await bundleTs(
+const { computeRabbitHoles, sessionize, MIN_RABBIT_HOLE_DAYS } = await bundleTs(
   join(HERE, '..', 'src/index.ts'),
   { outfile: join(HERE, '.build', 'core-rabbithole.mjs') },
 );
@@ -104,12 +104,12 @@ test('enforces Rabbit Hole spec bar: 4+ returns (5+ sittings) AND combined sessi
     { id: 'd2_4', app: 'com.reddit.frontpage', startMs: d2 + 38 * MIN_MS, endMs: d2 + 45 * MIN_MS },
     { id: 'd2_5', app: 'com.reddit.frontpage', startMs: d2 + 50 * MIN_MS, endMs: d2 + 57 * MIN_MS },
 
-    // Day 3: 4 returns (5 sittings) totalling EXACTLY 30m (6m * 5 = 30m, NOT strictly > 30m) -> NOT a cluster!
-    { id: 'd3_1', app: 'com.google.android.youtube', startMs: d3, endMs: d3 + 6 * MIN_MS },
-    { id: 'd3_2', app: 'com.google.android.youtube', startMs: d3 + 10 * MIN_MS, endMs: d3 + 16 * MIN_MS },
-    { id: 'd3_3', app: 'com.google.android.youtube', startMs: d3 + 20 * MIN_MS, endMs: d3 + 26 * MIN_MS },
-    { id: 'd3_4', app: 'com.google.android.youtube', startMs: d3 + 30 * MIN_MS, endMs: d3 + 36 * MIN_MS },
-    { id: 'd3_5', app: 'com.google.android.youtube', startMs: d3 + 40 * MIN_MS, endMs: d3 + 46 * MIN_MS },
+    // Day 3: 4 returns (5 opens) spanning EXACTLY 30m (0..30m, NOT strictly > 30m) -> NOT a cluster!
+    { id: 'd3_1', app: 'com.google.android.youtube', startMs: d3, endMs: d3 + 4 * MIN_MS },
+    { id: 'd3_2', app: 'com.google.android.youtube', startMs: d3 + 7 * MIN_MS, endMs: d3 + 11 * MIN_MS },
+    { id: 'd3_3', app: 'com.google.android.youtube', startMs: d3 + 14 * MIN_MS, endMs: d3 + 18 * MIN_MS },
+    { id: 'd3_4', app: 'com.google.android.youtube', startMs: d3 + 21 * MIN_MS, endMs: d3 + 25 * MIN_MS },
+    { id: 'd3_5', app: 'com.google.android.youtube', startMs: d3 + 26 * MIN_MS, endMs: d3 + 30 * MIN_MS },
 
     // Day 4: 5 consecutive opens > 30m on Calculator (utility) & Package installer -> MUST BE EXCLUDED!
     { id: 'd4_c1', app: 'com.google.android.calculator', startMs: d4, endMs: d4 + 8 * MIN_MS },
@@ -154,7 +154,86 @@ test('enforces Rabbit Hole spec bar: 4+ returns (5+ sittings) AND combined sessi
   assert.equal(res.clusters[0].label, 'Reddit');
   assert.equal(res.clusters[0].day, '2026-10-22');
   assert.match(res.definitionText, /4\+ returns/);
-  assert.match(res.definitionText, /over 30 min/);
+  assert.match(res.definitionText, /over 30 minutes/);
+  // Must be stated in ONE plain sentence (exactly one sentence-ending period)
+  assert.equal((res.definitionText.match(/\./g) ?? []).length, 1, 'definitionText must be one plain sentence');
+});
+
+test('synthetic spec test: 5 raw opens of 40 s to 4 min within 50 min (spanning over 30 min total) MUST fire before 15-min merging', () => {
+  // Day 0 & Day 1 anchor multi-day history (MIN_RABBIT_HOLE_DAYS = 3)
+  const rawEvents = [];
+  const pushOpen = (id, app, startMs, durMs) => {
+    rawEvents.push({
+      schema_version: 1,
+      id: `fg_${id}`,
+      kind: 'app_foreground',
+      at: new Date(startMs).toISOString(),
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app,
+    });
+    rawEvents.push({
+      schema_version: 1,
+      id: `bg_${id}`,
+      kind: 'app_background',
+      at: new Date(startMs + durMs).toISOString(),
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app,
+      duration_ms: durMs,
+    });
+  };
+
+  pushOpen('d0_wk', 'org.wikipedia', BASE_MS, 5 * MIN_MS);
+  pushOpen('d1_wk', 'org.wikipedia', BASE_MS + DAY_MS, 6 * MIN_MS);
+
+  // Day 2: 5 opens of YouTube, each strictly between 40 s and 4 min, all gaps < 15 min,
+  // spanning 43m 40s (> 30 min AND <= 50 min):
+  //   Open 1: t = 00:00 .. 02:00 (2m 00s)
+  //   Open 2: t = 10:00 .. 13:30 (3m 30s, gap 8m 00s)
+  //   Open 3: t = 21:00 .. 25:00 (4m 00s, gap 7m 30s)
+  //   Open 4: t = 33:00 .. 33:40 (0m 40s, gap 8m 00s)
+  //   Open 5: t = 41:50 .. 43:40 (1m 50s, gap 8m 10s)
+  const d2 = BASE_MS + 2 * DAY_MS;
+  pushOpen('yt_1', 'com.google.android.youtube', d2, 2 * MIN_MS);
+  pushOpen('yt_2', 'com.google.android.youtube', d2 + 10 * MIN_MS, 3.5 * MIN_MS);
+  pushOpen('yt_3', 'com.google.android.youtube', d2 + 21 * MIN_MS, 4 * MIN_MS);
+  pushOpen('yt_4', 'com.google.android.youtube', d2 + 33 * MIN_MS, 40_000);
+  pushOpen('yt_5', 'com.google.android.youtube', d2 + 41 * MIN_MS + 50_000, 110_000);
+
+  // Prove why the old post-merge detector failed: sessionize merges all 5 opens into 1 sitting!
+  const { sessions: merged } = sessionize(rawEvents);
+  const scoredMerged = merged.map((s) => ({ id: s.id, app: s.app, startMs: s.startMs, endMs: s.endMs }));
+  const ytMerged = scoredMerged.filter((s) => s.app === 'com.google.android.youtube');
+  assert.equal(ytMerged.length, 1, 'sessionize merges <=15m same-app reopens into 1 sitting');
+
+  const postMergeOnly = computeRabbitHoles({ sessions: scoredMerged, utcOffsetMinutes: 0 });
+  assert.equal(postMergeOnly.clusterCount, 0, 'running only on merged sittings misses <=15m return loops');
+
+  // Running on raw opens (`events`) BEFORE merging MUST fire!
+  const res = computeRabbitHoles({
+    events: rawEvents,
+    sessions: scoredMerged,
+    intentLabels: { [ytMerged[0].id]: 'mindless' },
+    labels: { 'com.google.android.youtube': 'YouTube', 'org.wikipedia': 'Wikipedia' },
+    utcOffsetMinutes: 0,
+  });
+
+  assert.equal(res.hasHistory, true);
+  assert.equal(res.clusterCount, 1, '5 raw opens of 40s..4m within 50m (>30m span) MUST fire');
+  const cluster = res.clusters[0];
+  assert.equal(cluster.app, 'com.google.android.youtube');
+  assert.equal(cluster.label, 'YouTube');
+  assert.equal(cluster.openCount, 5);
+  assert.equal(cluster.returnCount, 4);
+  assert.equal(cluster.spanMs, 43 * MIN_MS + 40_000);
+  assert.ok(cluster.spanMs > 30 * MIN_MS && cluster.spanMs <= 50 * MIN_MS);
+  // Foreground time is exact sum of open durations (2m + 3m30s + 4m + 40s + 1m50s = 12m), never inflated by idle gaps
+  assert.equal(cluster.totalForegroundMs, 12 * MIN_MS);
+  assert.equal(cluster.explicitLabels.mindless, 1, 'label on merged sitting carries onto overlapping raw-open cluster');
+  assert.equal((res.definitionText.match(/\./g) ?? []).length, 1, 'definition is one plain sentence');
 });
 
 test('property: invariants hold across arbitrary multi-day session streams', () => {
@@ -201,9 +280,11 @@ test('property: invariants hold across arbitrary multi-day session streams', () 
         assert.ok(res.clusterExplicitLabels.total <= res.totalClusterSittings);
 
         for (const c of res.clusters) {
+          assert.ok(c.openCount >= 5);
           assert.ok(c.sittingCount >= 5);
           assert.ok(c.returnCount >= 4);
-          assert.ok(c.totalSittingMs > 30 * MIN_MS);
+          assert.ok(c.spanMs > 30 * MIN_MS);
+          assert.ok(c.totalForegroundMs > 0);
           assert.notEqual(c.app, 'com.google.android.calculator');
           assert.notEqual(c.app, 'com.miui.packageinstaller');
           assert.notEqual(c.app, 'dev.mirror.app');

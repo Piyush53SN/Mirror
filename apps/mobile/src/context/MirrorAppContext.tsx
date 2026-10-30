@@ -23,13 +23,27 @@ import {
   type TracedAppInterval,
   type ValidationResult,
   type WhatIfResult,
+  type WhatIfScenarioId,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
 
-export type { DayTotalsSource, FlaggedAppDiscrepancy, SafeInsets };
+export type { DayTotalsSource, FlaggedAppDiscrepancy, SafeInsets, WhatIfScenarioId };
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
 export type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
+
+export type CombinableWhatIfScenarioId = Exclude<WhatIfScenarioId, 'combined'>;
+
+export type ExportDataOptions = {
+  passphrase?: string;
+  mode?: 'share' | 'save';
+};
+
+export type ExportDataResult = {
+  ok: boolean;
+  encrypted: boolean;
+  savedVia: 'save_dialog' | 'share_sheet' | 'failed';
+};
 
 export type DailyTotal = { app: string; label: string; totalMs: number };
 
@@ -168,7 +182,7 @@ export type MirrorAppContextValue = {
   keyMismatch: { oldKey: string; newKey: string } | null;
   dismissKeyMismatch: () => void;
   resetStoredData: (reason?: StoreResetReason) => Promise<void>;
-  exportAllData?: () => Promise<boolean>;
+  exportAllData?: (opts?: ExportDataOptions) => Promise<boolean | ExportDataResult>;
   lastReset?: StoreResetAudit | null;
 
   selectedDay: string;
@@ -209,6 +223,8 @@ export type MirrorAppContextValue = {
   setWhatIfCapMin: (cap: 10 | 20) => void;
   whatIfQuietPreset: '23-05' | '22-07';
   setWhatIfQuietPreset: (preset: '23-05' | '22-07') => void;
+  whatIfActiveScenarios?: readonly CombinableWhatIfScenarioId[];
+  toggleWhatIfScenario?: (id: CombinableWhatIfScenarioId) => void;
 
   latestSyncOrphans: OrphanDiagnosticSummary | null;
   raw24hOrphans: OrphanDiagnosticSummary | null;

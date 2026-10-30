@@ -175,7 +175,7 @@ export function SessionsTab(): React.ReactElement {
               <SectionHeader
                 theme={theme}
                 title={`Sittings (${scaledSessions.length})`}
-                caption="duration hints never count toward score — only your explicit labels do"
+                caption="duration hints stay hidden until you label a sitting — only your explicit labels count"
               />
             </View>
             {scaledSessions.length === 0 ? (
@@ -243,8 +243,8 @@ export function SessionsTab(): React.ReactElement {
                               utilityExcluded
                                 ? 'labeling skipped (system/utility)'
                                 : explicitLabel
-                                  ? `user label: ${explicitLabel}`
-                                  : `unlabeled · hint: ${hintLabel}`
+                                  ? `user label: ${explicitLabel} · ${hintLabel}`
+                                  : 'unlabeled'
                             }`}
                           </Text>
                         </View>

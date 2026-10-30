@@ -1,5 +1,6 @@
 package dev.mirror.usagestats
 
+import android.app.Activity
 import android.app.AppOpsManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
@@ -11,6 +12,7 @@ import android.os.Process
 import android.provider.Settings
 import android.util.Log
 import android.view.WindowInsets
+import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -39,6 +41,13 @@ import expo.modules.kotlin.modules.ModuleDefinition
  *   DEVICE_SHUTDOWN=26, DEVICE_STARTUP=27.
  */
 class UsageStatsModule : Module() {
+  private var pendingExportContent: String? = null
+  private var pendingExportPromise: Promise? = null
+
+  companion object {
+    private const val REQUEST_SAVE_EXPORT_JSON = 4819
+  }
+
   override fun definition() = ModuleDefinition {
     Name("MirrorUsageStats")
 
@@ -253,6 +262,66 @@ class UsageStatsModule : Module() {
         "left" to 0.0,
         "right" to 0.0
       )
+    }
+
+    AsyncFunction("saveExportJson") { fileName: String, content: String, promise: Promise ->
+      val activity = appContext.currentActivity
+      if (activity == null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      if (pendingExportPromise != null) {
+        promise.resolve(false)
+        return@AsyncFunction
+      }
+      try {
+        pendingExportContent = content
+        pendingExportPromise = promise
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+          addCategory(Intent.CATEGORY_OPENABLE)
+          type = "application/json"
+          putExtra(Intent.EXTRA_TITLE, fileName)
+        }
+        activity.startActivityForResult(intent, REQUEST_SAVE_EXPORT_JSON)
+      } catch (e: Exception) {
+        pendingExportContent = null
+        pendingExportPromise = null
+        promise.resolve(false)
+      }
+    }
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode != REQUEST_SAVE_EXPORT_JSON) return@OnActivityResult
+      val promise = pendingExportPromise
+      val content = pendingExportContent
+      pendingExportPromise = null
+      pendingExportContent = null
+      if (promise == null) return@OnActivityResult
+      if (payload.resultCode != Activity.RESULT_OK || content == null) {
+        promise.resolve(false)
+        return@OnActivityResult
+      }
+      val uri = payload.data?.data
+      val context = appContext.reactContext
+      if (uri == null || context == null) {
+        promise.resolve(false)
+        return@OnActivityResult
+      }
+      try {
+        val stream = context.contentResolver.openOutputStream(uri)
+        if (stream == null) {
+          promise.resolve(false)
+          return@OnActivityResult
+        }
+        stream.use { out ->
+          out.write(content.toByteArray(Charsets.UTF_8))
+          out.flush()
+        }
+        promise.resolve(true)
+      } catch (e: Exception) {
+        Log.e("MirrorUsageStats", "saveExportJson write failed: ${e.message}")
+        promise.resolve(false)
+      }
     }
   }
 

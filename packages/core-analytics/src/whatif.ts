@@ -66,7 +66,8 @@ export type WhatIfScenarioId =
   | 'pause_top_app'
   | 'cap_sittings'
   | 'quiet_hours'
-  | 'skip_short_bounces';
+  | 'skip_short_bounces'
+  | 'combined';
 
 export type WhatIfScenario = {
   id: WhatIfScenarioId;
@@ -104,8 +105,12 @@ export type WhatIfInput = {
   gaps?: readonly ScoreGap[];
   utcOffsetMinutes?: number;
   approximate?: boolean;
+  provisional?: boolean;
+  nowMs?: number;
   sittingCapMinutes?: number;
   quietHours?: { startHour: number; endHour: number };
+  /** Subset of scenarios currently toggled ON by the user (can combine 1..4 scenarios). */
+  activeScenarioIds?: readonly Exclude<WhatIfScenarioId, 'combined'>[];
 };
 
 export type WhatIfResult = {
@@ -123,6 +128,8 @@ export type WhatIfResult = {
   sittingCapMinutes: number;
   quietHoursLabel: string;
   scenarios: WhatIfScenario[];
+  /** Combined counterfactual Estimate when 1+ scenarios in `activeScenarioIds` are toggled ON. */
+  combinedScenario: WhatIfScenario | null;
   disclaimer: string;
 };
 
@@ -289,6 +296,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     gaps: input.gaps,
     utcOffsetMinutes,
     approximate,
+    provisional: input.provisional,
+    nowMs: input.nowMs,
   });
 
   const measuredFactorSummary = baselineIqs.factors
@@ -299,7 +308,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     .map((f) => `${f.label}: ${f.detail}`);
 
   const disclaimer =
-    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores use the fixed 100-point scale with unmeasured parts shown separately (never counted as zero and never rescaled to 100).';
+    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores report measured points only (for example 44 of 55 measured), with unmeasured points listed separately — never counted as zero and never rescaled to 100.';
 
   const smallSampleBaseline = baselineIqs.value === null || baselineIqs.confidence.smallSample;
   const minimumActivityNote =
@@ -326,6 +335,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       sittingCapMinutes,
       quietHoursLabel,
       scenarios: [],
+      combinedScenario: null,
       disclaimer,
     };
   }
@@ -357,6 +367,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       gaps: input.gaps,
       utcOffsetMinutes,
       approximate,
+      provisional: input.provisional,
+      nowMs: input.nowMs,
     });
 
     const scenarioBaselineMs = Math.max(0, Math.round(params.scenarioBaselineMs));
@@ -417,14 +429,14 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     if (cfScore.value === null || cfScore.measuredMax === 0) {
       iqsEstimateLabel =
         params.cfSessions.length === 0
-          ? 'Estimate: IQS not measurable (0 remaining sittings in window; not rescaled to 100)'
-          : 'Estimate: IQS not measurable (remaining activity below minimum-activity threshold; not rescaled to 100)';
+          ? 'Estimate: score not measurable (0 remaining sittings in window; not rescaled to 100)'
+          : 'Estimate: score not measurable (remaining activity below minimum-activity threshold; not rescaled to 100)';
     } else if (baselineIqs.value === null) {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${cfScore.measuredMax} pts measured, ${cfScore.unmeasuredMax} pts unmeasured; baseline below minimum activity; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: ${cfScore.value} of ${cfScore.measuredMax} measured (${cfScore.unmeasuredMax} pts not measured; baseline below minimum activity; not rescaled to 100)`;
     } else if (sameDenominator && deltaPoints !== null) {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (${fmtSignedPoints(deltaPoints)} across ${measuredFactors.length} measured factor${measuredFactors.length === 1 ? '' : 's'}, ${cfScore.measuredMax} pts measured / ${cfScore.unmeasuredMax} pts unmeasured; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: ${cfScore.value} of ${cfScore.measuredMax} measured (${fmtSignedPoints(deltaPoints)} across ${measuredFactors.length} measured factor${measuredFactors.length === 1 ? '' : 's'}; ${cfScore.unmeasuredMax} pts not measured; not rescaled to 100)`;
     } else {
-      iqsEstimateLabel = `Estimate: IQS ${cfScore.value} / ${cfScore.max} (measured share changed from ${baselineIqs.measuredMax} to ${cfScore.measuredMax} of ${cfScore.max} pts; not rescaled to 100)`;
+      iqsEstimateLabel = `Estimate: ${cfScore.value} of ${cfScore.measuredMax} measured (measured maximum changed from ${baselineIqs.measuredMax} to ${cfScore.measuredMax} pts, ${cfScore.unmeasuredMax} pts not measured; not rescaled to 100)`;
     }
 
     let noChangeReason: string | null = null;
@@ -607,6 +619,80 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     );
   }
 
+  // Combined counterfactual when 1+ scenarios in `activeScenarioIds` are toggled ON
+  const activeSet = new Set<Exclude<WhatIfScenarioId, 'combined'>>(input.activeScenarioIds ?? []);
+  let combinedScenario: WhatIfScenario | null = null;
+  if (activeSet.size === 1) {
+    const onlyId = [...activeSet][0]!;
+    combinedScenario = scenarios.find((sc) => sc.id === onlyId) ?? null;
+  } else if (activeSet.size >= 2) {
+    let working: ScoredSession[] = [...validSessions];
+    const appliedTitles: string[] = [];
+    const appliedAssumptions: string[] = [];
+    const touchedIds = new Set<string>();
+
+    if (activeSet.has('pause_top_app') && topApp) {
+      for (const s of working) {
+        if (s.app === topApp.app) touchedIds.add(s.id);
+      }
+      working = working.filter((s) => s.app !== topApp!.app);
+      appliedTitles.push(`Pause ${topApp.label}`);
+      appliedAssumptions.push(`time in ${topApp.label} is not shifted to other apps`);
+    }
+
+    if (activeSet.has('quiet_hours')) {
+      const next: ScoredSession[] = [];
+      for (const s of working) {
+        const { kept, removedMs } = trimSessionQuietHours(s, startHour, endHour, utcOffsetMinutes);
+        if (removedMs > 0) touchedIds.add(s.id);
+        next.push(...kept);
+      }
+      working = next;
+      appliedTitles.push(`Quiet ${quietHoursLabel}`);
+      appliedAssumptions.push(`activity inside ${quietHoursLabel} local is dropped rather than shifted earlier`);
+    }
+
+    if (activeSet.has('cap_sittings')) {
+      working = working.map((s) => {
+        const dur = Math.max(0, s.endMs - s.startMs);
+        if (dur > sittingCapMs) {
+          touchedIds.add(s.id);
+          return { ...s, endMs: s.startMs + sittingCapMs };
+        }
+        return s;
+      });
+      appliedTitles.push(`Cap ${sittingCapMinutes}m`);
+      appliedAssumptions.push(`sittings over ${sittingCapMinutes} min end at the cap without extra re-opens`);
+    }
+
+    if (activeSet.has('skip_short_bounces')) {
+      const next: ScoredSession[] = [];
+      for (const s of working) {
+        if (s.endMs - s.startMs < SHORT_SESSION_MS) {
+          touchedIds.add(s.id);
+        } else {
+          next.push(s);
+        }
+      }
+      working = next;
+      appliedTitles.push('Skip <8s opens');
+      appliedAssumptions.push('brief opens under 8 s do not occur');
+    }
+
+    const combinedEstMs = working.reduce((sum, s) => sum + Math.max(0, s.endMs - s.startMs), 0);
+    combinedScenario = buildScenario({
+      id: 'combined',
+      title: `Combined (${appliedTitles.join(' + ')})`,
+      cfSessions: working,
+      affectedSessions: touchedIds.size,
+      scenarioBaselineMs: sessionSumMs,
+      scenarioTimeSource: 'sessions',
+      estimatedTimeMs: Math.min(sessionSumMs, combinedEstMs),
+      zeroAffectedReason: `No change today: none of the combined rules (${appliedTitles.join(', ')}) matched recorded sittings in this window.`,
+      assumption: `Combined arithmetic over sitting spans assuming ${appliedAssumptions.join('; ')}.`,
+    });
+  }
+
   return {
     hasBaseline: true,
     baselineTimeMs,
@@ -621,6 +707,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     sittingCapMinutes,
     quietHoursLabel,
     scenarios,
+    combinedScenario,
     disclaimer,
   };
 }

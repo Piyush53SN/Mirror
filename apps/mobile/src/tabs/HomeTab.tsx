@@ -30,8 +30,8 @@ const GAUGE_START_DEG = -210;
 const GAUGE_SWEEP_DEG = 240;
 
 /**
- * Frosted Horizon segmented 240-degree arc gauge for IQS on the fixed 0–100 scale.
- * Unmeasured parts are shown separately alongside the score rather than rescaled.
+ * Frosted Horizon segmented 240-degree arc gauge for Attention signal, filled by
+ * measured points (`value / measuredMax`) with unmeasured points listed separately.
  */
 function IqsHeroGauge({
   iqs,
@@ -41,8 +41,15 @@ function IqsHeroGauge({
   theme: MirrorTheme;
 }): React.ReactElement {
   const scaleMax = iqs && iqs.max > 0 ? iqs.max : 100;
-  const hasScore = iqs !== null && iqs.value !== null && scaleMax > 0;
-  const ratio = hasScore ? Math.max(0, Math.min(1, (iqs.value ?? 0) / scaleMax)) : 0;
+  const measuredMax =
+    iqs && typeof iqs.measuredMax === 'number'
+      ? iqs.measuredMax
+      : iqs
+        ? iqs.factors.filter((f) => f.measurable).reduce((sum, f) => sum + f.max, 0)
+        : 0;
+  const unmeasuredMax = Math.max(0, scaleMax - measuredMax);
+  const hasScore = iqs !== null && iqs.value !== null && measuredMax > 0;
+  const ratio = hasScore ? Math.max(0, Math.min(1, (iqs.value ?? 0) / measuredMax)) : 0;
   const activeTicks = hasScore ? Math.round(ratio * GAUGE_TICKS) : 0;
 
   const size = theme.size.ring + theme.space(3); // 108dp
@@ -52,22 +59,15 @@ function IqsHeroGauge({
   const tickHeight = 12;
   const innerSize = size - theme.space(7); // 68dp center medallion
 
-  const measuredMax =
-    iqs && typeof iqs.measuredMax === 'number'
-      ? iqs.measuredMax
-      : iqs
-        ? iqs.factors.filter((f) => f.measurable).reduce((sum, f) => sum + f.max, 0)
-        : 0;
-
   const a11yLabel =
     hasScore && iqs && iqs.value !== null
       ? announceValue(
-          'Interaction quality score',
+          'Attention signal',
           Math.round(iqs.value),
-          `out of ${scaleMax}`,
-          `${iqs.band}, ${measuredMax} of ${scaleMax} points measured today`,
+          `of ${measuredMax} measured`,
+          `${iqs.band}, ${unmeasuredMax} points not measured`,
         )
-      : 'Interaction quality score not measured yet';
+      : 'Attention signal not measured yet';
 
   return (
     <View
@@ -76,7 +76,7 @@ function IqsHeroGauge({
       accessibilityLabel={a11yLabel}
       accessibilityValue={{
         min: 0,
-        max: scaleMax,
+        max: Math.max(1, measuredMax),
         now: hasScore && iqs && iqs.value !== null ? Math.round(iqs.value) : 0,
       }}
       style={{
@@ -125,7 +125,7 @@ function IqsHeroGauge({
           {hasScore && iqs && iqs.value !== null ? String(Math.round(iqs.value)) : 'Pending'}
         </Text>
         <Text role="micro" tone="muted" theme={theme}>
-          {`/ ${scaleMax}`}
+          {measuredMax > 0 ? `of ${measuredMax}` : 'unmeasured'}
         </Text>
       </View>
     </View>
@@ -312,13 +312,13 @@ export function HomeTab(): React.ReactElement {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
           <View style={{ flex: 1, gap: theme.space(0.5) }}>
             <Text role="micro" tone="muted" theme={theme}>
-              INTERACTION QUALITY · FIXED 0–100 SCALE
+              INTERACTION QUALITY · MEASURED POINTS
             </Text>
             <Text role="title-lg" theme={theme}>
               Attention signal
             </Text>
             <Text role="label" tone="muted" theme={theme}>
-              Fixed 100-point scale — unmeasured parts are shown separately, never counted as zero
+              Measured points shown directly — unmeasured points are listed separately, never counted as zero
             </Text>
           </View>
           <TierBadge tier="D" theme={theme} />
@@ -332,6 +332,9 @@ export function HomeTab(): React.ReactElement {
             alignItems: 'center',
           }}
         >
+          {(isToday || iqs?.provisional) ? (
+            <Chip static label="Today so far, provisional" theme={theme} />
+          ) : null}
           <Chip static label="Based on usage patterns only" theme={theme} />
           {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? (
             <Chip static label="Small sample" theme={theme} />
@@ -367,15 +370,15 @@ export function HomeTab(): React.ReactElement {
                   </Text>
                   {iqs.value !== null ? (
                     <Text role="label" tone="muted" theme={theme}>
-                      {`/ ${scaleMax}`}
+                      {`of ${measuredMax} measured`}
                     </Text>
                   ) : null}
                 </View>
                 <Text role="label" theme={theme}>
-                  {iqs.band}
+                  {isToday || iqs.provisional ? 'Today so far, provisional' : iqs.band}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
-                  {`Measured today: up to ${measuredMax} of ${scaleMax} pts · Not measured: ${unmeasuredMax} pts`}
+                  {`${unmeasuredMax} points not measured (listed separately below)`}
                 </Text>
                 <Text role="micro" tone="muted" theme={theme}>
                   {`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} · ${formatDuration(sittingSpanMs)} merged sitting spans`}
@@ -423,7 +426,7 @@ export function HomeTab(): React.ReactElement {
                   <Divider theme={theme} />
                   <View style={{ gap: theme.space(1) }}>
                     <Text role="label" theme={theme}>
-                      {`Not measured today (${unmeasuredMax} of ${scaleMax} pts excluded)`}
+                      {`${unmeasuredMax} points not measured (listed separately)`}
                     </Text>
                     {unmeasuredFactors.map((factor) => (
                       <Text key={factor.id} role="micro" tone="muted" theme={theme}>

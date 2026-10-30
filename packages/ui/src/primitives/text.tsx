@@ -94,8 +94,17 @@ export function SectionHeader({
 }) {
   const t = withTheme(theme);
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: t.space(2) }}>
-      <View accessible accessibilityRole="header" style={{ flexShrink: 1 }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: t.space(2),
+        marginBottom: t.space(2),
+      }}
+    >
+      <View accessible accessibilityRole="header" style={{ flex: 1, flexShrink: 1, minWidth: 180 }}>
         <Text role="title-lg" theme={t}>
           {title}
         </Text>

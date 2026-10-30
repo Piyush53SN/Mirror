@@ -162,7 +162,9 @@ test('too few labels leaves the part unmeasured (shown separately in unmeasuredM
   assert.equal(score.max, 100);
   assert.equal(score.measuredMax, 55);
   assert.equal(score.unmeasuredMax, 45);
-  assert.match(score.caveat, /55 pts measured today and 45 pts unmeasured/);
+  assert.match(score.caveat, /40 of 55 measured points/);
+  assert.match(score.caveat, /45 points not measured/);
+  assert.doesNotMatch(score.caveat, /\/ 100/);
 });
 
 test('switching is computed per sitting, bounded, and never divides by zero', () => {
@@ -539,3 +541,48 @@ test('property: using less never lowers the score (shortening sittings, capping 
     { numRuns: 200 },
   );
 });
+
+test('provisional unfinished today holds out late-night quiet hours and scales sample-size confidence to elapsed day fraction', () => {
+  const dayStart = Date.parse('2026-10-30T00:00:00.000Z');
+  const dayEnd = dayStart + 24 * H;
+  const now10am = dayStart + 10 * H; // 10:00 AM (10/24 of day elapsed)
+  const sessions = Array.from({ length: 8 }, (_, idx) => ({
+    id: `prov_${idx}`,
+    app: idx % 2 === 0 ? 'org.wikipedia' : 'com.whatsapp',
+    startMs: dayStart + (6 * 60 + idx * 20) * MIN,
+    endMs: dayStart + (6 * 60 + idx * 20 + 3) * MIN, // 8 sustained sittings, 24 min total
+  }));
+
+  const finished = scoreIqs({
+    window: { fromMs: dayStart, toMs: dayEnd },
+    sessions,
+    utcOffsetMinutes: 0,
+  });
+  const provisional = scoreIqs({
+    window: { fromMs: dayStart, toMs: dayEnd },
+    sessions,
+    utcOffsetMinutes: 0,
+    provisional: true,
+    nowMs: now10am,
+  });
+
+  // Finished day measures session_length(25) + switching(15) + late_night(15) = 55;
+  // Unfinished provisional today holds out late_night(15), so measuredMax = 40 and unmeasuredMax = 60.
+  assert.equal(finished.measuredMax, 55);
+  assert.equal(provisional.provisional, true);
+  assert.equal(provisional.band, 'today so far, provisional');
+  assert.equal(provisional.measuredMax, 40);
+  assert.equal(provisional.unmeasuredMax, 60);
+  const lateFactor = provisional.factors.find((f) => f.id === 'late_night');
+  assert.equal(lateFactor.measurable, false);
+  assert.match(lateFactor.detail, /Today so far, provisional/);
+
+  // 8 sittings / 24m on a full 24h day is flagged smallSample (<15 sittings, <30m);
+  // at 10:00 AM (10/24 elapsed -> floor 6 sittings & 13m), 8 sittings / 24m is NOT penalized as smallSample!
+  assert.equal(finished.confidence.smallSample, true);
+  assert.equal(provisional.confidence.smallSample, false);
+  assert.match(provisional.confidence.explanation, /Today so far, provisional/);
+  assert.doesNotMatch(provisional.caveat, /\/ 100/);
+  assert.match(provisional.caveat, /of 40 measured/);
+});
+

@@ -22,7 +22,7 @@ import { bundleTs } from '../../../scripts/lib/ts-bundle.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const core = await bundleTs(join(HERE, '..', 'src/index.ts'), { outfile: join(HERE, '.build', 'core-discovery.mjs') });
-const { computeDiscoveryJourney, MIN_DISCOVERY_DAYS, FULL_DISCOVERY_DAYS } = core;
+const { computeDiscoveryJourney, formatDurationShort, sessionize, MIN_DISCOVERY_DAYS, FULL_DISCOVERY_DAYS } = core;
 
 const DAY_MS = 86_400_000;
 const MIN_MS = 60_000;
@@ -236,6 +236,7 @@ test('property: shares bounded [0,1], counts partition cleanly, routes >= 2, and
       const res = computeDiscoveryJourney({ sessions, utcOffsetMinutes: 0 });
       assert.ok(!JSON.stringify(res).includes('NaN'));
       assert.ok(res.repeatSessionShare >= 0 && res.repeatSessionShare <= 1);
+      assert.ok(res.repeatForegroundShare >= 0 && res.repeatForegroundShare <= 1);
       if (res.hasHistory) {
         assert.equal(res.repeatAppsCount + res.singleDayAppsCount, res.totalAppsVisited);
         assert.equal(res.sustainedSessionCount + res.shortBounceCount, res.totalSessions);
@@ -255,3 +256,80 @@ test('property: shares bounded [0,1], counts partition cleanly, routes >= 2, and
     { numRuns: 100 },
   );
 });
+
+test('11 days with ~10 min/day WhatsApp foreground time uses day-clipped foreground time for topAppByTime and repeatForegroundShare, never hours', () => {
+  const events = [];
+  let seq = 0;
+  for (let d = 0; d < 11; d += 1) {
+    const dayBase = T0 + d * DAY_MS;
+    for (let k = 0; k < 13; k += 1) {
+      seq += 1;
+      const dur = k === 12 ? 48_000 : 46_000; // 600s = 10m/day
+      const startMs = dayBase + Math.round(k * 12.5 * MIN_MS);
+      const endMs = startMs + dur;
+      events.push({
+        schema_version: 1,
+        id: `fg_${seq}`,
+        kind: 'app_foreground',
+        at: new Date(startMs).toISOString(),
+        tier: 'D',
+        origin: 'os',
+        content: 'metadata',
+        app: 'com.whatsapp',
+      });
+      events.push({
+        schema_version: 1,
+        id: `bg_${seq}`,
+        kind: 'app_background',
+        at: new Date(endMs).toISOString(),
+        tier: 'D',
+        origin: 'os',
+        content: 'metadata',
+        app: 'com.whatsapp',
+        duration_ms: dur,
+      });
+    }
+  }
+  // Single-day 5m app on day 0 so repeatForegroundShare is 110m / 115m
+  const singleStart = T0 + 8 * 60 * MIN_MS;
+  events.push({
+    schema_version: 1,
+    id: 'fg_single',
+    kind: 'app_foreground',
+    at: new Date(singleStart).toISOString(),
+    tier: 'D',
+    origin: 'os',
+    content: 'metadata',
+    app: 'md.obsidian',
+  });
+  events.push({
+    schema_version: 1,
+    id: 'bg_single',
+    kind: 'app_background',
+    at: new Date(singleStart + 5 * MIN_MS).toISOString(),
+    tier: 'D',
+    origin: 'os',
+    content: 'metadata',
+    app: 'md.obsidian',
+    duration_ms: 5 * MIN_MS,
+  });
+
+  const { sessions: merged } = sessionize(events);
+  const scoredMerged = merged.map((s) => ({ id: s.id, app: s.app, startMs: s.startMs, endMs: s.endMs }));
+  const res = computeDiscoveryJourney({
+    sessions: scoredMerged,
+    events,
+    labels: { 'com.whatsapp': 'WhatsApp', 'md.obsidian': 'Obsidian' },
+    utcOffsetMinutes: 0,
+  });
+
+  assert.equal(res.hasHistory, true);
+  assert.equal(res.distinctDays, 11);
+  assert.equal(res.totalSessions, 12, 'merged spans kept only for sitting count (11 WhatsApp + 1 Obsidian)');
+  assert.ok(res.topAppByTime);
+  assert.equal(res.topAppByTime.app, 'com.whatsapp');
+  assert.equal(res.topAppByTime.avgDailyMs, 10 * MIN_MS);
+  assert.doesNotMatch(formatDurationShort(res.topAppByTime.avgDailyMs), /h/i, 'daily foreground rate must never show hours');
+  assert.ok(Math.abs(res.repeatForegroundShare - 110 / 115) < 1e-6);
+});
+

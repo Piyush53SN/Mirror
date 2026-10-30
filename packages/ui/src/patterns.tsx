@@ -148,23 +148,23 @@ export function WhySheet({
       <View
         accessible
         accessibilityRole="summary"
-        accessibilityLabel={`Score ${Math.round(score)} out of ${maxScore}${
+        accessibilityLabel={
           typeof effectiveMeasuredMax === 'number'
-            ? `, ${effectiveMeasuredMax} points measured today and ${unmeasuredTotal} points not measured`
-            : ''
-        }`}
+            ? `Score ${Math.round(score)} of ${effectiveMeasuredMax} measured points, ${unmeasuredTotal} points not measured`
+            : `Score ${Math.round(score)} out of ${maxScore}`
+        }
       >
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.space(2) }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: t.space(2), flexWrap: 'wrap' }}>
           <Text role="display" theme={t}>
             {String(Math.round(score))}
           </Text>
           <Text role="label" tone="muted" theme={t}>
-            {`/ ${maxScore}`}
+            {typeof effectiveMeasuredMax === 'number' ? `of ${effectiveMeasuredMax} measured` : `/ ${maxScore}`}
           </Text>
         </View>
         {typeof effectiveMeasuredMax === 'number' ? (
           <Text role="label" tone="muted" theme={t} style={{ marginTop: t.space(1) }}>
-            {`Measured today: up to ${effectiveMeasuredMax} of ${maxScore} pts · Not measured: ${unmeasuredTotal} pts`}
+            {`${unmeasuredTotal} points not measured (listed separately below · never counted as 0 or rescaled)`}
           </Text>
         ) : null}
       </View>
@@ -215,7 +215,7 @@ export function WhySheet({
           }}
         >
           <Text role="label" theme={t} style={{ fontWeight: '600' }}>
-            {`Not measured today (${unmeasuredTotal} of ${maxScore} pts excluded, not counted as 0)`}
+            {`${unmeasuredTotal} points not measured (listed separately, not counted as 0)`}
           </Text>
           {unmeasuredComponents.map((u) => (
             <View key={u.label} style={{ gap: 2 }}>

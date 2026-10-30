@@ -147,10 +147,10 @@ export function JourneyTab(): React.ReactElement {
             gap: theme.space(3),
           }}
         >
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
-            <View style={{ flex: 1, gap: theme.space(0.5) }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: theme.space(2) }}>
+            <View style={{ flex: 1, minWidth: 180, gap: theme.space(0.5) }}>
               <Text role="micro" tone="muted" theme={theme}>
-                MULTI-DAY RHYTHM · OS USAGE
+                MULTI-DAY RHYTHM · DAY-CLIPPED FOREGROUND
               </Text>
               <Text role="title-lg" theme={theme}>
                 Interest Evolution
@@ -198,30 +198,49 @@ export function JourneyTab(): React.ReactElement {
                 }}
               >
                 {(() => {
-                  const maxTotalMs = Math.max(1, ...evolution.rows.map((r) => r.totalSessionMs || 1));
-                  return evolution.rows.map((row, idx) => (
-                    <View key={row.app} style={{ gap: theme.space(1.5) }}>
-                      {idx > 0 ? <Divider theme={theme} /> : null}
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
-                        <View style={{ flex: 1 }}>
-                          <Text role="label" theme={theme}>
-                            {row.label}
-                          </Text>
-                          <Text role="micro" tone="muted" theme={theme}>
-                            {`${row.activeDays}/${evolution.distinctDays} days active · ${row.seenSinceText}`}
-                          </Text>
+                  const maxFgMs = Math.max(
+                    1,
+                    ...evolution.rows.map((r) =>
+                      typeof r.totalForegroundMs === 'number' ? r.totalForegroundMs : r.totalSessionMs || 0,
+                    ),
+                  );
+                  return evolution.rows.map((row, idx) => {
+                    const fgMs =
+                      typeof row.totalForegroundMs === 'number'
+                        ? row.totalForegroundMs
+                        : row.totalSessionMs || 0;
+                    const avgDailyFgMs =
+                      typeof row.avgDailyForegroundMs === 'number'
+                        ? row.avgDailyForegroundMs
+                        : Math.round(fgMs / Math.max(1, evolution.distinctDays));
+                    const fgSharePct =
+                      typeof row.foregroundShare === 'number'
+                        ? Math.round(row.foregroundShare * 100)
+                        : Math.round((fgMs / maxFgMs) * 100);
+                    return (
+                      <View key={row.app} style={{ gap: theme.space(1.5) }}>
+                        {idx > 0 ? <Divider theme={theme} /> : null}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: theme.space(2) }}>
+                          <View style={{ flex: 1, minWidth: 160 }}>
+                            <Text role="label" theme={theme}>
+                              {row.label}
+                            </Text>
+                            <Text role="micro" tone="muted" theme={theme}>
+                              {`${row.activeDays}/${evolution.distinctDays} days active · ${row.seenSinceText}`}
+                            </Text>
+                          </View>
+                          <Chip static label={row.trendLabel} theme={theme} />
                         </View>
-                        <Chip static label={row.trendLabel} theme={theme} />
+                        <Meter
+                          theme={theme}
+                          value={fgMs / maxFgMs}
+                          label={`Foreground share (${fgSharePct}%)`}
+                          caption={`${formatDuration(avgDailyFgMs)}/day foreground · ${row.sessionCount} ${row.sessionCount === 1 ? 'sitting' : 'sittings'}`}
+                          tone={row.trend === 'growing' ? 'anchor' : 'muted'}
+                        />
                       </View>
-                      <Meter
-                        theme={theme}
-                        value={(row.totalSessionMs || 0) / maxTotalMs}
-                        label="Sitting span share"
-                        caption={`${formatDuration(row.totalSessionMs || 0)} · ${row.sessionCount} sittings (${row.dominantBand})`}
-                        tone={row.trend === 'growing' ? 'anchor' : 'muted'}
-                      />
-                    </View>
-                  ));
+                    );
+                  });
                 })()}
               </View>
 
@@ -310,9 +329,24 @@ export function JourneyTab(): React.ReactElement {
                   theme={theme}
                 />
                 <Stat
-                  value={discovery.repeatShareMeasurable ? `${Math.round(discovery.repeatSessionShare * 100)}%` : 'Small sample'}
-                  label="Repeat-app sitting share"
-                  hint={discovery.topAppByTime ? `Top: ${discovery.topAppByTime.label}` : 'Sustained sittings'}
+                  value={
+                    discovery.repeatShareMeasurable
+                      ? `${Math.round((typeof discovery.repeatForegroundShare === 'number' ? discovery.repeatForegroundShare : discovery.repeatSessionShare) * 100)}%`
+                      : 'Small sample'
+                  }
+                  label="Repeat-app foreground share"
+                  hint={
+                    discovery.topAppByTime
+                      ? `Top: ${discovery.topAppByTime.label} (${formatDuration(
+                          typeof discovery.topAppByTime.avgDailyMs === 'number'
+                            ? discovery.topAppByTime.avgDailyMs
+                            : Math.round(
+                                discovery.topAppByTime.totalMs /
+                                  Math.max(1, discovery.distinctDays),
+                              ),
+                        )}/day)`
+                      : 'Day-clipped foreground'
+                  }
                   theme={theme}
                 />
               </View>
@@ -326,17 +360,17 @@ export function JourneyTab(): React.ReactElement {
         </Card>
       ) : null}
 
-      {/* Rabbit Hole — spec bar: 4+ returns, session over 30 min */}
+      {/* Rabbit Hole — raw opens before 15m merging: 4+ returns, cluster over 30 min */}
       {showRabbit ? (
         <Card theme={theme} style={{ marginBottom: 0 }}>
           <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
             <Text role="micro" tone="muted" theme={theme}>
-              RETURN CLUSTERS · 4+ RETURNS & OVER 30 MIN
+              RETURN CLUSTERS · RAW OPENS BEFORE MERGING
             </Text>
             <SectionHeader
               theme={theme}
               title="Rabbit Hole — sustained return clusters"
-              caption="4+ returns across >30 min — intent comes only from your labels"
+              caption={'4+ returns across over 30 min on raw opens — intent comes only from your labels'}
             />
           </View>
           {!p3Reliable ? (
@@ -346,7 +380,7 @@ export function JourneyTab(): React.ReactElement {
           ) : !rabbitHole || !rabbitHole.hasHistory ? (
             <EmptyState
               title="Coming with more data"
-              body={`Needs at least ${rabbitHole?.minDays ?? 3} days of local history (${rabbitHole?.distinctDays ?? 0} of ${rabbitHole?.minDays ?? 3} recorded so far${rabbitHole?.historyStartDay ? `, history starts ${rabbitHole.historyStartDay}` : ''}). Sustained return clusters (4+ returns to one app across >30 min) appear once 3 local days are collected.`}
+              body={`Needs at least ${rabbitHole?.minDays ?? 3} days of local history (${rabbitHole?.distinctDays ?? 0} of ${rabbitHole?.minDays ?? 3} recorded so far${rabbitHole?.historyStartDay ? `, history starts ${rabbitHole.historyStartDay}` : ''}). Sustained return clusters appear once 3 local days are collected.`}
               theme={theme}
             />
           ) : (
@@ -358,13 +392,15 @@ export function JourneyTab(): React.ReactElement {
               {rabbitHole.clusters.length === 0 ? (
                 <EmptyState
                   title="No rabbit-hole clusters detected"
-                  body={`No app had 4 or more returns adding up to over 30 min across ${rabbitHole.distinctDays} local days.`}
+                  body={`No app had 5 or more opens (4+ returns) within 30 minutes spanning over 30 minutes across ${rabbitHole.distinctDays} local days.`}
                   theme={theme}
                 />
               ) : (
                 <View style={{ gap: theme.space(2) }}>
                   {rabbitHole.clusters.map((c) => {
                     const returns = typeof c.returnCount === 'number' ? c.returnCount : Math.max(0, c.sittingCount - 1);
+                    const openCount = typeof c.openCount === 'number' ? c.openCount : c.sittingCount;
+                    const fgMs = typeof c.totalForegroundMs === 'number' ? c.totalForegroundMs : c.totalSittingMs;
                     const lbl = c.explicitLabels;
                     const labelBadge =
                       !lbl || lbl.decisive === 0
@@ -386,8 +422,8 @@ export function JourneyTab(): React.ReactElement {
                           gap: theme.space(1.5),
                         }}
                       >
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
-                          <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: theme.space(2) }}>
+                          <View style={{ flex: 1, minWidth: 160 }}>
                             <Text role="label" theme={theme}>
                               {c.label}
                             </Text>
@@ -401,13 +437,13 @@ export function JourneyTab(): React.ReactElement {
                           <Stat
                             value={`${returns}×`}
                             label="Returns"
-                            hint={`${c.sittingCount} sittings`}
+                            hint={`${openCount} opens`}
                             theme={theme}
                           />
                           <Stat
-                            value={formatDuration(c.totalSittingMs)}
-                            label="Combined sitting time"
-                            hint="Never auto-judged"
+                            value={formatDuration(fgMs)}
+                            label="Foreground time"
+                            hint="Day-clipped foreground"
                             theme={theme}
                           />
                         </View>

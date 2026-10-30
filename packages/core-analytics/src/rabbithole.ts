@@ -1,35 +1,22 @@
 /**
- * J11 Rabbit Hole (Tier D usage-pattern degradation — neutral short-return clusters).
+ * Rabbit Hole detector (Tier D usage-pattern degradation — raw-open return clusters).
  *
- * Full rabbit-hole detection in `SPEC.md` / `RabbitHoleScreen` combines OS session
- * boundaries (Tier D) with content/search signals (Tier A/B/C) to tell whether
- * repeated short visits had no search or save and were feed drift vs purposeful
- * quick checks.
+ * Why raw opens BEFORE session merging:
+ *   `sessionize` merges same-app reopens within 15 minutes into a single sitting.
+ *   Running Rabbit Hole on merged sittings swallowed the exact rapid-reopen pattern
+ *   (4+ returns within 15 minutes) that defines a return cluster, producing 0 clusters
+ *   across 11 days / 49 sittings.
  *
- * When only Tier D OS usage exists (and session boundaries pass the reliability
- * gate: orphans ≤ 50, gaps ≤ 100, and 3+ distinct local days exist), Mirror
- * states the exact Tier-D definition and capability boundary on screen:
- *
- *   What Tier D CAN detect:
- *     - Clusters of 3+ consecutive short sittings (8 s to under 5 min each,
- *       separated by at most 60 min) on the same app with no other app opened
- *       in between (after excluding launchers, system/installer packages, and
- *       utility apps like dialer/camera/clock/calculator).
- *     - Share of cluster time falling between 23:00 and 05:00 local.
- *     - Explicit user `intent_label` annotations (`intentional` / `mindless` /
- *       `unsure`) attached to sittings inside those clusters.
- *
- *   What Tier D CANNOT detect (requires Tier A/B/C):
- *     - Whether a sitting began with a search query or saved item (`unavailable`).
- *     - Algorithmic feed scrolling vs purposeful quick checks (e.g. checking
- *       transit, messages, or reference docs).
- *     - Intent when no explicit user label was given (duration and frequency
- *       never guess intent).
+ * Definition (stated in one plain sentence on screen):
+ *   A rabbit hole is 4 or more returns to the same app (5+ opens of at least 8 seconds,
+ *   at most 30 minutes apart, with no other app in between) spanning over 30 minutes
+ *   from first open to last close.
  *
  * Neutrality rule: clusters are reported descriptively, never framed as failure,
  * never scored against IQS, never blocked or nudged unprompted, and never shown
  * on any public profile.
  */
+import { clipIntervalToLocalDays, type StoredForegroundEventInput } from './evolution';
 import { localDay } from './ingest';
 import {
   countExplicitLabels,
@@ -39,16 +26,17 @@ import {
   type ScoredSession,
 } from './scoring';
 import { SHORT_SESSION_MS } from './sessionize';
-import { isIgnoredSystemApp, isLabelingExcludedApp } from './usage';
+import { isExcludedApp, isLabelingExcludedApp } from './usage';
 
 export const MIN_RABBIT_HOLE_DAYS = 3;
 export const FULL_RABBIT_HOLE_DAYS = 14;
-/** Spec bar: at least 4 returns to the same app (5+ sittings total). */
+/** Spec bar: at least 4 returns to the same app (5+ raw opens total). */
 export const DEFAULT_RABBIT_MIN_RETURNS = 4;
 export const DEFAULT_RABBIT_MIN_CONSECUTIVE = DEFAULT_RABBIT_MIN_RETURNS + 1;
-/** Spec bar: combined session time across the cluster must exceed 30 minutes. */
+/** Spec bar: cluster session span from first open to last close must exceed 30 minutes. */
 export const DEFAULT_RABBIT_MIN_SESSION_MS = 30 * 60_000;
-export const DEFAULT_RABBIT_MAX_GAP_MS = 60 * 60_000;
+/** Maximum idle gap between consecutive opens of the same app inside one cluster (30 min). */
+export const DEFAULT_RABBIT_MAX_GAP_MS = 30 * 60_000;
 
 export type RabbitHoleCluster = {
   id: string;
@@ -57,9 +45,17 @@ export type RabbitHoleCluster = {
   day: string;
   startMs: number;
   endMs: number;
+  /** Cluster session span from first open start to last open close (`endMs - startMs > 30 min`). */
+  spanMs: number;
+  /** Number of raw opens in this cluster (`openCount >= 5`). */
+  openCount: number;
+  /** Alias of `openCount` kept for compatibility with existing callers. */
   sittingCount: number;
-  /** Number of returns after the initial sitting (`sittingCount - 1 >= 4`). */
+  /** Number of returns after the initial open (`openCount - 1 >= 4`). */
   returnCount: number;
+  /** Day-clipped active foreground time across the opens in this cluster (ms). */
+  totalForegroundMs: number;
+  /** Alias of `totalForegroundMs` so time figures report real foreground time, never idle gaps. */
   totalSittingMs: number;
   lateNightMs: number;
   explicitLabels: ExplicitLabelCounts;
@@ -73,15 +69,21 @@ export type RabbitHoleCapabilities = {
 };
 
 export type RabbitHoleInput = {
-  sessions: readonly ScoredSession[];
+  /** Raw usage events (`app_background` intervals) before 15-min session merging (preferred). */
+  events?: readonly StoredForegroundEventInput[];
+  /** Optional pre-extracted raw opens before merging. */
+  rawOpens?: readonly ScoredSession[];
+  /** Merged sittings (used for explicit user label lookup, or as open source in legacy unit tests that omit `events`). */
+  sessions?: readonly ScoredSession[];
+  nowMs?: number;
   intentLabels?: Readonly<Record<string, IntentLabel['label']>>;
   labels?: Readonly<Record<string, string>>;
   ignorePackages?: readonly string[];
   utcOffsetMinutes?: number;
   minDays?: number;
-  /** Minimum returns to the same app after the initial open (default 4 -> 5+ sittings). */
+  /** Minimum returns to the same app after the initial open (default 4 -> 5+ opens). */
   minReturns?: number;
-  /** Minimum combined sitting duration in ms (strictly `>`, default 30 min). */
+  /** Minimum cluster span from first open to last close in ms (strictly `>`, default 30 min). */
   minTotalSessionMs?: number;
   minConsecutive?: number;
   minSittingMs?: number;
@@ -96,15 +98,20 @@ export type RabbitHoleResult = {
   limitedHistory: boolean;
   historyStartDay: string | null;
   lastDay: string | null;
+  /** One plain sentence defining what counts as a rabbit hole. */
   definitionText: string;
   clusterCount: number;
+  totalClusterOpens: number;
   totalClusterSittings: number;
+  /** Total day-clipped foreground time across all detected clusters (ms). */
   totalClusterMs: number;
-  /** Share of cluster sitting time in 23:00–05:00 local, bounded [0, 1]. */
+  /** Total cluster span time across all detected clusters (ms). */
+  totalClusterSpanMs: number;
+  /** Share of cluster foreground time in 23:00–05:00 local, bounded [0, 1]. */
   lateNightShare: number;
-  /** False when total cluster sitting time is under 5 min (small sample). */
+  /** False when total cluster foreground time is under 5 min (small sample). */
   lateNightShareMeasurable: boolean;
-  /** Explicit user labels attached to sittings inside detected clusters. */
+  /** Explicit user labels attached to opens/sittings inside detected clusters. */
   clusterExplicitLabels: ExplicitLabelCounts;
   /** Top recent clusters (up to `clusterLimit`), newest first. */
   clusters: RabbitHoleCluster[];
@@ -113,18 +120,47 @@ export type RabbitHoleResult = {
 
 const CAPABILITIES: RabbitHoleCapabilities = {
   tierDCanDetect: [
-    '4+ returns to the same app (5+ consecutive sittings within 60 min) totalling over 30 min of active sitting time',
-    'Share of those sittings falling between 23:00 and 05:00 local',
-    'Any explicit intentional or mindless labels you added to those sittings',
+    '4+ returns to the same app (5+ raw opens before merging, up to 30 min apart) spanning over 30 min from first open to last close',
+    'Day-clipped active foreground time inside each cluster and share falling between 23:00 and 05:00 local',
+    'Any explicit intentional or mindless labels you added to sittings overlapping those clusters',
   ],
   tierDCannotDetect: [
-    'Whether a visit started from a search or resulted in a save (needs content or connector sources)',
+    'Whether an open started from a search or resulted in a save (needs content or connector sources)',
     'Feed scrolling vs purposeful work or messaging inside an app (needs content sources)',
     'Intent without your explicit label (duration and repeat opens never imply mindless use)',
   ],
   whatMirrorWillNotDo:
     'Mirror does not block apps, send unprompted nudges, penalise your score for this count, or include it on any public profile.',
 };
+
+function extractRawOpensFromEvents(
+  events: readonly StoredForegroundEventInput[],
+  nowMs?: number,
+): ScoredSession[] {
+  const opens: ScoredSession[] = [];
+  const seen = new Set<string>();
+  let idx = 0;
+  for (const ev of events) {
+    if (ev.kind !== 'app_background' || typeof ev.app !== 'string' || typeof ev.duration_ms !== 'number') continue;
+    const rawEnd = Date.parse(ev.at);
+    const dur = Math.max(0, Math.round(ev.duration_ms));
+    if (!Number.isFinite(rawEnd) || dur <= 0) continue;
+    const startMs = rawEnd - dur;
+    const endMs = nowMs !== undefined ? Math.min(rawEnd, nowMs) : rawEnd;
+    if (endMs <= startMs) continue;
+    const dedupeKey = `${ev.app}\u0000${startMs}\u0000${rawEnd}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    idx += 1;
+    opens.push({
+      id: ev.id ?? `raw_open_${idx}`,
+      app: ev.app,
+      startMs,
+      endMs,
+    });
+  }
+  return opens;
+}
 
 export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   const utcOffsetMinutes = input.utcOffsetMinutes ?? 0;
@@ -141,26 +177,41 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   const minTotalSessionMs = Math.max(0, input.minTotalSessionMs ?? DEFAULT_RABBIT_MIN_SESSION_MS);
   const maxGapMs = Math.max(1_000, input.maxGapMs ?? DEFAULT_RABBIT_MAX_GAP_MS);
   const clusterLimit = Math.max(1, input.clusterLimit ?? 5);
-  const launcherSet = new Set<string>(input.ignorePackages ?? []);
+  const ignorePackages = input.ignorePackages ?? [];
   const labels = input.labels ?? {};
 
   const minSessionMinLabel = Math.round(minTotalSessionMs / 60_000);
   const maxGapMinLabel = Math.round(maxGapMs / 60_000);
   const minSecLabel = Math.round(minSittingMs / 1_000);
-  const definitionText = `${minReturns}+ returns (${minConsecutive}+ consecutive sittings of ${minSecLabel} s or longer, within ${maxGapMinLabel} min) to the same app totalling over ${minSessionMinLabel} min, with no other app opened in between. Search and save signals are unavailable on OS usage timing alone.`;
+  // One plain sentence, no technical jargon or internal codes:
+  const definitionText = `A rabbit hole is ${minReturns}+ returns (${minConsecutive}+ opens of at least ${minSecLabel} seconds, up to ${maxGapMinLabel} minutes apart, with no other app in between) spanning over ${minSessionMinLabel} minutes from first open to last close.`;
+
+  const sourceOpens: readonly ScoredSession[] =
+    input.events !== undefined
+      ? extractRawOpensFromEvents(input.events, input.nowMs)
+      : input.rawOpens ?? input.sessions ?? [];
 
   // Exclude launchers, system/installer packages, and utility apps (dialer, camera, clock, calculator, etc.)
-  const valid = input.sessions.filter((s) => {
+  const isEligibleApp = (app: string) =>
+    !isExcludedApp(app, { ignorePackages, label: labels[app] }) &&
+    !isLabelingExcludedApp(app, labels[app]);
+
+  const valid = sourceOpens.filter((s) => {
     const dur = s.endMs - s.startMs;
     if (!Number.isFinite(s.startMs) || !Number.isFinite(s.endMs) || dur <= 0) return false;
-    if (launcherSet.has(s.app)) return false;
-    if (isIgnoredSystemApp(s.app, labels[s.app])) return false;
-    if (isLabelingExcludedApp(s.app, labels[s.app])) return false;
-    return true;
+    return isEligibleApp(s.app);
+  });
+
+  const mergedSessionsForLabels = (input.sessions ?? []).filter((s) => {
+    const dur = s.endMs - s.startMs;
+    return Number.isFinite(s.startMs) && Number.isFinite(s.endMs) && dur > 0 && isEligibleApp(s.app);
   });
 
   const daySet = new Set<string>();
   for (const s of valid) {
+    daySet.add(localDay(s.startMs, utcOffsetMinutes));
+  }
+  for (const s of mergedSessionsForLabels) {
     daySet.add(localDay(s.startMs, utcOffsetMinutes));
   }
   const orderedDays = [...daySet].sort();
@@ -175,8 +226,10 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
       lastDay: orderedDays[orderedDays.length - 1] ?? null,
       definitionText,
       clusterCount: 0,
+      totalClusterOpens: 0,
       totalClusterSittings: 0,
       totalClusterMs: 0,
+      totalClusterSpanMs: 0,
       lateNightShare: 0,
       lateNightShareMeasurable: false,
       clusterExplicitLabels: { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 },
@@ -189,29 +242,49 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   const lastDay = orderedDays[orderedDays.length - 1]!;
   const limitedHistory = orderedDays.length < FULL_RABBIT_HOLE_DAYS;
 
-  // Consider sustained sittings (>= minSittingMs, default 8s); brief <8s flashes do not hold attention
+  // Consider sustained opens (>= minSittingMs, default 8s) BEFORE 15-min merging;
+  // brief <8s flashes do not hold attention and do not break a same-app cluster.
   const sustained = valid
     .filter((s) => s.endMs - s.startMs >= minSittingMs)
-    .sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id));
+    .sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs || a.id.localeCompare(b.id));
 
   const allClusters: RabbitHoleCluster[] = [];
   let run: ScoredSession[] = [];
+
+  const resolveClusterLabels = (clusterRun: readonly ScoredSession[], app: string, startMs: number, endMs: number): ExplicitLabelCounts => {
+    // Check explicit labels on the raw opens themselves first
+    const direct = countExplicitLabels(clusterRun, input.intentLabels, {
+      ignorePackages: input.ignorePackages,
+      appLabels: labels,
+    });
+    if (direct.total > 0 || mergedSessionsForLabels.length === 0) {
+      return direct;
+    }
+    // In the mobile app, users attach intent labels to merged sittings (`sessions`).
+    // Match any merged sitting of the same app overlapping this cluster's [startMs, endMs].
+    const overlappingMerged = mergedSessionsForLabels.filter(
+      (s) => s.app === app && s.endMs > startMs && s.startMs < endMs,
+    );
+    return countExplicitLabels(overlappingMerged, input.intentLabels, {
+      ignorePackages: input.ignorePackages,
+      appLabels: labels,
+    });
+  };
 
   const flushRun = () => {
     if (run.length >= minConsecutive) {
       const first = run[0]!;
       const last = run[run.length - 1]!;
-      let totalSittingMs = 0;
-      let nightMs = 0;
-      for (const s of run) {
-        totalSittingMs += Math.max(0, s.endMs - s.startMs);
-        nightMs += lateNightMs(s.startMs, s.endMs, utcOffsetMinutes);
-      }
-      if (totalSittingMs > minTotalSessionMs) {
-        const explicit = countExplicitLabels(run, input.intentLabels, {
-          ignorePackages: input.ignorePackages,
-          appLabels: labels,
-        });
+      const spanMs = Math.max(0, last.endMs - first.startMs);
+      if (spanMs > minTotalSessionMs) {
+        let totalForegroundMs = 0;
+        let nightMs = 0;
+        for (const s of run) {
+          const clipped = clipIntervalToLocalDays(s.startMs, s.endMs, utcOffsetMinutes);
+          for (const seg of clipped) totalForegroundMs += seg.ms;
+          nightMs += lateNightMs(s.startMs, s.endMs, utcOffsetMinutes);
+        }
+        const explicit = resolveClusterLabels(run, first.app, first.startMs, last.endMs);
         allClusters.push({
           id: `rh_${first.id}_${run.length}`,
           app: first.app,
@@ -219,9 +292,12 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
           day: localDay(first.startMs, utcOffsetMinutes),
           startMs: first.startMs,
           endMs: last.endMs,
+          spanMs,
+          openCount: run.length,
           sittingCount: run.length,
           returnCount: run.length - 1,
-          totalSittingMs,
+          totalForegroundMs,
+          totalSittingMs: totalForegroundMs,
           lateNightMs: nightMs,
           explicitLabels: explicit,
           tier: 'D',
@@ -241,7 +317,7 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
     if (s.app === prev.app && s.startMs >= prev.startMs && gap <= maxGapMs) {
       run.push(s);
     } else {
-      // Either a cross-app switch or a gap > maxGapMs breaks the consecutive run
+      // Either another app was opened (>=8s) or an idle gap > maxGapMs ended the cluster
       flushRun();
       run.push(s);
     }
@@ -249,24 +325,23 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   flushRun();
 
   const clusterCount = allClusters.length;
-  let totalClusterSittings = 0;
+  let totalClusterOpens = 0;
   let totalClusterMs = 0;
+  let totalClusterSpanMs = 0;
   let totalLateNightMs = 0;
-  const clusterMemberSessions: ScoredSession[] = [];
-
-  // Re-collect member sessions for clean deduplicated explicit-label summary across all clusters
   let intentional = 0;
   let mindless = 0;
   let unsure = 0;
+
   for (const c of allClusters) {
-    totalClusterSittings += c.sittingCount;
-    totalClusterMs += c.totalSittingMs;
+    totalClusterOpens += c.openCount;
+    totalClusterMs += c.totalForegroundMs;
+    totalClusterSpanMs += c.spanMs;
     totalLateNightMs += c.lateNightMs;
     intentional += c.explicitLabels.intentional;
     mindless += c.explicitLabels.mindless;
     unsure += c.explicitLabels.unsure;
   }
-  void clusterMemberSessions;
 
   const lateNightShare =
     totalClusterMs > 0 ? Math.min(1, Math.max(0, totalLateNightMs / totalClusterMs)) : 0;
@@ -284,8 +359,10 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
     lastDay,
     definitionText,
     clusterCount,
-    totalClusterSittings,
+    totalClusterOpens,
+    totalClusterSittings: totalClusterOpens,
     totalClusterMs,
+    totalClusterSpanMs,
     lateNightShare,
     lateNightShareMeasurable: totalClusterMs >= 5 * 60_000,
     clusterExplicitLabels: {

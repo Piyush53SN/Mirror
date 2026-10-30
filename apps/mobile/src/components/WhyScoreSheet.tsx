@@ -35,7 +35,7 @@ export function WhyScoreSheet({
       title="Why this score"
       subtitle={
         iqs.value !== null
-          ? `Interaction quality · ${Math.round(iqs.value)} out of ${scaleMax} (${measuredMax} pts measured today)`
+          ? `Interaction quality · ${Math.round(iqs.value)} of ${measuredMax} measured (${Math.max(0, scaleMax - measuredMax)} pts not measured)`
           : 'Interaction quality · minimum activity not met yet'
       }
       onClose={onClose}

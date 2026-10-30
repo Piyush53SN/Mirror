@@ -27,8 +27,9 @@
 import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { hkdf } from '@noble/hashes/hkdf.js';
 import { hmac } from '@noble/hashes/hmac.js';
+import { pbkdf2 } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
-import { utf8ToBytes, bytesToHex } from '@noble/hashes/utils.js';
+import { utf8ToBytes, bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 import type { RandomBytes } from './types';
 
 export const ENVELOPE_VERSION = 1;
@@ -151,6 +152,81 @@ export function envelopeKeyId(envelope: Uint8Array | ArrayBuffer): string {
  */
 export function itemHash(canonicalIdentity: string, keys: DerivedKeys): string {
   return bytesToHex(hmac(sha256, keys.itemHash, utf8ToBytes(canonicalIdentity)));
+}
+
+export const EXPORT_PBKDF2_ITERATIONS = 100_000;
+export const EXPORT_SALT_BYTES = 16;
+
+export type EncryptedExportEnvelope = {
+  format: 'mirror-export-encrypted-v1';
+  encrypted: true;
+  exportedAt: string;
+  cipher: 'XChaCha20-Poly1305';
+  kdf: 'PBKDF2-HMAC-SHA256';
+  iterations: number;
+  saltHex: string;
+  nonceHex: string;
+  ciphertextHex: string;
+};
+
+/**
+ * Encrypt a JSON export string under a user-chosen passphrase using
+ * PBKDF2-HMAC-SHA256 + XChaCha20-Poly1305.
+ */
+export function encryptExportBundle(
+  plaintextJson: string,
+  passphrase: string,
+  random: RandomBytes,
+  options?: { iterations?: number; exportedAt?: string },
+): EncryptedExportEnvelope {
+  if (!passphrase || passphrase.length === 0) {
+    throw new Error('passphrase must be non-empty to encrypt an export');
+  }
+  const iterations = Math.max(10_000, Math.floor(options?.iterations ?? EXPORT_PBKDF2_ITERATIONS));
+  const salt = random(EXPORT_SALT_BYTES);
+  if (salt.length !== EXPORT_SALT_BYTES) throw new Error(`export salt must be ${EXPORT_SALT_BYTES} bytes`);
+  const nonce = random(NONCE_BYTES);
+  if (nonce.length !== NONCE_BYTES) throw new Error(`export nonce must be ${NONCE_BYTES} bytes`);
+  const key = pbkdf2(sha256, utf8ToBytes(passphrase), salt, { c: iterations, dkLen: 32 });
+  const ciphertext = xchacha20poly1305(key, nonce).encrypt(utf8ToBytes(plaintextJson));
+  return {
+    format: 'mirror-export-encrypted-v1',
+    encrypted: true,
+    exportedAt: options?.exportedAt ?? new Date().toISOString(),
+    cipher: 'XChaCha20-Poly1305',
+    kdf: 'PBKDF2-HMAC-SHA256',
+    iterations,
+    saltHex: bytesToHex(salt),
+    nonceHex: bytesToHex(nonce),
+    ciphertextHex: bytesToHex(ciphertext),
+  };
+}
+
+/**
+ * Decrypt an `EncryptedExportEnvelope` back to the original UTF-8 JSON string.
+ * Throws `DecryptionError` on wrong passphrase or tampered ciphertext.
+ */
+export function decryptExportBundle(envelope: EncryptedExportEnvelope, passphrase: string): string {
+  if (!envelope || envelope.format !== 'mirror-export-encrypted-v1') {
+    throw new DecryptionError('unsupported encrypted export format');
+  }
+  if (!passphrase || passphrase.length === 0) {
+    throw new DecryptionError('passphrase required to decrypt export');
+  }
+  const salt = hexToBytes(envelope.saltHex);
+  const nonce = hexToBytes(envelope.nonceHex);
+  const ciphertext = hexToBytes(envelope.ciphertextHex);
+  if (nonce.length !== NONCE_BYTES) throw new DecryptionError('invalid export nonce length');
+  const key = pbkdf2(sha256, utf8ToBytes(passphrase), salt, {
+    c: Math.max(1, envelope.iterations),
+    dkLen: 32,
+  });
+  try {
+    const plaintext = xchacha20poly1305(key, nonce).decrypt(ciphertext);
+    return new TextDecoder().decode(plaintext);
+  } catch {
+    throw new DecryptionError('wrong passphrase or tampered export file');
+  }
 }
 
 export const toBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString('base64');

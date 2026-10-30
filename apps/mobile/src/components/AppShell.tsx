@@ -31,7 +31,7 @@ export function AppShell({
   const tabBarBlur = useLiveBlur('tab-bar');
   const insets = useSafeInsets(contextInsets);
 
-  const topInset = insets.top + theme.space(1.5);
+  const topInset = insets.top + theme.space(2);
   const horizontalInset = Math.max(theme.space(4), Math.max(insets.left, insets.right) + theme.space(4));
   // Reserve space above Android's edge-to-edge gesture / 3-button navigation bar
   // and guarantee generous non-collapsing bottom clearance below the last card on every tab.
@@ -54,7 +54,7 @@ export function AppShell({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: horizontalInset,
-            paddingTop: theme.space(2),
+            paddingTop: theme.space(2.5),
             paddingBottom: theme.space(6),
           }}
         >
@@ -94,12 +94,12 @@ export function AppShell({
             justifyContent: 'flex-end',
           }}
         >
-          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.35) }} />
-          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.68) }} />
+          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.45) }} />
+          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.82) }} />
           <View
             style={{
               height: theme.size.tabBar + navBarReserve + theme.space(2),
-              backgroundColor: rgba(theme.color.canvas, 0.92),
+              backgroundColor: theme.color.canvas,
             }}
           />
         </View>
@@ -113,7 +113,7 @@ export function AppShell({
             bottom: navBarReserve,
           }}
         >
-          {/* High-opacity Frosted Horizon shell backing directly behind TabBar pill */}
+          {/* Solid opaque surface behind TabBar pill so scrolling text never shows through */}
           <View
             pointerEvents="none"
             testID="tab-bar-opaque-backing"
@@ -124,7 +124,7 @@ export function AppShell({
               bottom: theme.space(4),
               height: theme.size.tabBar,
               borderRadius: theme.radius.pill,
-              backgroundColor: rgba(theme.color.shell, theme.isDark ? 0.94 : 0.93),
+              backgroundColor: theme.color.card,
             }}
           />
           <TabBar
@@ -132,6 +132,7 @@ export function AppShell({
             active={activeTab}
             onChange={(id) => setActiveTab(id as TabKey)}
             liveBlur={tabBarBlur}
+            opaque
             theme={theme}
           />
         </View>

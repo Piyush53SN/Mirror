@@ -25,6 +25,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const core = await bundleTs(join(HERE, '..', 'src/index.ts'), { outfile: join(HERE, '.build', 'core-evo.mjs') });
 const {
   computeInterestEvolution,
+  formatDurationShort,
+  sessionize,
   isIgnoredSystemApp,
   scoreIqs,
   collectUsage,
@@ -225,3 +227,103 @@ test('collectUsage: repeated syncs over 1h overlap do not double-count earlier o
   await collectUsage(source, store, { now: T0 + 15 * MIN_MS });
   assert.equal(state.gaps.reduce((sum, g) => sum + g.count, 0), 1, 'overlap re-read must not inflate gap count');
 });
+
+test('11 days with ~10 min/day WhatsApp foreground time (quick opens <=15m apart that merge into ~27h spans) uses day-clipped foreground time and never shows hours', () => {
+  const usageEvents = [];
+  let seq = 0;
+
+  // Across 11 local days, WhatsApp is opened 13 times/day for ~46s each (= ~10m/day foreground),
+  // spaced 12.5 minutes apart so 15-min sessionize merges each day into a ~2h 31m span (~27h 40m over 11 days!).
+  for (let d = 0; d < 11; d += 1) {
+    const dayBase = T0 + d * DAY_MS;
+    for (let k = 0; k < 13; k += 1) {
+      seq += 1;
+      const openDurMs = k === 12 ? 48_000 : 46_000; // 12*46s + 48s = 600s = 10m 00s/day
+      const startMs = dayBase + Math.round(k * 12.5 * MIN_MS);
+      const endMs = startMs + openDurMs;
+      usageEvents.push({
+        schema_version: 1,
+        id: `fg_wa_${seq}`,
+        kind: 'app_foreground',
+        at: new Date(startMs).toISOString(),
+        tier: 'D',
+        origin: 'os',
+        content: 'metadata',
+        app: 'com.whatsapp',
+      });
+      usageEvents.push({
+        schema_version: 1,
+        id: `bg_wa_${seq}`,
+        kind: 'app_background',
+        at: new Date(endMs).toISOString(),
+        tier: 'D',
+        origin: 'os',
+        content: 'metadata',
+        app: 'com.whatsapp',
+        duration_ms: openDurMs,
+      });
+    }
+    // Also add 5m/day Wikipedia sitting so foregroundShare is non-trivial (2/3 WhatsApp, 1/3 Wikipedia)
+    const wkStart = dayBase + 6 * 60 * MIN_MS;
+    const wkEnd = wkStart + 5 * MIN_MS;
+    usageEvents.push({
+      schema_version: 1,
+      id: `fg_wk_${d}`,
+      kind: 'app_foreground',
+      at: new Date(wkStart).toISOString(),
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app: 'org.wikipedia',
+    });
+    usageEvents.push({
+      schema_version: 1,
+      id: `bg_wk_${d}`,
+      kind: 'app_background',
+      at: new Date(wkEnd).toISOString(),
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app: 'org.wikipedia',
+      duration_ms: 5 * MIN_MS,
+    });
+  }
+
+  const { sessions: merged } = sessionize(usageEvents);
+  const scoredMerged = merged.map((s) => ({
+    id: s.id,
+    app: s.app,
+    startMs: s.startMs,
+    endMs: s.endMs,
+  }));
+
+  // Verify the bug trigger: merged spans across 11 days exceed 27 hours (> 97,200,000 ms)!
+  const rawMergedWhatsAppSpanMs = scoredMerged
+    .filter((s) => s.app === 'com.whatsapp')
+    .reduce((sum, s) => sum + (s.endMs - s.startMs), 0);
+  assert.ok(rawMergedWhatsAppSpanMs > 27 * 60 * MIN_MS, `merged span reproduced >27h (${rawMergedWhatsAppSpanMs} ms)`);
+
+  const evo = computeInterestEvolution({
+    sessions: scoredMerged,
+    events: usageEvents,
+    utcOffsetMinutes: 0,
+    labels: { 'com.whatsapp': 'WhatsApp', 'org.wikipedia': 'Wikipedia' },
+  });
+
+  assert.equal(evo.hasHistory, true);
+  assert.equal(evo.distinctDays, 11);
+  const wa = evo.rows.find((r) => r.app === 'com.whatsapp');
+  assert.ok(wa, 'WhatsApp row must be present');
+
+  // Merged spans are kept ONLY for sitting count (11 merged sittings, 1 per day)
+  assert.equal(wa.sessionCount, 11);
+  // Day-clipped foreground time is 10m/day (600,000 ms/day), NEVER hours!
+  assert.equal(wa.avgDailyForegroundMs, 10 * MIN_MS);
+  assert.ok(wa.avgDailyForegroundMs < 60 * MIN_MS, 'per-day foreground time must be minutes, never hours');
+  const dailyFormatted = formatDurationShort(wa.avgDailyForegroundMs);
+  assert.equal(dailyFormatted, '10m');
+  assert.doesNotMatch(dailyFormatted, /h/i, '11 days with ~10 min/day must never format as hours');
+  // Share uses day-clipped foreground time: 10m / (10m + 5m) = 2/3
+  assert.ok(Math.abs(wa.foregroundShare - 2 / 3) < 1e-6);
+});
+

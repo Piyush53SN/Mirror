@@ -55,6 +55,8 @@ export type MirrorUsageStatsModule = {
   getLauncherPackages(): string[];
   /** System bar + display cutout insets in dp from Android WindowInsets. */
   getWindowInsets?(): NativeWindowInsets;
+  /** Opens Android's Storage Access Framework save dialog (ACTION_CREATE_DOCUMENT) and writes UTF-8 JSON. */
+  saveExportJson?(fileName: string, content: string): Promise<boolean>;
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;
