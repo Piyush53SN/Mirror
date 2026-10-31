@@ -456,15 +456,15 @@ if (isMain) {
   let apksignerSource = null;
   const defaultApksignerTxt = join(ROOT, '.reports', 'apksigner-verify.txt');
   const apksignerBin = findAndroidBuildTool('apksigner');
-  if (apksignerBin) {
+  if (opts.apksignerReport && existsSync(opts.apksignerReport)) {
+    apksignerText = readFileSync(opts.apksignerReport, 'utf8');
+    apksignerSource = opts.apksignerReport;
+  } else if (apksignerBin) {
     const res = spawnSync(apksignerBin, ['verify', '--verbose', '--print-certs', apkPath], {
       encoding: 'utf8',
     });
     apksignerText = `${res.stdout ?? ''}\n${res.stderr ?? ''}`;
     apksignerSource = `apksigner:${apkPath}`;
-  } else if (opts.apksignerReport && existsSync(opts.apksignerReport)) {
-    apksignerText = readFileSync(opts.apksignerReport, 'utf8');
-    apksignerSource = opts.apksignerReport;
   } else if (existsSync(defaultApksignerTxt)) {
     apksignerText = readFileSync(defaultApksignerTxt, 'utf8');
     apksignerSource = defaultApksignerTxt;

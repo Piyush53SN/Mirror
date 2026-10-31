@@ -14,6 +14,7 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- docs(release): prepare signed-APK privacy verifier, INSTALL.md migration guide, and v0.1.0 release notes (6e2e96a) 2026-10-31
 - Enhance release workflow with pre-release classification (50684c0) 2026-10-31
 - Update release.yml (95b965c) 2026-10-31
 - feat(release): allow suffixed pre-release tags and mark GitHub releases as pre-release (0d79916) 2026-10-30
@@ -53,7 +54,6 @@ Range: initial..v0.1.0
 - P2 conditions: orphan reduction 319->0 via recent-close 10s + 60s overlap, checklist corrected J5/J6/J8 engine/mockup only OTA/offline config checks, privacy canary E2E real mitmproxy, P3 guard needs more reliable sessions, P3 plan docs/P3.md (8763379) 2026-10-22
 - Add release workflow for automated GitHub releases (ed4d39e) 2026-10-22
 - P2 close: open times only (no invented durations Genshin 22s→8m54s, Security 7m20s→16s, orphans 319), J3 dashboard wired to real data (Frosted Horizon, IQS tier-D only /75, Based on usage patterns only chip, data-tier chip D, Why sheet), Release Stage 1: tag pipeline v*, GitHub Release, changelog, OTA guard, offline test, deployment.md 30-min quickstart, privacy canary report (3f64ff3) 2026-10-22
-- Delete .github/workflows/make-keystore.yml (dd98146) 2026-10-22
 
 ## v0.1 Checklist vs Spec
 
