@@ -8,6 +8,10 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import {
   makeCanaries,
   canariesFrom,
@@ -20,6 +24,12 @@ import {
   describeFinding,
   CANARY_MARKER,
 } from '../scripts/privacy/canary.mjs';
+import {
+  ARCHITECTURAL_INTERNET_DISCLOSURE,
+  verifyApksignerOutput,
+  verifyReleaseManifestInput,
+  verifyRuntimeCanaryCapture,
+} from '../scripts/privacy/verify-signed-apk.mjs';
 
 const TOKEN = 'MRRCANARY-9f2c1a7b3d4e';
 const OTHER = 'MRRCANARY-000000000001';
@@ -165,3 +175,152 @@ test('findings can be described without echoing the whole token', () => {
 test('decodeBlobs ignores binary noise', () => {
   assert.deepEqual(decodeBlobs(Buffer.from([0xff, 0xfe, 0x00]).toString('utf8')), []);
 });
+
+/* ------------------------------------------- signed-APK verifier (Stage 3) -- */
+
+test('signed-APK verifier states honestly that zero traffic is expected without INTERNET and enforces manifest + release cert gates', () => {
+  assert.match(ARCHITECTURAL_INTERNET_DISCLOSURE, /Without android\.permission\.INTERNET/);
+  assert.match(ARCHITECTURAL_INTERNET_DISCLOSURE, /zero network traffic in mitmproxy is expected by OS enforcement/);
+
+  const cleanReleaseXml = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="dev.mirror.app">
+  <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+  <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <uses-permission android:name="dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+  <application>
+    <service android:name="androidx.work.impl.background.systemjob.SystemJobService"
+             android:permission="android.permission.BIND_JOB_SERVICE" />
+  </application>
+</manifest>`;
+
+  const cleanManifest = verifyReleaseManifestInput(cleanReleaseXml);
+  assert.equal(cleanManifest.ok, true, cleanManifest.problems.join('; '));
+  assert.equal(cleanManifest.hasUsageStats, true);
+  assert.equal(cleanManifest.hasInternet, false);
+  assert.equal(cleanManifest.hasNotificationListener, false);
+
+  // INTERNET permission in release fails
+  const internetXml = cleanReleaseXml.replace(
+    '</application>',
+    '</application>\n  <uses-permission android:name="android.permission.INTERNET" />',
+  );
+  const badInternet = verifyReleaseManifestInput(internetXml);
+  assert.equal(badInternet.ok, false);
+  assert.equal(badInternet.hasInternet, true);
+
+  // NotificationListenerService in release fails
+  const notifXml = cleanReleaseXml.replace(
+    '</application>',
+    `  <service android:name="dev.mirror.app.BadNotifListener"
+               android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+        <intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter>
+      </service>
+    </application>`,
+  );
+  const badNotif = verifyReleaseManifestInput(notifXml);
+  assert.equal(badNotif.ok, false);
+  assert.equal(badNotif.hasNotificationListener, true);
+
+  // aapt2 dump xmltree format also works
+  const aaptTree = [
+    'N: android=http://schemas.android.com/apk/res/android',
+    '  E: manifest (line=2)',
+    '    E: uses-permission (line=5)',
+    '      A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.PACKAGE_USAGE_STATS"',
+    '    E: uses-permission (line=6)',
+    '      A: http://schemas.android.com/apk/res/android:name(0x01010003)="android.permission.ACCESS_NETWORK_STATE"',
+  ].join('\n');
+  const aaptRes = verifyReleaseManifestInput(aaptTree);
+  assert.equal(aaptRes.ok, true, aaptRes.problems.join('; '));
+  assert.equal(aaptRes.hasInternet, false);
+  assert.equal(aaptRes.hasNotificationListener, false);
+
+  // Release certificate passes; CN=Android Debug fails
+  const releaseCertOut = [
+    'Verifies',
+    'Verified using v1 scheme (JAR signing): false',
+    'Verified using v2 scheme (APK Signature Scheme v2): true',
+    'Verified using v3 scheme (APK Signature Scheme v3): true',
+    'Signer #1 certificate DN: CN=Mirror Release, OU=Mobile, O=Mirror, C=IN',
+    'Signer #1 certificate SHA-256 digest: a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90',
+  ].join('\n');
+  const okCert = verifyApksignerOutput(releaseCertOut);
+  assert.equal(okCert.ok, true, okCert.problems.join('; '));
+  assert.equal(okCert.isDebugCert, false);
+  assert.equal(okCert.signerDn, 'CN=Mirror Release, OU=Mobile, O=Mirror, C=IN');
+
+  const debugCertOut = releaseCertOut.replace(
+    'CN=Mirror Release, OU=Mobile, O=Mirror, C=IN',
+    'CN=Android Debug, O=Android, C=US',
+  );
+  const badCert = verifyApksignerOutput(debugCertOut);
+  assert.equal(badCert.ok, false);
+  assert.equal(badCert.isDebugCert, true);
+
+  // Runtime canary: 0 flows + 0 findings passes; leaked canary or unexpected flow fails
+  const okCanary = verifyRuntimeCanaryCapture({
+    reportJson: { flows: 0, findings: [] },
+    logcatText: 'ActivityManager: Displayed dev.mirror.app/.MainActivity',
+    canaries: [TOKEN],
+  });
+  assert.equal(okCanary.ok, true);
+  assert.equal(okCanary.zeroTrafficExpectedWithoutInternet, true);
+
+  const leakCanary = verifyRuntimeCanaryCapture({
+    reportJson: { flows: 0, findings: [] },
+    logcatText: `leaked ${TOKEN} in logcat`,
+    canaries: [TOKEN],
+  });
+  assert.equal(leakCanary.ok, false);
+
+  // CLI end-to-end verification against fixture files
+  const tmp = mkdtempSync(join(tmpdir(), 'mirror-apk-verify-'));
+  const fakeApk = join(tmp, 'mirror-v0.1.0-rc1-release.apk');
+  const manifestPath = join(tmp, 'AndroidManifest.xml');
+  const certPath = join(tmp, 'apksigner-verify.txt');
+  const canaryPath = join(tmp, 'android-report.json');
+  const outPath = join(tmp, 'out.json');
+  writeFileSync(fakeApk, Buffer.from('PK\x03\x04fake-signed-apk-bytes'));
+  writeFileSync(manifestPath, cleanReleaseXml);
+  writeFileSync(certPath, releaseCertOut);
+  writeFileSync(canaryPath, JSON.stringify({ flows: 0, findings: [] }));
+
+  const scriptPath = resolve(import.meta.dirname, '..', 'scripts', 'privacy', 'verify-signed-apk.mjs');
+  const cliOk = spawnSync(
+    process.execPath,
+    [
+      scriptPath,
+      '--apk',
+      fakeApk,
+      '--manifest',
+      manifestPath,
+      '--apksigner-report',
+      certPath,
+      '--canary-report',
+      canaryPath,
+      '--out',
+      outPath,
+    ],
+    { encoding: 'utf8' },
+  );
+  const outReport = JSON.parse(readFileSync(outPath, 'utf8'));
+
+  writeFileSync(certPath, debugCertOut);
+  const cliDebugFail = spawnSync(
+    process.execPath,
+    [scriptPath, '--apk', fakeApk, '--manifest', manifestPath, '--apksigner-report', certPath, '--out', outPath],
+    { encoding: 'utf8' },
+  );
+  rmSync(tmp, { recursive: true, force: true });
+
+  assert.equal(cliOk.status, 0, cliOk.stdout + cliOk.stderr);
+  assert.equal(outReport.ok, true);
+  assert.equal(outReport.manifest.hasInternet, false);
+  assert.equal(outReport.manifest.hasNotificationListener, false);
+  assert.equal(outReport.signature.isDebugCert, false);
+  assert.equal(cliDebugFail.status, 1);
+  assert.match(cliDebugFail.stderr, /debug certificate/);
+});
+

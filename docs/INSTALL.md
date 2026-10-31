@@ -1,128 +1,99 @@
-# Mirror — Phone Testing Install
+# Mirror — Android Installation & Upgrade Guide (`v0.1.0-rc1` / `v0.1.0`)
 
-**P3 is on hold until you report what the release APK shows.**
+Mirror `v0.1` is an offline, on-device Android app (`dev.mirror.app`). Every event, sitting, and manual intent label is stored locally in an **`XChaCha20-Poly1305`** encrypted SQLite database (`mirror.db` + Android Keystore `SecureStore`, `allowBackup: false`), and the signed release APK declares **no internet permission**.
 
-## Known crash on Xiaomi / R8 minified release (fixed)
+---
 
-Release APK `app-release.apk` / `mirror-test.apk` built with `minifyEnabled true` was crashing on launch:
+## 1. Which file to install
 
+Each GitHub Release (`v0.1.0-rc1` pre-release and `v0.1.0` release) publishes:
+
+| Release asset | Purpose | Install directly on phone? |
+|---|---|---|
+| `mirror-<tag>-release.apk` | Self-contained release APK signed with the permanent Mirror release certificate (no Metro server needed; `android.permission.INTERNET` removed) | **Yes — install this file** |
+| `mirror-<tag>-release.aab` | Signed Android App Bundle for Google Play internal/production tracks | No (Play Store bundle format) |
+| `SHA256SUMS.txt` | SHA-256 checksums for the `.apk` and `.aab` | Verify before installing |
+| `apksigner-verify.txt` & `merged-manifest-release.json` | CI audit proof of the release signing certificate and merged `AndroidManifest.xml` | Audit reference |
+
+> **Local developer note:** `app-debug.apk` (from `./gradlew :app:assembleDebug`) is a Metro development client that expects a local dev server on `localhost:8081` (`Unable to load script` if opened standalone). Always use `mirror-<tag>-release.apk` on a phone.
+
+### Optional: verify checksum & release signature on your computer
+
+```bash
+# 1. Verify SHA-256 checksum
+sha256sum -c SHA256SUMS.txt
+
+# 2. Verify APK Signature Scheme v2/v3 & confirm non-debug certificate
+apksigner verify --verbose --print-certs mirror-v0.1.0-rc1-release.apk
 ```
-RuntimeException: Unable to get provider androidx.startup.InitializationProvider
-Caused by: Failed to create an instance of class androidx.work.impl.WorkDatabase
-```
 
-Root cause: R8 minification stripped Room's generated `WorkDatabase_Impl` (used by WorkManager, which backs `expo-background-task` and `expo-task-manager`). Fix: added keep rules via `expo-build-properties` in `app.json`:
+---
 
-```
--keep class * extends androidx.room.RoomDatabase
--keep @androidx.room.Entity class *
--keep class androidx.work.impl.WorkDatabase_Impl { *; }
--keep class androidx.work.impl.WorkDatabase { *; }
--keep class androidx.work.** { *; }
--keep class androidx.startup.** { *; }
--keep class expo.modules.taskmanager.** { *; }
--keep class expo.modules.backgroundtask.** { *; }
-```
+## 2. One-time uninstall & reinstall (moving off `mirror-test.apk`)
 
-Kotlin package confirmed: `dev.mirror.usagestats` (from `UsageStatsModule.kt`) matches keep rule `dev.mirror.usagestats.**`.
+### Why a one-time uninstall is required
 
-> **Note:** Current keep rules are broad (`androidx.work.**`, `expo.modules.**`) to unblock phone testing. **Must be narrowed before store build** — replace with specific keeps like `* extends Worker`, `* extends RoomDatabase`, `@Entity`, `@Dao`, etc., to allow R8 shrinking.
+Earlier branch test builds (`mirror-test.apk`) were signed with `debug.keystore` (`CN=Android Debug`). Release candidates (`v0.1.0-rc1`) and releases (`v0.1.0+`) are signed with Mirror's permanent release certificate.
 
-Also added CI smoke test that installs APK on emulator and checks logcat for `WorkDatabase` crash (now fails fast if `pidof` empty or `FATAL EXCEPTION` mentions `dev.mirror.app`).
+Android enforces signing-certificate pinning across updates: installing a release-signed APK over a debug-signed APK fails with *"App not installed as package conflicts with an existing package"* (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). You must **uninstall the old debug-signed build once** before installing `mirror-v0.1.0-rc1-release.apk` (or `mirror-v0.1.0-release.apk`).
 
-**Quick diagnostic option:** Disabling minification for test build (`android.enableMinifyInReleaseBuilds=false` via `expo-build-properties`) is acceptable for `mirror-test.apk`. Cost: APK ~10-20 MB larger, no obfuscation, slightly slower startup, but bypasses R8 and confirms crash is R8-related. For production AAB, keep minify enabled with proper keep rules.
+### Step-by-step migration
 
-## Which APK to install
+1. **(Optional) Export an archive copy before uninstalling — archive only, no import in v0.1:**
+   - Open your existing Mirror app → **`You`** tab → **`Local Data & Privacy`** → **`Export all local data (JSON)`**.
+   - Read the plaintext warning: leaving the passphrase blank writes readable JSON (app names, open timestamps, derived sittings, and manual intent labels). Entering an optional passphrase encrypts the export with **`XChaCha20-Poly1305`** before saving (`Save JSON file`) or sharing (`Share JSON`).
+   - **Archive-only limitation in v0.1:** **Export is for your personal archive only — Mirror `v0.1` does not have a JSON import or restore feature yet.** Uninstalling the old debug-signed app wipes `mirror.db` and its device-bound Android Keystore key, so the newly installed release build starts a fresh local store (Android's rolling ~7-day `UsageEvents` window will populate automatically on first sync).
 
-GitHub Actions `Android build + manifest gate` produces two APKs in artifact `mirror-apks`:
+2. **Uninstall the previous debug-signed Mirror app (one time only):**
+   - **On your phone:** Long-press the **Mirror** icon → **App info** → **Uninstall** → **OK** (or **Settings → Apps → Mirror → Uninstall**).
+   - **Or via ADB:**
+     ```bash
+     adb uninstall dev.mirror.app
+     ```
 
-| APK | What it is | Works offline? | For phone testing? |
-|-----|------------|----------------|-------------------|
-| `app-debug.apk` | Debug build from `assembleDebug` | **No** — needs Metro bundler (`Unable to load script` on phone) | No, for local dev with `npm start` |
-| `mirror-test.apk` | **Phone-testable** — release build (`assembleRelease`) signed with **debug keystore**, self-contained JS bundle, **NOT for Play Store** | Yes | **Yes — use this** |
-| `app-release.apk` | Same as `mirror-test.apk` (copied) — release build signed with debug keystore | Yes | Yes, same as `mirror-test.apk` |
+3. **Install the signed release APK (`mirror-v0.1.0-rc1-release.apk` or `mirror-v0.1.0-release.apk`):**
+   - **On your phone:** Open **Files** / **Downloads**, tap `mirror-v0.1.0-rc1-release.apk` (if prompted, allow *Install unknown apps* for your file manager/browser), and tap **Install**.
+   - **Or via ADB:**
+     ```bash
+     adb install mirror-v0.1.0-rc1-release.apk
+     ```
 
-> **Why debug APK fails on phone:** Expo prebuild + `assembleDebug` produces a dev client that expects Metro at `localhost:8081`. Without Metro it shows `Unable to load script`. Release build bundles JS into APK.
+4. **Grant Usage Access & run initial sync:**
+   - Open **Mirror** → on the **Permission Primer** screen, tap **Open Android settings** → **Usage access** → **Mirror** → toggle **Allow usage tracking** **ON**.
+   - Return to Mirror and tap/pull **Refresh**. Confirm `Home` per-app daily foreground totals match **Settings → Digital Wellbeing** within `max(10%, 60s)`.
 
-## Steps to install mirror-test.apk
+---
 
-1. **Download artifact:**
-   - GitHub → Actions → latest `Android build + manifest gate` run on `arena/46c54cde-mirror` → Artifacts → `mirror-apks` → unzip → `mirror-test.apk` (55-60 MB)
+## 3. Upgrading from `v0.1.0-rc1` to `v0.1.0` (and all future releases)
 
-2. **Allow unknown apps:**
-   - Settings → Apps → Special access → Install unknown apps → allow your File Manager / Chrome
+Once you are on `mirror-v0.1.0-rc1-release.apk` (or `mirror-v0.1.0-release.apk`), **do NOT uninstall** when updating to `v0.1.0`, `v0.1.1`, or `v0.2.0`:
 
-3. **Install:**
-   - File Manager → tap `mirror-test.apk` → Install
-   - Or via ADB: `adb install -r mirror-test.apk`
+- All release candidates and releases are signed with the **same permanent release certificate**.
+- Tap the new `mirror-v0.1.0-release.apk` on your phone → **Update** (or run `adb install -r mirror-v0.1.0-release.apk`).
+- Your `XChaCha20-Poly1305` encrypted `mirror.db`, Android Keystore key, stored multi-day history, and manual intent labels remain intact across updates.
 
-4. **Grant Usage Access:**
-   - Open Mirror → Permission Primer → Open Android settings → Usage access → Mirror (`dev.mirror.app`) → toggle ON → back (AppState listener re-checks)
+---
 
-5. **Test:**
-   - Use some apps for a few minutes
-   - Open Mirror → Refresh → you should see real sessions (e.g., `com.android.chrome - 2m 14s`) and data-quality line: `No gaps recorded` or `3 gaps, by reason: ...`
-   - Data is local only, encrypted with XChaCha20-Poly1305, key in SecureStore
+## 4. Permissions, Privacy Boundary & Data Controls
 
-## Why mirror-test.apk is debug-signed and not for stores
+- **Single user-granted data permission:** `android.permission.PACKAGE_USAGE_STATS` (Android Special app access → Usage access). Mirror reads app foreground/background timestamps and screen-interactive / keyguard lifecycle events — never screen contents, keystrokes, URLs, or notification text.
+- **No internet permission in release:** `apps/mobile/plugins/remove-forbidden-permissions.js` removes `android.permission.INTERNET` from the release `AndroidManifest.xml` (`tools:node="remove"`), withholding Linux group `AID_INET` (`GID 3003`) from `dev.mirror.app`.
+- **No notification listener or accessibility service:** `BIND_NOTIFICATION_LISTENER_SERVICE`, `BIND_ACCESSIBILITY_SERVICE`, `SYSTEM_ALERT_WINDOW`, `QUERY_ALL_PACKAGES`, `ACCESS_LOCAL_NETWORK`, location, contacts, camera, microphone, and `AD_ID` are blocked and audited in CI (`scripts/android/check-merged-manifest.mjs`).
+- **`ACCESS_NETWORK_STATE` note:** Retained solely because `androidx.work:work-runtime` (`expo-background-task`) registers a local connectivity callback on startup; without `INTERNET`, the app cannot open network sockets.
+- **On-device controls (`You` → `Local Data & Privacy`):**
+  - **`Export all local data (JSON)`** — archive-only JSON export (plaintext warning + optional `XChaCha20-Poly1305` passphrase encryption; no import in v0.1).
+  - **`Clear manual labels`** — removes manual `Intentional` / `Mindless` / `Not sure` tags while keeping screen-time history.
+  - **`Delete all local data`** — requires typing `DELETE` to wipe `mirror.db` and derived summaries, recording `History reset on <date>` on `You`.
 
-- Built with `./gradlew :app:assembleRelease -Pandroid.injected.signing.store.file=app/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android`
-- Uses debug keystore generated by Expo prebuild (`android/app/debug.keystore`)
-- Self-contained, no Metro needed
-- **NOT for Play Store** — production AAB needs real upload keystore (MANUAL, see `make release-stage1`)
+---
 
-## For developers (local)
+## 5. Troubleshooting
 
-- `app-debug.apk` is for `expo run:android` / Metro dev: `cd apps/mobile && npm run android` or `npm start` + Expo Go (but Expo Go cannot use UsageStats native module, shows unavailable)
-- To build phone-testable locally: `cd apps/mobile/android && ./gradlew :app:assembleRelease -Pandroid.injected.signing.store.file=app/debug.keystore -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android`
-
-## Permissions
-
-- Only `PACKAGE_USAGE_STATS` is requested (Special access → Usage access)
-- All others (`CAMERA`, `LOCATION`, `CONTACTS`, etc.) are blocked via `blockedPermissions` + custom plugin `remove-forbidden-permissions` that adds `tools:node=remove` to main/debug/debugOptimized manifests
-- `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` is allowlisted (AndroidX work/core, per-package permission for RECEIVER_NOT_EXPORTED, Android 13+)
-
-### Stable debug keystore for install-over (CI secret)
-
-**Problem before:** CI generated a fresh `app/debug.keystore` each run (`keytool -genkeypair` after `expo prebuild --clean`). Different keystore = different APK signature. Android refuses to install an update with different signature (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`), so you must uninstall first. Uninstall wipes `expo-secure-store` (keystore) and, with `allowBackup=true`, may restore old `mirror.db` without its key → error `record was sealed with key "kmvezvsza", current key is "kmvgashwo"`.
-
-**Fix:** Use one stable debug keystore for all CI builds, stored as GitHub Actions secret base64, restored before build. Then `mirror-test.apk` signature stays same, allowing `adb install -r` or tap-to-update over old app without uninstall, preserving SecureStore key and encrypted DB.
-
-**How to create and add the secret (one-time, repo owner):**
-
-1. **Generate a stable debug keystore locally (any machine with JDK or openssl):**
-
-   With JDK `keytool` (recommended, same as Android Studio):
-   ```bash
-   keytool -genkeypair -v -storetype PKCS12 -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-   ```
-
-   Or with `openssl` if no JDK:
-   ```bash
-   openssl genrsa -out key.pem 2048
-   openssl req -new -x509 -key key.pem -out cert.pem -days 10000 -subj "/CN=Android Debug,O=Android,C=US"
-   openssl pkcs12 -export -in cert.pem -inkey key.pem -out debug.keystore -name androiddebugkey -passout pass:android
-   rm key.pem cert.pem
-   ```
-
-2. **Base64 encode (no newlines):**
-   ```bash
-   # Linux
-   base64 -w 0 debug.keystore > debug.keystore.base64
-   # macOS
-   base64 debug.keystore | tr -d '\n' > debug.keystore.base64
-   ```
-
-3. **Add as GitHub Actions secret:**
-   - GitHub repo → Settings → Secrets and variables → Actions → New repository secret
-   - Name: `DEBUG_KEYSTORE_BASE64`
-   - Value: paste entire content of `debug.keystore.base64` (single line, ~3-4k chars)
-   - Save
-
-4. **Workflow restores it:** `infra/workflows/android-build.yml` step `Restore stable debug keystore from secret` checks `secrets.DEBUG_KEYSTORE_BASE64`, decodes to `apps/mobile/android/app/debug.keystore` before `assembleRelease`. If secret missing, it warns and generates ephemeral keystore (old behavior, signature unstable).
-
-5. **Local dev:** Keep your own `apps/mobile/android/app/debug.keystore` (generated by Gradle on first local build). It is gitignored (`*.keystore`), so not committed. For phone testing over old build, reuse same file – don't delete `android/` between builds unless you also restore secret.
-
-**Security note:** Debug keystore password is `android` (public). It is **not** a production secret – it only signs `mirror-test.apk` for phone testing, not Play Store AAB. Storing base64 in GitHub secret is for signature stability, not for confidentiality. Production upload keystore remains MANUAL and never in repo.
-
-P3 remains on hold until you report what `mirror-test.apk` shows on device.
+- **"App not installed as package conflicts with an existing package" (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`):**
+  You still have an older `debug.keystore`-signed `mirror-test.apk` installed. Follow Section 2 above to uninstall `dev.mirror.app` once, then install `mirror-<tag>-release.apk`.
+- **Usage Access revoked after an OS update or permission auto-reset:**
+  Mirror shows a recovery banner without crashing or deleting stored history. Re-enable **Settings → Apps → Special app access → Usage access → Mirror** and tap **Refresh**.
+- **Android Keystore key invalidated (e.g. device lock-screen credential wipe):**
+  Mirror surfaces a clear local-key recovery prompt instead of crashing; use **`Delete all local data`** (`DELETE`) to re-initialize a fresh `XChaCha20-Poly1305` store key and log the reset date on `You`.
+- **R8 / WorkManager minification note (developers):**
+  Release builds keep Room/WorkManager classes via `expo-build-properties` `extraProguardRules` in `apps/mobile/app.json` (`androidx.work.**`, `androidx.room.RoomDatabase`, `dev.mirror.usagestats.**`) so minified release APKs/AABs boot cleanly on Xiaomi/MIUI, Pixel, and Samsung devices.

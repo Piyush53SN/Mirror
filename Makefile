@@ -7,7 +7,7 @@
 NPM ?= npm
 NODE ?= node
 
-.PHONY: help install verify test typecheck lint security android-manifest android-build release-stage1 release-check-tag release-verify-signing ota-guard offline-test changelog gallery mockups privacy privacy-addon privacy-extension privacy-android mobile-start mobile-android build-preview build-production clean
+.PHONY: help install verify test typecheck lint security android-manifest android-build release-stage1 release-check-tag release-verify-signing ota-guard offline-test changelog gallery mockups privacy privacy-addon privacy-extension privacy-android privacy-verify-apk mobile-start mobile-android build-preview build-production clean
 
 help:
 	@echo "make install             install node deps"
@@ -93,6 +93,10 @@ privacy-extension:
 
 privacy-android:
 	$(NPM) run privacy:android
+
+privacy-verify-apk:
+	@test -n "$(APK)" || (echo "Usage: make privacy-verify-apk APK=mirror-v0.1.0-rc1-release.apk" >&2 && exit 1)
+	$(NODE) scripts/privacy/verify-signed-apk.mjs --apk "$(APK)" $(ARGS)
 
 mobile-start:
 	cd apps/mobile && $(NPM) start

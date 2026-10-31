@@ -319,5 +319,31 @@ test('verify-signing-env fails loudly on missing/invalid secrets and release.yml
   const signingPlugin = readFileSync(join(ROOT, 'apps', 'mobile', 'plugins', 'with-release-signing.js'), 'utf8');
   assert.match(signingPlugin, /MIRROR_REQUIRE_RELEASE_SIGNING/);
   assert.match(signingPlugin, /throw new GradleException/);
+
+  // 8. docs/INSTALL.md and docs/RELEASE_NOTES_v0.1.0.md document one-time uninstall/reinstall, archive-only Export, XChaCha20-Poly1305, and no internet permission
+  const installDoc = readFileSync(join(ROOT, 'docs', 'INSTALL.md'), 'utf8');
+  assert.match(installDoc, /One-time uninstall & reinstall/);
+  assert.match(installDoc, /adb uninstall dev\.mirror\.app/);
+  assert.match(installDoc, /archive only/i);
+  assert.match(installDoc, /does not have a JSON import or restore/i);
+  assert.match(installDoc, /XChaCha20-Poly1305/);
+  assert.match(installDoc, /no internet permission/i);
+  assert.doesNotMatch(installDoc, /P3 is on hold/i);
+  assert.doesNotMatch(installDoc, /P3 remains on hold/i);
+  assert.doesNotMatch(installDoc, /AES-256-GCM/i);
+  assert.doesNotMatch(installDoc, /zero network permissions/i);
+
+  const releaseNotes = readFileSync(join(ROOT, 'docs', 'RELEASE_NOTES_v0.1.0.md'), 'utf8');
+  assert.match(releaseNotes, /Mirror `v0\.1\.0` — Release Notes/);
+  assert.match(releaseNotes, /uninstall Mirror once/i);
+  assert.match(releaseNotes, /Export is an archive only/i);
+  assert.match(releaseNotes, /XChaCha20-Poly1305/);
+  assert.match(releaseNotes, /no internet permission/i);
+  assert.doesNotMatch(releaseNotes, /\bJ\d{1,2}\b/);
+  assert.doesNotMatch(releaseNotes, /P3 cards/i);
+  assert.doesNotMatch(releaseNotes, /First seen/i);
+  assert.doesNotMatch(releaseNotes, /AES-256-GCM/i);
+  assert.doesNotMatch(releaseNotes, /zero network permissions/i);
+  assert.doesNotMatch(releaseNotes, /Explicit labels active/i);
 });
 

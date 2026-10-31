@@ -1,21 +1,25 @@
 # Changelog v0.1.0
 
-Generated: 2026-10-29
+Generated: 2026-10-31
 Range: initial..v0.1.0
 
 ## Highlights (v0.1 — Android On-Device Tier D)
 
-- **Day-clipped OS foreground totals (Digital Wellbeing parity) & append-only local history:** Per-app daily totals sum raw `UsageEvents` foreground intervals clipped strictly to `[00:00 local, min(now, 24:00 local)]` with symmetric 6h lookaround, `CONTINUE_PREVIOUS_DAY` handling, unioned per-package stored intervals, non-destructive append-only `MirrorStore` sync (with one-time idempotent `session_repair_v29` recovery), and headless `WorkManager` launcher fallback — matching Digital Wellbeing within `max(10%, 60s)`. Excludes launchers (`CATEGORY_HOME`), Mirror itself, Settings, Play Store/Services, and Android/OEM Package installers.
-- **Per-app `max(10%, 60s)` OS discrepancy flagging in `DebugView`:** Automatically flags any app whose Mirror total (`Home`, `Day fg`, or `Stored`) diverges from OS `UsageEvents` or OS `UsageStats` beyond `max(10%, 60s)` with a 4-source trace (`Home · Day fg · Stored · Sittings · Raw`) plus exact interval timelines and per-day SQLite row counts.
-- **Explicit older-day source labels (`Stored` vs `Approximate`):** Days beyond Android’s rolling ~7-day `UsageEvents` buffer are explicitly badged as **Stored** (when served from Mirror’s encrypted local event log) or **Approximate** (when served from fallback `INTERVAL_DAILY` OS buckets).
-- **Reconciled 5-tab Frosted Horizon shell (`Home · Insights · Journey · Sessions · You`):** Unified canonical day sittings across `Home`, `Insights`, `IQS`, and `Sessions`; reconciled active foreground screen time vs merged `<= 15 min` sitting spans; honest `IQS v2` out of measured parts only (`/55` before 5 explicit labels, `/75` with 5+ explicit labels, minimum-activity floors enforced, never rescaled to 100).
-- **P3 multi-day & counterfactual on-device analytics:** Shipped `J4 Interest Evolution`, `J9 Discovery Journey`, `J11 Rabbit Hole`, `J18 What-if Simulator` (every output explicitly labelled `Estimate`), and `J20 Focus Windows` (requires `>= 21` local days and `>= 5` sittings/cell; zero diagnostic language) behind the honest `orphans <= 50` and `gaps <= 100` reliability gate.
-- **Degraded-tier & local-storage honesty:** `TIERS.B` (`Your export`) marked unavailable for v0.1, OAuth claims hidden until P5 connectors exist, AEAD-encrypted local `MirrorStore` (`expo-sqlite` + `SecureStore`, `allowBackup: false`), full `Delete all data` wipe with reset audit timestamp on `You`.
-- **Release hardening (Steps 1–4):** `INTERNET` stripped from release merged `AndroidManifest.xml` via `tools:node="remove"`, `ACCESS_NETWORK_STATE` scoped and documented for `WorkManager`, tag-to-manifest lockstep gate (`bump-version.mjs --check --tag`), fail-loud release signing verification (`verify-signing-env.mjs`, `MIRROR_REQUIRE_RELEASE_SIGNING=1`, `apksigner verify` rejecting debug certs), OTA disabled/narrow-only guard, offline guard, and privacy canary self-tests.
+- **Day-clipped OS foreground totals (Digital Wellbeing parity) & append-only local history:** Per-app daily totals sum raw `UsageEvents` foreground intervals clipped strictly to `[00:00 local, min(now, 24:00 local)]` with symmetric 6h lookaround, `CONTINUE_PREVIOUS_DAY` handling, screen-off / keyguard sitting closure, unioned per-package stored intervals, non-destructive append-only `MirrorStore` sync (with one-time idempotent `session_repair_v29` recovery), and headless `WorkManager` launcher fallback — matching Digital Wellbeing within `max(10%, 60s)`. Excludes launchers (`CATEGORY_HOME`), Mirror itself, Settings, Play Store/Services, and Android/OEM package installers across both totals and sittings.
+- **Explicit older-day source labels (`Stored` vs `Approximate`) & provisional today:** Days beyond Android’s rolling ~7-day `UsageEvents` buffer are badged **Stored** (when served from Mirror’s encrypted local event log) or **Approximate** (when served from fallback `INTERVAL_DAILY` OS buckets), and in-progress today is marked **Today so far, provisional**.
+- **Reconciled 5-tab Frosted Horizon shell (`Home · Insights · Journey · Sessions · You`):** Attention signal shows `<value> of <measuredMax> measured` (`/55` before 5 explicit labels, `/75` with 5+ explicit labels, ring filled by `value / measuredMax`, unmeasured points listed separately, unfinished `late_night` held out today). Session rows keep duration hints hidden until after labeling and count only explicit `Intentional` / `Mindless` labels.
+- **Multi-day patterns & combinable counterfactuals:** Interest Evolution & Discovery rank apps by day-clipped foreground time (keeping merged `<= 15m` spans only for sitting counts); Rabbit Hole runs on raw opens before merging (*4+ returns / 5+ opens >= 8s, <= 30m apart, no other app between, > 30m total span*); combinable What-if Simulator scenarios label every output `Estimate`; Focus Windows unlocks at `>= 21` local days and `>= 5` sittings/cell with non-diagnostic copy.
+- **`XChaCha20-Poly1305` local store, no internet permission & archive export:** Local SQLite records are encrypted with `XChaCha20-Poly1305` (`expo-sqlite` + Android Keystore `SecureStore`, `allowBackup: false`). Release builds declare **no internet permission** (`INTERNET` stripped via `tools:node="remove"`, no `NotificationListenerService`). `You` includes `Export all local data (JSON)` (**archive only — no import in v0.1**, with plaintext warning and optional `XChaCha20-Poly1305` passphrase), `Clear manual labels`, and typed `DELETE` confirmation (`Delete all local data`). `TIERS.B` and OAuth connectors remain unavailable in v0.1.
+- **One-time install note (`docs/INSTALL.md` & `docs/RELEASE_NOTES_v0.1.0.md`):** Migrating off an earlier `debug.keystore`-signed `mirror-test.apk` requires uninstalling `dev.mirror.app` once before installing `mirror-v0.1.0-rc1-release.apk` / `mirror-v0.1.0-release.apk`; updating from `v0.1.0-rc1` to `v0.1.0` installs in-place without uninstalling.
 
 ## Commits
 
-- feat(polish): complete 8-part v0.1 polish across analytics, store, ui, and mobile (b7c2d93) 2026-10-29
+- Enhance release workflow with pre-release classification (50684c0) 2026-10-31
+- Update release.yml (95b965c) 2026-10-31
+- feat(release): allow suffixed pre-release tags and mark GitHub releases as pre-release (0d79916) 2026-10-30
+- Refactor release workflow for signing and verification (d7298ac) 2026-10-30
+- fix: complete 9-item post-device-review fixes before v0.1 release (4923c50) 2026-10-30
+- feat(polish): complete 8-part v0.1 polish across analytics, store, ui, and mobile (cf6d8ea) 2026-10-29
 - test(release): enforce YAML parse validation on infra/workflows/release.yml (6084008) 2026-10-29
 - feat(release): enforce fail-loud release signing, tag lockstep check, and one-time idempotent session repair (9c555f3) 2026-10-29
 - fix(mobile): non-destructively repair missing sittings and add per-day/interval diagnostics (7a6f520) 2026-10-29
@@ -50,11 +54,6 @@ Range: initial..v0.1.0
 - Add release workflow for automated GitHub releases (ed4d39e) 2026-10-22
 - P2 close: open times only (no invented durations Genshin 22s→8m54s, Security 7m20s→16s, orphans 319), J3 dashboard wired to real data (Frosted Horizon, IQS tier-D only /75, Based on usage patterns only chip, data-tier chip D, Why sheet), Release Stage 1: tag pipeline v*, GitHub Release, changelog, OTA guard, offline test, deployment.md 30-min quickstart, privacy canary report (3f64ff3) 2026-10-22
 - Delete .github/workflows/make-keystore.yml (dd98146) 2026-10-22
-- Create make-keystore.yml (df8cfc7) 2026-10-22
-- round10: shorten banner to one sentence, move technical to debug hidden, document 0.49 cap and scaling rule in metrics.md, ensure downstream not using scaled as exact (38be89b) 2026-10-22
-- round9: Settings rule consistent (exclude Settings everywhere, only launchers+Mirror close), UI clearly says sessions approximate scaled to daily totals, add fixture README for real Honkai capture via debug Share, scores not exact from approximate (approximate flag caps confidence low) (257434c) 2026-10-21
-- round8: OS aggregate for per-app daily totals (matches Digital Wellbeing by construction), raw events only for timeline approximate scaled to daily totals, hidden debug screen tap 7x build, fix validation same period, capture Honkai raw events fixture explaining 99% loss (systemui fg closing, className mismatch, 2s overlap) (aefba63) 2026-10-21
-- Update android-build.yml (5ca1a67) 2026-10-21
 
 ## v0.1 Checklist vs Spec
 
