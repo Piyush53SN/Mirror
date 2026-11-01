@@ -128,6 +128,19 @@ test('an unknown permission is a review decision, not a silent pass', () => {
   assert.deepEqual(result.unexpected, ['android.permission.SEND_SMS']);
 });
 
+test('POST_NOTIFICATIONS is withheld from the manifest gate allowlist until the P4.3 opt-in reminder ships', () => {
+  assert.ok(
+    !ALLOWED_FROM_LIBRARIES.includes('android.permission.POST_NOTIFICATIONS'),
+    'POST_NOTIFICATIONS must not be pre-allowed before the P4.3 reminder ships',
+  );
+  const result = auditManifest(
+    `<manifest><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" /><uses-permission android:name="android.permission.POST_NOTIFICATIONS" /></manifest>`,
+    { variant: 'release' },
+  );
+  assert.equal(result.ok, false, 'release manifest must reject POST_NOTIFICATIONS until P4.3 ships');
+  assert.deepEqual(result.unexpected, ['android.permission.POST_NOTIFICATIONS']);
+});
+
 /* ------------------------------------------------------- policy vs config -- */
 
 test('every permission blocked in app.json is also forbidden by the manifest gate', () => {

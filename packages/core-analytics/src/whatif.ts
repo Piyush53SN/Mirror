@@ -89,6 +89,8 @@ export type WhatIfScenario = {
   iqsEstimateLabel: string;
   /** Explains why time and/or IQS did not change (or fell below minimum activity) today. */
   noChangeReason: string | null;
+  /** Optional plain-language note explaining how removing sittings changes the mix across remaining parts. */
+  mixNote?: string;
   /** Explicit assumption stated alongside the estimate. */
   assumption: string;
 };
@@ -308,7 +310,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     .map((f) => `${f.label}: ${f.detail}`);
 
   const disclaimer =
-    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores report measured points only (for example 44 of 55 measured), with unmeasured points listed separately — never counted as zero and never rescaled to 100.';
+    'Every What-if row is a local arithmetic Estimate over your recorded history, never a prediction or goal. Scores report measured points out of the measured total (40 while today is in progress, 55 on a completed day, +20 with 5+ of your labels), with unmeasured points listed separately — never counted as zero and never rescaled to 100.';
 
   const smallSampleBaseline = baselineIqs.value === null || baselineIqs.confidence.smallSample;
   const minimumActivityNote =
@@ -358,6 +360,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
     estimatedTimeMs: number;
     zeroAffectedReason: string;
     zeroIqsDeltaReason?: string;
+    mixNote?: string;
     assumption: string;
   }): WhatIfScenario => {
     const cfScore = scoreIqs({
@@ -478,6 +481,7 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
       },
       iqsEstimateLabel,
       noChangeReason,
+      ...(params.mixNote ? { mixNote: params.mixNote } : {}),
       assumption: params.assumption,
     };
   };
@@ -525,6 +529,8 @@ export function computeWhatIf(input: WhatIfInput): WhatIfResult {
         scenarioTimeSource: topApp.source,
         estimatedTimeMs: pauseEstimatedMs,
         zeroAffectedReason: `No change today: no recorded sittings for ${topApp.label} in this window.`,
+        mixNote:
+          'A single score part can drop while the total rises (or the reverse), because fewer sittings change the mix across the remaining opens.',
         assumption: `Assumes time spent in ${topApp.label} is not replaced by another app (in practice, part of it usually shifts), and recomputes only measured factors on the remaining sittings.`,
       }),
     );

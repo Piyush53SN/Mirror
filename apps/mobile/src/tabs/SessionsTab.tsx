@@ -120,7 +120,7 @@ export function SessionsTab(): React.ReactElement {
 
             <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
               <Chip static label="Hints never count" theme={theme} />
-              <ConfidenceChip tiers={['D']} label="User labels only" theme={theme} />
+              <ConfidenceChip tiers={['D']} label="your labels (Tier D feedback)" theme={theme} />
             </View>
 
             <View

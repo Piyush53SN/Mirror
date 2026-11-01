@@ -122,10 +122,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [launcherPackages, setLauncherPackages] = React.useState<string[]>([]);
   const [whatIfCapMin, setWhatIfCapMin] = React.useState<10 | 20>(10);
   const [whatIfQuietPreset, setWhatIfQuietPreset] = React.useState<'23-05' | '22-07'>('23-05');
-  const [whatIfActiveScenarios, setWhatIfActiveScenarios] = React.useState<CombinableWhatIfScenarioId[]>([
-    'cap_sittings',
-    'quiet_hours',
-  ]);
+  const [whatIfActiveScenarios, setWhatIfActiveScenarios] = React.useState<CombinableWhatIfScenarioId[]>([]);
 
   const toggleWhatIfScenario = React.useCallback((id: CombinableWhatIfScenarioId) => {
     setWhatIfActiveScenarios((prev) =>

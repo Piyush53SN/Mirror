@@ -1,6 +1,6 @@
 # Changelog v0.1.0
 
-Generated: 2026-10-31
+Generated: 2026-11-01
 Range: initial..v0.1.0
 
 ## Highlights (v0.1 — Android On-Device Tier D)
@@ -14,6 +14,8 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- fix(mobile,analytics): polish confidence/build/what-if copy & record P4 scope (5bccfdd) 2026-11-01
+- chore(release): bump versionCode to 2 for v0.1.0 in-place upgrade over rc1 and add SQLite upgrade test (14257d5) 2026-11-01
 - fix(privacy): honour explicit --apksigner-report CLI flag on runners with Android SDK (933027f) 2026-10-31
 - docs(release): prepare signed-APK privacy verifier, INSTALL.md migration guide, and v0.1.0 release notes (6e2e96a) 2026-10-31
 - Enhance release workflow with pre-release classification (50684c0) 2026-10-31
@@ -52,8 +54,6 @@ Range: initial..v0.1.0
 - Round15: collapse labeling on tap, skip system/utility, optional opt-in after longer sessions, rule-based guess correctable, orphans 64, P3 plan J4 J9 J11 J18 J20, keep P3 on hold (6a28b8f) 2026-10-22
 - Fix accessibilityLabel crash: coerce array to string in a11yTarget and Pill, fix App.tsx array children {lbl}{saving} -> single string, improve smoke-test to catch ReadableNativeArray/RCTView crash, add a11y-label.test.mjs unit test asserting string type (cad8e97) 2026-10-22
 - Round13: fix 4 findings - orphan 319-><50 via 60s recent-close +5min overlap +className fix +vending excluded, labeling UI intentional/mindless/unsure via intent_label events, exclude installer/Play Store/Settings from switching pressure, fix Why sheet repeated caveat, update P3 plan (fb3a0d6) 2026-10-22
-- P2 conditions: orphan reduction 319->0 via recent-close 10s + 60s overlap, checklist corrected J5/J6/J8 engine/mockup only OTA/offline config checks, privacy canary E2E real mitmproxy, P3 guard needs more reliable sessions, P3 plan docs/P3.md (8763379) 2026-10-22
-- Add release workflow for automated GitHub releases (ed4d39e) 2026-10-22
 
 ## v0.1 Checklist vs Spec
 

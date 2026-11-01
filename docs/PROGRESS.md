@@ -19,7 +19,9 @@ Source of requirements: `docs/SPEC.md` (Section J is the 28-item inventory).
 | P1b-1 | **approved** | encrypted store (AEAD, key in keystore), Android UsageStats collector + background task, merged-manifest gate. No UI — commit `2753206` |
 | P1b-2 | **approved** | cursor-state carry-over, counted gaps, schema v2 + v1→v2 migration, ingestion (sessions + daily rollups), Reddit export + Google Takeout importers, placeholder embedder, first Android prebuild. Kotlin compile still MANUAL — commit `e3c9cd2` |
 | P2 | **engine approved; Stage 1 — Step 0 complete, APK installable** | scoring engine + confidence, dashboard/Why sheet/Depth/Curiosity/IQS/Sessions reading it, demo personas as inputs only, import screen (X1), Release Stage 1 preflight. **Step 0 complete: GitHub Actions run #4 on `arena/46c54cde-mirror` (commit 9ebbd32) — Gradle `assembleDebug` BUILD SUCCESSFUL 5m 9s, merged-manifest gate pass (SYSTEM_ALERT_WINDOW + ACCESS_LOCAL_NETWORK blocked via plugin, DYNAMIC_RECEIVER allowlisted), release preflight pass. First Kotlin compile was run #2 (2026-10-18).** APK artifacts: `mirror-apks` contains `app-debug.apk` (needs Metro, shows "Unable to load script" on phone) and `mirror-test.apk` (phone-testable, release build signed with debug keystore, self-contained, NOT for Play Store). Use `mirror-test.apk` for phone testing. **R8 fix: release APK crashed on Xiaomi with WorkDatabase_Impl stripped; added broad keep rules via expo-build-properties for WorkManager/Room/Expo TaskManager/BackgroundTask (`-keep class androidx.work.**`, `expo.modules.**`, `dev.mirror.usagestats.**`). Kotlin package confirmed `dev.mirror.usagestats` matches keep rule. Broad rules MUST be narrowed before store build (replace `**` with specific Worker/Entity/Dao keeps).** Signing still MANUAL for production AAB. |
-| P3…P7 | not started | — |
+| P3 | **approved & shipped in `v0.1.0-rc1` (`versionCode: 2` ready for `v0.1.0`)** | 5-tab Frosted Horizon shell (`Home · Insights · Journey · Sessions · You`), Interest Evolution, Discovery Journey, raw-open Rabbit Hole loops, combinable What-if Simulator (`Estimate`, off by default), Focus Windows (`≥21d` & `≥5 sittings/cell`), `XChaCha20-Poly1305` JSON archive export + typed `DELETE`, signed release workflow (`v0.1.0-rc1` verified on phone) |
+| P4 | **plan approved; P4.1 gated on `v0.1.0` in-place phone update** | Attention Budget + Weekly Report & Goals (`Tier D` + your labels (`Tier D feedback`)). **Deferred out of P4**: Behavior Profile (`J10`), Ask sheet (`J22`), and Home-screen widgets (`J27`) |
+| P5…P7 | not started | — |
 
 ---
 
@@ -1796,6 +1798,32 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
   - Extended `scripts/release/bump-version.mjs` with `--check --tag <vX.Y.Z>` (enforcing valid `v<semver>` tag syntax and exact lockstep match across `apps/mobile/app.json`, `apps/mobile/android/app/build.gradle`, workspace `package.json`s, `apps/extension/manifest.json`, and `package-lock.json`) plus `npm run release:bump` and `make release-check-tag`.
   - Added `scripts/release/verify-signing-env.mjs` (`npm run release:verify-signing` / `make release-verify-signing`): verifies all 4 permanent release signing secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`, with `MIRROR_UPLOAD_*` compatibility), validates PKCS#12/JKS magic headers without logging secret values, refuses to materialize keystores inside the repo root, and **fails loudly (`exit 1` + `::error::`)** whenever any secret is missing, blank, or malformed.
   - Hardened `apps/mobile/plugins/with-release-signing.js`, `apps/mobile/android/app/build.gradle` (`MIRROR_REQUIRE_RELEASE_SIGNING=1` throws `GradleException` rather than falling back to `signingConfigs.debug`), and `release.yml` / `infra/workflows/release.yml` (fail-fast tag + signing check before SDK/Gradle build, signed APK + AAB build, `apksigner verify` rejecting `CN=Android Debug`, `SHA256SUMS.txt`, `fail_on_unmatched_files: true`, and `if: always()` temporary keystore shredding). Step (5) (`v0.1.0` tag push + signed-APK emulator privacy canary) remains paused until secrets are configured and user signs off.
+
+### v0.1.0-rc1 Phone Verification, Pre-v0.1.0 Polish, & Approved P4 Plan (2026-10-31 – 2026-11-01)
+
+- **Signed `v0.1.0-rc1` release & on-device verification (`933027f`, `14257d5`):**
+  - Release workflow run `41230529497` built and published signed `v0.1.0-rc1` (`mirror-v0.1.0-rc1-arm64.apk`, `mirror-v0.1.0-rc1.aab`, `SHA256SUMS.txt`), passing permanent non-debug `apksigner` checks and merged release manifest checks (`PACKAGE_USAGE_STATS` present, `INTERNET` absent, `NotificationListenerService` absent).
+  - User verified the signed `v0.1.0-rc1` APK on phone (zero crashes, all 5 tabs clean).
+  - Bumped `versionCode` `1 -> 2` (`version: "0.1.0"`) with SQLite `rc1 -> v0.1.0` upgrade verification (`packages/store/tests/store.test.mjs`) and shipped the 4 pre-`v0.1.0` UI/copy fixes:
+    1. Sample-size confidence copy (`sample size (N sittings so far, M+ for full weight)`) reads cleanly when recorded sittings exceed the provisional/daily target.
+    2. Updated `What this build is` (`BUILD_SHORT`) to remove the stale `"44 of 55 measured"` example (`40` while today is in progress, `55` on a completed day, `+20` with `5+` of your labels).
+    3. Defaulted What-if Simulator scenarios to `Off`.
+    4. Added one line under `Pause top app` explaining that a single score part can drop while the total rises (or the reverse), because fewer sittings change the mix across the remaining opens.
+
+### Approved P4 Plan & Deferred Surfaces (2026-11-01)
+
+- **Gating before P4.1 starts:** Hold P4.1 implementation until `v0.1.0` is tagged and the in-place `v0.1.0-rc1 -> v0.1.0` (`versionCode: 1 -> 2`) update is confirmed on phone; stop for review after each stage (`P4.1`, `P4.2`, `P4.3`).
+- **In-scope P4 surfaces:**
+  1. **Attention Budget (`Home` + `Insights`):** Soft daily/weekly foreground-time budgets per app or user-named group matching Digital Wellbeing (`max(10%, 60s)`), with calm remaining/used meters and zero app-blocking overlays (`packages/core-analytics/src/budgets.ts`).
+  2. **Weekly Report + Goals (`Insights` / report sheet):** Pure 7-local-day roll-up over day-clipped foreground totals preserving **Stored** / **Approximate** badges, marking `< 7` days partial (never extrapolated), showing prior-week deltas only at `>= 14` days (`packages/core-analytics/src/weekly.ts`), plus optional user-created targets rendered as calm ratios (`4 of 7 days within target`) with zero streaks, zero day-counters, zero guilt copy, zero red failure states, and zero auto-suggested goals (`packages/core-analytics/src/goals.ts`).
+  3. **Your labels (`Tier D feedback`, never Tier A):** User intent labels are strictly labeled **`your labels (Tier D feedback)`** across UI and documentation (never `Tier A`, which is reserved for official API connectors in P5). Weekly intentionality share is shown only when `>= 5` explicit `Intentional` / `Mindless` labels exist in the 7-day window (`Not sure` and row hints never count); otherwise listed separately as unmeasured.
+  4. **Encrypted store & data portability (`packages/store`):** Additive SQLite migration (`XChaCha20-Poly1305`) for budget/goal definitions and weekly report preferences, included in JSON archive export and wiped cleanly by typed `DELETE`.
+  5. **Permissions & local reminder policy (`POST_NOTIFICATIONS` withheld until P4.3):** Removed `android.permission.POST_NOTIFICATIONS` from `scripts/android/check-merged-manifest.mjs` (`ALLOWED_FROM_LIBRARIES`) and `scripts/android/check-ota-guard.mjs` until the P4.3 reminder ships. When added in P4.3, the weekly summary reminder is **off by default**, strictly opt-in, quiet-hours aware, free of guilt copy or streaks, and adds zero network or push services (`INTERNET` remains stripped).
+- **Explicitly deferred out of P4 (to P5+):**
+  - **Behavior Profile (`J10`)** — deferred (requires richer multi-tier / topic signals rather than UsageStats-only labeling).
+  - **Ask sheet (`J22`)** — deferred.
+  - **Home-screen widgets (`J27`)** — deferred.
+
 
 
 

@@ -516,3 +516,50 @@ test('combinable scenarios: computeWhatIf combines multiple active scenarios and
   assert.doesNotMatch(res.combinedScenario.iqsEstimateLabel, /\/ 100/);
 });
 
+test('default What-if has no active combined scenario and Pause top app explains mix changes when a part drops while total rises', () => {
+  const dayStart = Date.parse('2026-10-28T00:00:00.000Z');
+  const window = { fromMs: dayStart, toMs: dayStart + 86_400_000 };
+  const MIN_MS = 60_000;
+  // Top app (YouTube): 6 long late-night sittings (zero <8s bounces, high late-night share).
+  // Remaining apps: 5 sustained daytime sittings + 1 brief <8s bounce (0 late-night, slightly higher bounce share).
+  // Pausing YouTube drops session_length slightly (0/12 -> 1/6 bounces) while raising late_night (+15 pts), so total rises!
+  const sessions = [
+    ...Array.from({ length: 6 }, (_, i) => ({
+      id: `yt_${i}`,
+      app: 'com.google.android.youtube',
+      startMs: dayStart + (23 * 60 + i * 9) * MIN_MS,
+      endMs: dayStart + (23 * 60 + i * 9 + 8) * MIN_MS,
+    })),
+    ...Array.from({ length: 5 }, (_, i) => ({
+      id: `wk_${i}`,
+      app: 'org.wikipedia',
+      startMs: dayStart + (10 * 60 + i * 25) * MIN_MS,
+      endMs: dayStart + (10 * 60 + i * 25 + 4) * MIN_MS,
+    })),
+    {
+      id: 'rd_bounce',
+      app: 'com.reddit.frontpage',
+      startMs: dayStart + 14 * 60 * MIN_MS,
+      endMs: dayStart + 14 * 60 * MIN_MS + 4_000,
+    },
+  ];
+
+  const res = computeWhatIf({
+    window,
+    sessions,
+    utcOffsetMinutes: 0,
+  });
+
+  assert.equal(res.combinedScenario, null, 'combinedScenario must be null when no scenarios are toggled on');
+  assert.doesNotMatch(res.disclaimer, /44 of 55 measured/, 'disclaimer must not carry stale 44 of 55 example');
+
+  const pauseTop = res.scenarios.find((s) => s.id === 'pause_top_app');
+  assert.ok(pauseTop, 'pause_top_app scenario must exist');
+  assert.ok(pauseTop.mixNote, 'pause_top_app must include one-line mixNote');
+  assert.match(pauseTop.mixNote, /fewer sittings change the mix/i);
+  const lengthPart = pauseTop.estimatedIqs.measuredFactors.find((f) => f.id === 'session_length');
+  assert.ok(lengthPart && lengthPart.deltaPoints < 0, 'session_length part drops when bounce share increases on smaller denominator');
+  assert.ok(pauseTop.estimatedIqs.deltaPoints > 0, 'overall measured total rises because late-night improves by +15 pts');
+});
+
+

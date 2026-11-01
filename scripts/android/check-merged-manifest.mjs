@@ -40,7 +40,8 @@ export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
  *     Read-only local connectivity boolean; grants no `AID_INET` GID and zero socket capability.
  *   WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE — WorkManager
  *   VIBRATE, USE_BIOMETRIC, USE_FINGERPRINT — expo-haptics / local auth, P4
- *   POST_NOTIFICATIONS — local notifications, P4
+ *   (POST_NOTIFICATIONS is intentionally withheld until the P4.3 opt-in reminder
+ *     ships off by default, quiet-hours aware, with no guilt copy or streaks.)
  *   CHECK_LICENSE — Play licensing (Expo default)
  *   DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION — AndroidX (work, core) generates a
  *     per-package permission for RECEIVER_NOT_EXPORTED dynamic receivers, required
@@ -55,7 +56,6 @@ export const ALLOWED_FROM_LIBRARIES = [
   'android.permission.VIBRATE',
   'android.permission.USE_BIOMETRIC',
   'android.permission.USE_FINGERPRINT',
-  'android.permission.POST_NOTIFICATIONS',
   'com.android.vending.CHECK_LICENSE',
   'dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 ];

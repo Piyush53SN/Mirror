@@ -67,10 +67,7 @@ export function InsightsTab(): React.ReactElement {
     setActiveTab,
   } = useMirrorApp();
   const [filter, setFilter] = React.useState<InsightsFilter>('all');
-  const [localScenarios, setLocalScenarios] = React.useState<CombinableWhatIfScenarioId[]>([
-    'cap_sittings',
-    'quiet_hours',
-  ]);
+  const [localScenarios, setLocalScenarios] = React.useState<CombinableWhatIfScenarioId[]>([]);
   const activeScenarioIds = whatIfActiveScenarios ?? localScenarios;
   const handleToggleScenario = React.useCallback(
     (id: CombinableWhatIfScenarioId) => {
@@ -314,6 +311,10 @@ export function InsightsTab(): React.ReactElement {
                   {(
                     [
                       {
+                        id: 'pause_top_app' as const,
+                        title: 'Pause top app',
+                      },
+                      {
                         id: 'cap_sittings' as const,
                         title: `Cap sittings (${whatIfCapMin}m)`,
                       },
@@ -343,6 +344,9 @@ export function InsightsTab(): React.ReactElement {
                 </View>
 
                 <View style={{ gap: theme.space(0.5) }}>
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {`· Pause top app (${activeScenarioIds.includes('pause_top_app') ? 'On' : 'Off'}): drops sittings in today’s top app by screen time.`}
+                  </Text>
                   <Text role="micro" tone="muted" theme={theme}>
                     {`· Cap sittings (${activeScenarioIds.includes('cap_sittings') ? 'On' : 'Off'}): trims each sitting longer than ${whatIfCapMin} min down to ${whatIfCapMin} min.`}
                   </Text>
@@ -524,6 +528,13 @@ export function InsightsTab(): React.ReactElement {
                       {sc.estimatedIqs.measuredFactors.length > 0 ? (
                         <Text role="micro" tone="muted" theme={theme}>
                           {sc.estimatedIqs.measuredFactors.map((f) => f.estimateLabel).join(' · ')}
+                        </Text>
+                      ) : null}
+
+                      {sc.mixNote || sc.id === 'pause_top_app' ? (
+                        <Text role="micro" tone="muted" theme={theme}>
+                          {sc.mixNote ??
+                            'A single score part can drop while the total rises (or the reverse), because fewer sittings change the mix across the remaining opens.'}
                         </Text>
                       ) : null}
 

@@ -701,6 +701,26 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
       minimumActivityNote: null,
       scenarios: [
         {
+          id: 'pause_top_app',
+          title: 'Pause top app (App 1)',
+          badge: 'Estimate',
+          baselineTimeMs: 2_400_000,
+          estimatedTimeMs: 1_200_000,
+          deltaTimeMs: -1_200_000,
+          timeEstimateLabel: 'Estimate: −20m (40m → 20m)',
+          iqsEstimateLabel: 'Estimate: 46.5 of 55 measured (+2.0 pts across 3 measured factors; 45 pts not measured; not rescaled to 100)',
+          noChangeReason: null,
+          mixNote:
+            'A single score part can drop while the total rises (or the reverse), because fewer sittings change the mix across the remaining opens.',
+          assumption: 'Assumes time spent in App 1 is not replaced by another app.',
+          estimatedIqs: {
+            measuredFactors: [
+              { id: 'session_length', estimateLabel: 'Estimate: Session length mix 18.5/25 (−1.5 pts)' },
+              { id: 'switching', estimateLabel: 'Estimate: Switching pressure 15/15 (+3.5 pts)' },
+            ],
+          },
+        },
+        {
           id: 'cap-sitting',
           title: 'Cap individual sittings at 10 min',
           badge: 'Estimate',
@@ -708,7 +728,7 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
           estimatedTimeMs: 2_280_000,
           deltaTimeMs: -120_000,
           timeEstimateLabel: 'Estimate: −2m (40m → 38m)',
-          iqsEstimateLabel: 'Estimate: 44.5 → 44.5 / 100 (0.0 pts, 55 pts measured)',
+          iqsEstimateLabel: 'Estimate: 44.5 of 55 measured (0.0 pts, 45 pts not measured)',
           noChangeReason: 'Time drops by 2m without changing under-8s bounce share or switching.',
           assumption: 'Assumes sittings longer than 10m end at 10m without extra re-opens.',
           estimatedIqs: { measuredFactors: [{ id: 'session_length', estimateLabel: 'Session length 20/25 (Estimate)' }] },
@@ -772,10 +792,16 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
     if (activeTab === 'insights') {
       assert.match(rawTree, /COUNTERFACTUAL ARITHMETIC/i, 'InsightsTab must render Frosted Horizon What-if hero');
       assert.ok(fullText.includes('Scenarios (you can combine)'), 'InsightsTab What-if must label chips "Scenarios (you can combine)"');
-      assert.ok(fullText.includes('Cap sittings (10m) · On'), 'InsightsTab must show which scenarios are On');
-      assert.ok(fullText.includes('Skip short bounces · Off'), 'InsightsTab must show which scenarios are Off');
+      assert.ok(fullText.includes('Pause top app · Off'), 'InsightsTab must default Pause top app to Off');
+      assert.ok(fullText.includes('Cap sittings (10m) · Off'), 'InsightsTab must default Cap sittings to Off');
+      assert.ok(fullText.includes('Quiet hours (23:00–05:00) · Off'), 'InsightsTab must default Quiet hours to Off');
+      assert.ok(fullText.includes('Skip short bounces · Off'), 'InsightsTab must default Skip short bounces to Off');
       assert.ok(fullText.includes('trims each sitting longer than 10 min down to 10 min'), 'InsightsTab must explain what Cap sittings does in one line');
       assert.ok(fullText.includes('drops brief opens shorter than 8 seconds'), 'InsightsTab must explain what Skip short bounces does in one line');
+      assert.ok(
+        fullText.includes('A single score part can drop while the total rises (or the reverse), because fewer sittings change the mix'),
+        'InsightsTab Pause top app card must explain why a part can drop while total rises',
+      );
       assert.match(rawTree, /Sitting-length bands \(2 sittings\)/i, 'InsightsTab sitting-length bands must sum to canonical sitting count');
       assert.ok(fullText.includes('0.22 switches / sitting'), 'InsightsTab must display per-sitting switching rate');
       assert.ok(fullText.includes('45 points not measured (listed separately, not counted as 0)'), 'Insights Score Breakdown must separate unmeasured factors');
@@ -784,7 +810,7 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
           el.props?.role === 'progressbar' &&
           String(el.props?.['aria-label'] ?? '').startsWith('Remaining span,'),
       );
-      assert.equal(remainingSpanMeters.length, 1, 'What-if scenario must use concise Remaining span Meter label');
+      assert.equal(remainingSpanMeters.length, 2, 'What-if scenarios must use concise Remaining span Meter labels');
       const meterHeaderRow = remainingSpanMeters[0].children?.[0];
       assert.equal(meterHeaderRow?.props?.style?.flexWrap, 'wrap', 'Meter header row must wrap instead of colliding text');
     }
@@ -806,6 +832,7 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
 
     if (activeTab === 'sessions') {
       assert.match(rawTree, /CHRONOLOGICAL LOG/i, 'SessionsTab must render Frosted Horizon hero');
+      assert.ok(fullText.includes('your labels (Tier D feedback)'), 'SessionsTab must attribute labels to Tier D feedback');
       // Item 7: Labeled row ('sess-alpha-01') may show hint AFTER labeling; unlabeled row ('sess-beta-02') must NOT show brief/long sitting hint!
       assert.ok(fullText.includes('user label: intentional · long sitting'), 'Labeled sitting row shows hint only after user labels it');
       assert.doesNotMatch(fullText, /unlabeled · hint:/, 'Unlabeled sitting rows must NOT show brief/long sitting hints before labeling');
@@ -835,6 +862,7 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
       assert.ok(fullText.includes('no internet permission'), 'YouTab must state "no internet permission"');
       assert.ok(!fullText.includes('zero network permissions'), 'YouTab must NOT claim "zero network permissions"');
       assert.ok(!fullText.includes('Explicit labels active'), 'Tier A must NOT say "Explicit labels active"');
+      assert.ok(!fullText.includes('44 of 55 measured'), 'What this build is card must not show stale "44 of 55 measured" example');
       assert.match(rawTree, /Manual file import is not enabled in v0\.1 yet/i, 'YouTab must state Tier B is unavailable in v0.1');
 
       // Item 9: Export JSON opens plaintext warning + optional passphrase + Save / Share buttons

@@ -586,3 +586,39 @@ test('provisional unfinished today holds out late-night quiet hours and scales s
   assert.match(provisional.caveat, /of 40 measured/);
 });
 
+test('sample-size confidence wording reads cleanly when recorded sittings exceed expected target (e.g. 17 vs 14)', () => {
+  const dayStart = Date.parse('2026-10-28T00:00:00.000Z');
+  const dayEnd = dayStart + 86_400_000;
+  // 11.2 hours elapsed -> round(30 * (11.2 / 24)) = 14 expected sittings
+  const now1112 = dayStart + Math.round(11.2 * 3_600_000);
+  const sessions = Array.from({ length: 17 }, (_, idx) => ({
+    id: `exceed_${idx}`,
+    app: idx % 2 === 0 ? 'org.wikipedia' : 'com.whatsapp',
+    startMs: dayStart + (6 * 60 + idx * 15) * MIN,
+    endMs: dayStart + (6 * 60 + idx * 15 + 3) * MIN,
+  }));
+
+  const provisional = scoreIqs({
+    window: { fromMs: dayStart, toMs: dayEnd },
+    sessions,
+    utcOffsetMinutes: 0,
+    provisional: true,
+    nowMs: now1112,
+  });
+
+  assert.doesNotMatch(
+    provisional.confidence.explanation,
+    /\b17 of 14 sittings\b/,
+    'confidence explanation must never say "17 of 14 sittings so far"',
+  );
+  assert.match(
+    provisional.confidence.explanation,
+    /sample size \(17 sittings so far, 14\+ for full weight\)/,
+  );
+  assert.match(
+    provisional.confidence.explanation,
+    /your labels \(0 recorded, 20\+ for full weight\)/,
+  );
+});
+
+

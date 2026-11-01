@@ -523,8 +523,8 @@ export function scoreIqs(input: ScoreInput): Score {
     max: 20,
     tier: 'D',
     detail: labelled
-      ? `${intentional} of ${decisive} labelled sittings were marked intentional (${Math.round(deliberateShare * 100)}%).`
-      : `Not measured: ${decisive} decisive label${decisive === 1 ? '' : 's'} (${MIN_LABELS} needed).`,
+      ? `${intentional} of ${decisive} labelled sittings were marked intentional (${Math.round(deliberateShare * 100)}%) — your labels (Tier D feedback).`
+      : `Not measured: ${decisive} decisive label${decisive === 1 ? '' : 's'} (${MIN_LABELS} needed) — your labels (Tier D feedback).`,
     measurable: labelled,
   };
 
@@ -744,14 +744,14 @@ function confidenceFor(
   if (isProvisional) {
     const elapsedHrs = Math.max(1, Math.round(elapsedWindowMs / HOUR_MS));
     reasons.push(
-      `Today so far, provisional (${elapsedHrs}h elapsed): late-night quiet hours are held out until the day finishes, and sample-size confidence is compared against ${sampleTarget} sittings so far rather than a full 24-hour day.`,
+      `Today so far, provisional (${elapsedHrs}h elapsed): late-night quiet hours are held out until the day finishes, and sample-size confidence reaches full weight at ${sampleTarget}+ sittings so far (${sessions.length} recorded) rather than 30 across a full 24-hour day.`,
     );
   }
   reasons.push(
     `${sessions.length} complete sitting${sessions.length === 1 ? '' : 's'} (${activeMinLabel} sitting spans)${smallSample ? ' — a small sample' : ''}.`,
   );
-  if (labels >= MIN_LABELS) reasons.push(`${labels} decisive intent labels.`);
-  else reasons.push(`No deliberate-share score: ${labels} of ${MIN_LABELS} labels needed.`);
+  if (labels >= MIN_LABELS) reasons.push(`${labels} decisive labels from your labels (Tier D feedback).`);
+  else reasons.push(`No deliberate-share score: ${labels} of ${MIN_LABELS} needed from your labels (Tier D feedback).`);
   const topic = input.vectors && input.vectors.size > 0;
   reasons.push(topic ? 'Topic depth is not scored from the placeholder embedder.' : 'Topic depth is not scored: no topic vectors yet.');
 
@@ -782,8 +782,8 @@ function confidenceFor(
   const explanation =
     provisionalSentence +
     `Confidence (${pct}% · ${level}) reflects how complete the inputs behind this score are — never a judgement of your screen time. ` +
-    `It weighs window coverage (${Math.round(coverage * 100)}%), sample size (${sessions.length} of ${sampleTarget} sittings${isProvisional ? ' so far' : ''}), ` +
-    `explicit intent labels (${labels} of 20), and measured points (${measuredMax} measured, ${Math.max(0, FIXED_SCORE_MAX - measuredMax)} not measured).` +
+    `It weighs window coverage (${Math.round(coverage * 100)}%), sample size (${sessions.length} sitting${sessions.length === 1 ? '' : 's'}${isProvisional ? ' so far' : ''}, ${sampleTarget}+ for full weight), ` +
+    `your labels (${labels} recorded, 20+ for full weight), and measured points (${measuredMax} measured, ${Math.max(0, FIXED_SCORE_MAX - measuredMax)} not measured).` +
     capSentence;
 
   return { score, level, coverage, sample: sessions.length, activeMs: totalMs, smallSample, labels, explanation, reasons };
