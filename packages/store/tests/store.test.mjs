@@ -1086,6 +1086,150 @@ test('export bundle encryption: passphrase-protected export uses XChaCha20-Poly1
   );
 });
 
+test('in-place upgrade from v0.1.0-rc1 (versionCode 1) to v0.1.0 (versionCode 2) preserves encrypted events, sittings, rollups, and manual intent labels without loss or duplication', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-rc1-to-v010-'));
+  const file = join(dir, 'mirror.db');
+  const IST_OFFSET = 330; // Asia/Calcutta (+05:30)
+  const MIN = 60_000;
+  const releaseKeyBytes = new Uint8Array(TEST_ROOT_KEY);
+  const sameReleaseKeyring = {
+    async keyId() {
+      return 'mirror-release-key-1';
+    },
+    async rootKey() {
+      return new Uint8Array(releaseKeyBytes);
+    },
+  };
+
+  const oct31Start = core.dayStartMs('2026-10-31', IST_OFFSET);
+  const nov01Start = core.dayStartMs('2026-11-01', IST_OFFSET);
+  const rc1SyncNow = nov01Start + 10 * 3_600_000 + 30 * MIN;
+  const v010SyncNow = nov01Start + 11 * 3_600_000;
+
+  const rc1OsRows = [
+    // Yesterday on rc1: 20m Wikipedia
+    { packageName: 'org.wikipedia', className: '.PageActivity', eventType: 1, timeStamp: oct31Start + 20 * 3_600_000 + 111 },
+    { packageName: 'org.wikipedia', className: '.PageActivity', eventType: 2, timeStamp: oct31Start + 20 * 3_600_000 + 20 * MIN + 111 },
+    // Today on rc1 (within 1h overlap window of v0.1.0's first sync): 14m WhatsApp
+    { packageName: 'com.whatsapp', className: '.HomeActivity', eventType: 1, timeStamp: nov01Start + 10 * 3_600_000 + 5 * MIN + 222 },
+    { packageName: 'com.whatsapp', className: '.HomeActivity', eventType: 2, timeStamp: nov01Start + 10 * 3_600_000 + 19 * MIN + 222 },
+  ];
+
+  let rc1Driver = null;
+  let v010Driver = null;
+  try {
+    // 1. Simulate v0.1.0-rc1 (versionCode 1) populating mirror.db + explicit user intent labels
+    rc1Driver = NodeSqliteDriver.file(file);
+    const rc1Store = new MirrorStore({
+      driver: rc1Driver,
+      keys: sameReleaseKeyring,
+      random: counterRandom(),
+      clock: () => rc1SyncNow,
+    });
+    await rc1Store.open();
+
+    const rc1Source = {
+      available: true,
+      hasPermission: async () => true,
+      openSettings: () => {},
+      getLauncherPackages: async () => ['com.google.android.apps.nexuslauncher'],
+      queryUsageStats: async () => [],
+      queryEventsDebug: async () => [],
+      queryEvents: async () => rc1OsRows,
+    };
+    await core.collectUsage(rc1Source, rc1Store, {
+      now: rc1SyncNow,
+      ignorePackages: ['com.google.android.apps.nexuslauncher'],
+    });
+    await mobileIngest.ingestRecentDays(rc1Store, rc1SyncNow, IST_OFFSET);
+
+    const rc1Sessions = await rc1Store.sessions();
+    assert.equal(rc1Sessions.length, 2, 'rc1 built 2 sittings across Oct 31 and Nov 01');
+
+    // User explicitly labels the Wikipedia sitting as 'intentional' in rc1
+    const wikiSession = rc1Sessions.find((s) => s.app === 'org.wikipedia');
+    assert.ok(wikiSession, 'Wikipedia sitting exists in rc1');
+    await rc1Store.appendEvents([
+      {
+        schema_version: 1,
+        id: 'lbl_rc1_wiki_intentional',
+        kind: 'intent_label',
+        at: new Date(wikiSession.end_ms).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+        tier: 'D',
+        origin: 'user',
+        content: 'metadata',
+        session_id: wikiSession.id,
+        label: 'intentional',
+      },
+    ]);
+    await mobileIngest.ingestRecentDays(rc1Store, rc1SyncNow, IST_OFFSET);
+
+    const rc1CountsBeforeUpgrade = await rc1Store.counts();
+    rc1Driver.close();
+    rc1Driver = null;
+
+    // 2. Simulate in-place Android update (`adb install -r` / PackageInstaller Update) to v0.1.0 (versionCode 2):
+    //    same signing certificate -> /data/data/dev.mirror.app/databases/mirror.db and SecureStore key stay intact.
+    v010Driver = NodeSqliteDriver.file(file);
+    const v010Store = new MirrorStore({
+      driver: v010Driver,
+      keys: sameReleaseKeyring,
+      random: counterRandom(),
+      clock: () => v010SyncNow,
+    });
+    await v010Store.open();
+
+    assert.deepEqual(await v010Store.verifyKeyIntegrity(), {
+      ok: true,
+      currentKeyId: 'mirror-release-key-1',
+    });
+    assert.equal(await v010Store.lastResetAudit(), null, 'in-place upgrade must not trigger a store reset');
+
+    const countsImmediatelyAfterUpgrade = await v010Store.counts();
+    assert.deepEqual(
+      countsImmediatelyAfterUpgrade,
+      rc1CountsBeforeUpgrade,
+      'all rc1 events, sittings, and rollups remain intact on v0.1.0 open',
+    );
+
+    const preservedLabels = await v010Store.events({ kind: 'intent_label' });
+    assert.equal(preservedLabels.length, 1);
+    assert.equal(preservedLabels[0].payload.id, 'lbl_rc1_wiki_intentional');
+    assert.equal(preservedLabels[0].payload.label, 'intentional');
+
+    // 3. First sync on v0.1.0 overlaps rc1's 1h cursor window and adds one new post-upgrade ChatGPT sitting
+    const v010Source = {
+      ...rc1Source,
+      queryEvents: async () => [
+        ...rc1OsRows.slice(2), // WhatsApp sitting re-delivered inside 1h overlap window
+        { packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 1, timeStamp: nov01Start + 10 * 3_600_000 + 35 * MIN + 333 },
+        { packageName: 'com.openai.chatgpt', className: '.MainActivity', eventType: 2, timeStamp: nov01Start + 10 * 3_600_000 + 50 * MIN + 333 },
+      ],
+    };
+    const syncRes = await core.collectUsage(v010Source, v010Store, {
+      now: v010SyncNow,
+      ignorePackages: ['com.google.android.apps.nexuslauncher'],
+    });
+    assert.equal(syncRes.inserted, 2, 'only the 2 new post-upgrade ChatGPT fg/bg events insert');
+    assert.ok(syncRes.duplicate >= 2, 'overlapping rc1 WhatsApp fg/bg events skip idempotently');
+
+    await mobileIngest.ingestRecentDays(v010Store, v010SyncNow, IST_OFFSET);
+    const v010Sessions = await v010Store.sessions();
+    assert.equal(v010Sessions.length, 3, 'Oct 31 Wikipedia + Nov 01 WhatsApp + Nov 01 ChatGPT sittings present with zero duplication');
+    const wikiAfter = v010Sessions.find((s) => s.app === 'org.wikipedia');
+    assert.ok(wikiAfter, 'Wikipedia sitting remains present after post-upgrade ingest');
+    assert.equal(wikiAfter.id, wikiSession.id, 'deterministic sitting ID is unchanged across v0.1.0 ingest');
+    const preservedLabelsAfter = await v010Store.events({ kind: 'intent_label' });
+    assert.equal(preservedLabelsAfter.length, 1, 'intent_label row remains intact after post-upgrade sync');
+    assert.equal(preservedLabelsAfter[0].session_id, wikiAfter.id, 'manual label from rc1 stays bound to the Wikipedia sitting');
+    assert.equal(preservedLabelsAfter[0].payload.label, 'intentional');
+  } finally {
+    if (rc1Driver) rc1Driver.close();
+    if (v010Driver) v010Driver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 
 
 

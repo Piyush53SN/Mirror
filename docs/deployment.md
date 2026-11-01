@@ -48,7 +48,7 @@ Total: <30 min on a machine with the Android SDK.
 
 ## Version & changelog management (Step 4)
 
-All distributable manifests and Gradle metadata stay locked to the same release version (`0.1.0`, `versionCode: 1`):
+All distributable manifests and Gradle metadata stay locked to the same release version (`0.1.0`, `versionCode: 2` — incremented above `v0.1.0-rc1`'s `versionCode: 1` for in-place Android upgrades):
 
 ```bash
 # Verify version alignment across package.json, apps/mobile/{package.json,app.json},

@@ -14,6 +14,7 @@ Range: initial..v0.1.0
 
 ## Commits
 
+- fix(privacy): honour explicit --apksigner-report CLI flag on runners with Android SDK (933027f) 2026-10-31
 - docs(release): prepare signed-APK privacy verifier, INSTALL.md migration guide, and v0.1.0 release notes (6e2e96a) 2026-10-31
 - Enhance release workflow with pre-release classification (50684c0) 2026-10-31
 - Update release.yml (95b965c) 2026-10-31
@@ -53,7 +54,6 @@ Range: initial..v0.1.0
 - Round13: fix 4 findings - orphan 319-><50 via 60s recent-close +5min overlap +className fix +vending excluded, labeling UI intentional/mindless/unsure via intent_label events, exclude installer/Play Store/Settings from switching pressure, fix Why sheet repeated caveat, update P3 plan (fb3a0d6) 2026-10-22
 - P2 conditions: orphan reduction 319->0 via recent-close 10s + 60s overlap, checklist corrected J5/J6/J8 engine/mockup only OTA/offline config checks, privacy canary E2E real mitmproxy, P3 guard needs more reliable sessions, P3 plan docs/P3.md (8763379) 2026-10-22
 - Add release workflow for automated GitHub releases (ed4d39e) 2026-10-22
-- P2 close: open times only (no invented durations Genshin 22s→8m54s, Security 7m20s→16s, orphans 319), J3 dashboard wired to real data (Frosted Horizon, IQS tier-D only /75, Based on usage patterns only chip, data-tier chip D, Why sheet), Release Stage 1: tag pipeline v*, GitHub Release, changelog, OTA guard, offline test, deployment.md 30-min quickstart, privacy canary report (3f64ff3) 2026-10-22
 
 ## v0.1 Checklist vs Spec
 
@@ -67,7 +67,7 @@ Range: initial..v0.1.0
 ## Verification
 
 - `npm run verify`: tokens, lockfile, typechecks, ESLint, unit/property/UI/config/manifest/release/privacy/security tests, secret scan, Metro bundle check
-- `node scripts/release/bump-version.mjs --check`: `v0.1.0` (`versionCode 1`) aligned across manifests, `build.gradle`, and `package-lock.json`
+- `node scripts/release/bump-version.mjs --check`: `v0.1.0` (`versionCode 2`, bumped above `v0.1.0-rc1` `versionCode 1` for in-place Android updates) aligned across manifests, `build.gradle`, and `package-lock.json`
 - `make release-stage1`: preflight passed, no keystore in tree
 - `node scripts/android/check-ota-guard.mjs`: PASSED
 - `node scripts/android/check-offline.mjs`: PASSED

@@ -11,7 +11,7 @@ Mirror `v0.1.0` is the first signed Android release of Mirror (`dev.mirror.app`)
   - Optional: before uninstalling, you can save a personal archive from **`You` → `Local Data & Privacy` → `Export all local data (JSON)`** (with an optional **`XChaCha20-Poly1305`** passphrase). **Note: Export is an archive only — `v0.1.0` does not support importing or restoring JSON archives yet.**
   - Full step-by-step instructions: see [`docs/INSTALL.md`](INSTALL.md).
 - **Coming from `v0.1.0-rc1`:**
-  Install `mirror-v0.1.0-release.apk` **directly over `v0.1.0-rc1` without uninstalling** (`Update` on phone or `adb install -r`). Both share the permanent release certificate, so your encrypted local database, history, and manual intent labels stay intact.
+  Install `mirror-v0.1.0-release.apk` **directly over `v0.1.0-rc1` without uninstalling** (`Update` on phone or `adb install -r`). `v0.1.0` shares the permanent release certificate and bumps `versionCode` from `1` (`rc1`) to `2`, so Android updates the app in place and preserves your encrypted local database, history, and manual intent labels.
 
 ---
 

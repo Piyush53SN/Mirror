@@ -94,7 +94,7 @@ ${shortlog}
 ## Verification
 
 - \`npm run verify\`: tokens, lockfile, typechecks, ESLint, unit/property/UI/config/manifest/release/privacy/security tests, secret scan, Metro bundle check
-- \`node scripts/release/bump-version.mjs --check\`: \`v0.1.0\` (\`versionCode 1\`) aligned across manifests, \`build.gradle\`, and \`package-lock.json\`
+- \`node scripts/release/bump-version.mjs --check\`: \`v0.1.0\` (\`versionCode 2\`, bumped above \`v0.1.0-rc1\` \`versionCode 1\` for in-place Android updates) aligned across manifests, \`build.gradle\`, and \`package-lock.json\`
 - \`make release-stage1\`: preflight passed, no keystore in tree
 - \`node scripts/android/check-ota-guard.mjs\`: PASSED
 - \`node scripts/android/check-offline.mjs\`: PASSED

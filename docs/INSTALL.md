@@ -68,7 +68,7 @@ Android enforces signing-certificate pinning across updates: installing a releas
 
 Once you are on `mirror-v0.1.0-rc1-release.apk` (or `mirror-v0.1.0-release.apk`), **do NOT uninstall** when updating to `v0.1.0`, `v0.1.1`, or `v0.2.0`:
 
-- All release candidates and releases are signed with the **same permanent release certificate**.
+- All release candidates and releases are signed with the **same permanent release certificate**, and `v0.1.0` increments `android.versionCode` to `2` (above `v0.1.0-rc1`'s `versionCode: 1`) so Android's Package Installer recognizes it as an in-place upgrade.
 - Tap the new `mirror-v0.1.0-release.apk` on your phone → **Update** (or run `adb install -r mirror-v0.1.0-release.apk`).
 - Your `XChaCha20-Poly1305` encrypted `mirror.db`, Android Keystore key, stored multi-day history, and manual intent labels remain intact across updates.
 
