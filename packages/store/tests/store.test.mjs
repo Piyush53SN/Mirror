@@ -1230,6 +1230,297 @@ test('in-place upgrade from v0.1.0-rc1 (versionCode 1) to v0.1.0 (versionCode 2)
   }
 });
 
+test('a v2 store (v0.1.0 schema) with real encrypted events, sessions, rollups, gaps, and user labels migrates additively to v3 without losing data', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-v2-to-v3-'));
+  const file = join(dir, 'mirror.db');
+  const rootKey = new Uint8Array(TEST_ROOT_KEY);
+  const derived = store.deriveKeys(rootKey);
+  const keyId = 'test-key-1';
+  let v2Driver = null;
+  let v3Driver = null;
+  let reopenDriver = null;
+
+  try {
+    // 1. Construct a genuine v0.1.0 (schema_version = 2) SQLite file using ONLY migrations 1 & 2.
+    v2Driver = NodeSqliteDriver.file(file);
+    await v2Driver.exec('PRAGMA journal_mode = WAL');
+    await v2Driver.exec('PRAGMA secure_delete = ON');
+    for (const m of store.MIGRATIONS.filter((item) => item.version <= 2)) {
+      for (const stmt of m.statements) await v2Driver.exec(stmt);
+    }
+    await v2Driver.run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', '2')`);
+    await v2Driver.run(
+      `INSERT OR REPLACE INTO meta (key, value) VALUES ('cursor_state:usage_stats', ?)`,
+      [JSON.stringify({ at: Date.parse('2026-11-01T08:00:00Z'), open: [] })],
+    );
+
+    const rnd = counterRandom();
+    const fgEv = {
+      schema_version: 1,
+      id: 'evt_fg_v2_wiki_01',
+      kind: 'app_foreground',
+      at: '2026-11-01T07:00:00.000Z',
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app: 'org.wikipedia',
+    };
+    const bgEv = {
+      schema_version: 1,
+      id: 'evt_bg_v2_wiki_01',
+      kind: 'app_background',
+      at: '2026-11-01T07:12:00.000Z',
+      tier: 'D',
+      origin: 'os',
+      content: 'metadata',
+      app: 'org.wikipedia',
+      duration_ms: 720_000,
+    };
+    const labelEv = {
+      schema_version: 1,
+      id: 'lbl_v2_wiki_01',
+      kind: 'intent_label',
+      at: '2026-11-01T07:15:00.000Z',
+      tier: 'D',
+      origin: 'user',
+      content: 'metadata',
+      session_id: 'ses_v2_wiki_01',
+      label: 'intentional',
+    };
+
+    for (const ev of [fgEv, bgEv, labelEv]) {
+      await v2Driver.run(
+        `INSERT INTO events (id, at, kind, tier, origin, content, session_id, item_hash, consent_id, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)`,
+        [
+          ev.id,
+          Date.parse(ev.at),
+          ev.kind,
+          ev.tier,
+          ev.origin,
+          ev.content,
+          ev.session_id ?? 'ses_v2_wiki_01',
+          store.seal(ev, derived, keyId, rnd),
+        ],
+      );
+    }
+
+    await v2Driver.run(
+      `INSERT INTO sessions (id, start_ms, end_ms, duration_ms, source, payload)
+       VALUES (?, ?, ?, ?, 'usage_stats', ?)`,
+      [
+        'ses_v2_wiki_01',
+        Date.parse('2026-11-01T07:00:00.000Z'),
+        Date.parse('2026-11-01T07:12:00.000Z'),
+        720_000,
+        store.seal({ app: 'org.wikipedia' }, derived, keyId, rnd),
+      ],
+    );
+    await v2Driver.run(
+      `INSERT INTO daily_rollups (day, payload, computed_at) VALUES (?, ?, ?)`,
+      [
+        '2026-11-01',
+        store.seal({ day: '2026-11-01', sessions: 1, session_ms: 720_000 }, derived, keyId, rnd),
+        Date.parse('2026-11-01T07:20:00.000Z'),
+      ],
+    );
+    await v2Driver.run(
+      `INSERT INTO data_gaps (source, reason, from_ms, to_ms, count, recorded_at)
+       VALUES ('usage_stats', 'orphan_background', NULL, NULL, 2, ?)`,
+      [Date.parse('2026-11-01T07:20:00.000Z')],
+    );
+
+    const verBefore = await v2Driver.all(`SELECT value FROM meta WHERE key = 'schema_version'`);
+    assert.equal(Number(verBefore[0].value), 2);
+    v2Driver.close();
+    v2Driver = null;
+
+    // 2. Open with current P4.1 MirrorStore (SCHEMA_VERSION = 3) -> additive migration runs in place
+    v3Driver = NodeSqliteDriver.file(file);
+    const s = new MirrorStore({ driver: v3Driver, keys, random: counterRandom() });
+    const opened = await s.open();
+    assert.equal(opened.schemaVersion, 3);
+    assert.equal(opened.schemaVersion, store.SCHEMA_VERSION);
+
+    const integrity = await s.verifyKeyIntegrity();
+    assert.equal(integrity.ok, true);
+
+    // Every v2 row is intact and readable
+    const migratedEvents = await s.events();
+    assert.equal(migratedEvents.length, 3);
+    const migratedLabels = await s.events({ kind: 'intent_label' });
+    assert.equal(migratedLabels.length, 1);
+    assert.equal(migratedLabels[0].payload.label, 'intentional');
+    assert.equal(migratedLabels[0].session_id, 'ses_v2_wiki_01');
+
+    const migratedSessions = await s.sessions();
+    assert.equal(migratedSessions.length, 1);
+    assert.equal(migratedSessions[0].app, 'org.wikipedia');
+
+    const migratedRollup = await s.rollup('2026-11-01');
+    assert.equal(migratedRollup.payload.session_ms, 720_000);
+
+    const migratedGaps = await s.gaps();
+    assert.equal(migratedGaps.length, 1);
+    assert.equal(migratedGaps[0].count, 2);
+
+    const migratedCursor = await s.getCursorState('usage_stats');
+    assert.equal(migratedCursor.at, Date.parse('2026-11-01T08:00:00Z'));
+
+    // New v3 tables start empty/default (weekly reminder strictly off by default)
+    assert.deepEqual(await s.budgets(), []);
+    assert.deepEqual(await s.goals(), []);
+    const defaultPrefs = await s.weeklyReportPrefs();
+    assert.equal(defaultPrefs.reminderEnabled, false);
+
+    // 3. Persist budget, goal, and weekly report prefs on the migrated store and reopen
+    await s.putBudget({
+      id: 'b_wiki_daily',
+      name: 'Reading soft cap',
+      kind: 'app',
+      packages: ['org.wikipedia'],
+      period: 'daily',
+      limitMs: 3_600_000,
+      enabled: true,
+      createdAtMs: 1_700_000_000_000,
+      updatedAtMs: 1_700_000_000_500,
+    });
+    await s.putGoal({
+      id: 'g_quiet_nights',
+      title: 'Quiet nights after 23:00',
+      kind: 'daily_late_night_max',
+      targetMs: 0,
+      enabled: true,
+      createdAtMs: 1_700_000_000_000,
+      updatedAtMs: 1_700_000_000_500,
+    });
+    await s.setWeeklyReportPrefs({ reminderWeekday: 0, reminderHourLocal: 19, reminderEnabled: false }, 1_700_000_001_000);
+
+    v3Driver.close();
+    v3Driver = null;
+
+    reopenDriver = NodeSqliteDriver.file(file);
+    const reopened = new MirrorStore({ driver: reopenDriver, keys, random: counterRandom() });
+    await reopened.open();
+    assert.equal((await reopened.budgets()).length, 1);
+    assert.equal((await reopened.goals()).length, 1);
+    assert.equal((await reopened.events()).length, 3);
+  } finally {
+    if (v2Driver) v2Driver.close();
+    if (v3Driver) v3Driver.close();
+    if (reopenDriver) reopenDriver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('budgets, goals, and weekly prefs are XChaCha20-Poly1305 encrypted at rest, exported in JSON archive, and wiped by typed DELETE (deleteAll)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-p41-export-wipe-'));
+  const file = join(dir, 'mirror.db');
+  const driver = NodeSqliteDriver.file(file);
+  const canaries = [
+    'MRRCANARY-budget-social-group',
+    'com.canary.secretfeed',
+    'MRRCANARY-goal-calm-evenings',
+    'com.canary.secretvideo',
+  ];
+
+  try {
+    const s = new MirrorStore({ driver, keys, random: counterRandom() });
+    await s.open();
+
+    await s.appendEvents([foreground({ id: 'evt_fg_p41_01' })]);
+    await s.putBudget({
+      id: 'b_canary_1',
+      name: 'MRRCANARY-budget-social-group',
+      kind: 'group',
+      packages: ['com.canary.secretfeed', 'com.canary.secretvideo'],
+      period: 'weekly',
+      limitMs: 7_200_000,
+      enabled: true,
+      createdAtMs: 1_700_000_100_000,
+      updatedAtMs: 1_700_000_200_000,
+    });
+    await s.putGoal({
+      id: 'g_canary_1',
+      title: 'MRRCANARY-goal-calm-evenings',
+      kind: 'daily_app_foreground',
+      packages: ['com.canary.secretvideo'],
+      targetMs: 1_800_000,
+      enabled: true,
+      createdAtMs: 1_700_000_100_000,
+      updatedAtMs: 1_700_000_200_000,
+    });
+    await s.setWeeklyReportPrefs(
+      { reminderEnabled: false, reminderWeekday: 1, reminderHourLocal: 20 },
+      1_700_000_300_000,
+    );
+
+    // 1. Verify encryption at rest: raw SQLite file bytes contain zero plaintext canaries
+    await driver.exec('PRAGMA wal_checkpoint(FULL)');
+    const rawDbText = readFileSync(file).toString('utf8');
+    for (const canary of canaries) {
+      assert.equal(rawDbText.includes(canary), false, `raw SQLite file leaked plaintext ${canary}`);
+    }
+
+    // 2. Verify JSON archive export (plaintext + XChaCha20-Poly1305 passphrase bundle)
+    const bundle = await s.exportBundle('2026-11-01T10:00:00.000Z');
+    assert.equal(bundle.schemaVersion, store.SCHEMA_VERSION);
+    assert.equal(bundle.budgets.length, 1);
+    assert.equal(bundle.budgets[0].name, 'MRRCANARY-budget-social-group');
+    assert.deepEqual(bundle.budgets[0].packages, ['com.canary.secretfeed', 'com.canary.secretvideo']);
+    assert.equal(bundle.goals.length, 1);
+    assert.equal(bundle.goals[0].title, 'MRRCANARY-goal-calm-evenings');
+    assert.equal(bundle.weeklyReportPrefs.reminderEnabled, false);
+    assert.equal(bundle.weeklyReportPrefs.reminderWeekday, 1);
+    assert.equal(bundle.weeklyReportPrefs.reminderHourLocal, 20);
+
+    const plainJson = JSON.stringify(bundle);
+    const encryptedEnvelope = store.encryptExportBundle(
+      plainJson,
+      'correct-horse-battery-staple',
+      counterRandom(),
+      { iterations: 10_000, exportedAt: '2026-11-01T10:00:00.000Z' },
+    );
+    const envelopeJson = JSON.stringify(encryptedEnvelope);
+    for (const canary of canaries) {
+      assert.equal(envelopeJson.includes(canary), false, `encrypted export leaked ${canary}`);
+    }
+    const decryptedBundle = JSON.parse(
+      store.decryptExportBundle(encryptedEnvelope, 'correct-horse-battery-staple'),
+    );
+    assert.deepEqual(decryptedBundle.budgets, bundle.budgets);
+    assert.deepEqual(decryptedBundle.goals, bundle.goals);
+    assert.deepEqual(decryptedBundle.weeklyReportPrefs, bundle.weeklyReportPrefs);
+
+    // 3. Verify deleteBudget / deleteGoal individual removal & re-insert before full wipe
+    assert.equal(await s.deleteBudget('b_canary_1'), true);
+    assert.equal(await s.deleteBudget('b_canary_1'), false);
+    assert.deepEqual(await s.budgets(), []);
+    await s.putBudget(bundle.budgets[0]);
+    assert.equal((await s.budgets()).length, 1);
+
+    // 4. Verify typed DELETE (`deleteAll()`) wipes budgets, goals, and weekly prefs cleanly
+    await s.deleteAll();
+    // Re-run migrate after deleteAll wipes meta (matches runtime resetStoredData flow)
+    await s.open();
+    assert.deepEqual(await s.events(), []);
+    assert.deepEqual(await s.budgets(), []);
+    assert.deepEqual(await s.goals(), []);
+    const wipedPrefs = await s.weeklyReportPrefs();
+    assert.equal(wipedPrefs.reminderEnabled, false);
+    assert.equal(wipedPrefs.updatedAtMs, 0);
+
+    const wipedDbText = readFileSync(file).toString('utf8');
+    for (const canary of canaries) {
+      assert.equal(wipedDbText.includes(canary), false, `post-deleteAll SQLite file leaked ${canary}`);
+    }
+  } finally {
+    driver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+
 
 
 

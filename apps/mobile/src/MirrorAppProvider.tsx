@@ -868,21 +868,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       try {
         const rt = runtimeRef.current ?? (await createRuntime());
         runtimeRef.current = rt;
-        const [exportedEvents, exportedSessions, exportedGaps, resetAudit] = await Promise.all([
-          rt.store.events(),
-          rt.store.sessions(),
-          rt.store.gaps(),
-          rt.store.lastResetAudit(),
-        ]);
-        const plainBundle = {
-          exportedAt: new Date().toISOString(),
-          schemaVersion: 3,
-          encryption: 'none' as const,
-          events: exportedEvents,
-          sessions: exportedSessions,
-          gaps: exportedGaps,
-          lastReset: resetAudit,
-        };
+        const plainBundle = await rt.store.exportBundle(new Date().toISOString());
         const plainJson = JSON.stringify(plainBundle, null, 2);
         const json = encrypted
           ? JSON.stringify(encryptExportBundle(plainJson, passphrase, osRandom), null, 2)

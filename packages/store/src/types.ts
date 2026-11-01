@@ -184,4 +184,61 @@ export type SessionRepairSnapshot = {
   after: DayStoreRowCounts[];
 };
 
+export type StoredBudgetPeriod = 'daily' | 'weekly';
+export type StoredBudgetTargetKind = 'app' | 'group';
+
+export type StoredBudgetDefinition = {
+  id: string;
+  name: string;
+  kind: StoredBudgetTargetKind;
+  packages: readonly string[];
+  period: StoredBudgetPeriod;
+  limitMs: number;
+  enabled: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
+export type StoredGoalKind =
+  | 'daily_total_foreground'
+  | 'daily_app_foreground'
+  | 'daily_late_night_max'
+  | 'daily_sitting_count_max';
+
+export type StoredGoalDefinition = {
+  id: string;
+  title: string;
+  kind: StoredGoalKind;
+  targetMs?: number;
+  targetCount?: number;
+  packages?: readonly string[];
+  enabled: boolean;
+  createdAtMs: number;
+  updatedAtMs: number;
+};
+
+export type WeeklyReportPrefs = {
+  /** Strictly off by default; local opt-in reminder ships in P4.3 only. */
+  reminderEnabled: boolean;
+  /** Weekday for weekly report summary (`0` = Sunday .. `6` = Saturday). */
+  reminderWeekday: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  /** Local hour `0..23` (default `19`, outside `23:00–05:00` quiet hours). */
+  reminderHourLocal: number;
+  updatedAtMs: number;
+};
+
+export type MirrorExportBundle = {
+  exportedAt: string;
+  schemaVersion: number;
+  encryption: 'none';
+  events: StoredEvent[];
+  sessions: SessionRow[];
+  gaps: DataGap[];
+  budgets: StoredBudgetDefinition[];
+  goals: StoredGoalDefinition[];
+  weeklyReportPrefs: WeeklyReportPrefs;
+  lastReset: StoreResetAudit | null;
+};
+
+
 

@@ -11,7 +11,7 @@
  */
 import type { SqlDriver } from './types';
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export type Migration = { version: number; name: string; statements: string[] };
 
@@ -120,6 +120,40 @@ export const MIGRATIONS: Migration[] = [
         day TEXT PRIMARY KEY,
         payload BLOB NOT NULL,
         computed_at INTEGER NOT NULL
+      )`,
+    ],
+  },
+  {
+    version: 3,
+    name: 'budgets, goals, sealed preferences',
+    statements: [
+      // Soft daily/weekly foreground-time budgets (Tier D). Package names and
+      // user group names live inside the XChaCha20-Poly1305 sealed `payload`.
+      `CREATE TABLE IF NOT EXISTS budgets (
+        id TEXT PRIMARY KEY,
+        period TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        payload BLOB NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS budgets_updated ON budgets (updated_at)`,
+      // User-created weekly targets (calm ratios, zero streaks, zero auto-goals).
+      // Goal titles and optional package filters live inside sealed `payload`.
+      `CREATE TABLE IF NOT EXISTS goals (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        payload BLOB NOT NULL
+      )`,
+      `CREATE INDEX IF NOT EXISTS goals_updated ON goals (updated_at)`,
+      // Sealed local preferences (such as weekly report prefs; reminder off by default).
+      `CREATE TABLE IF NOT EXISTS sealed_preferences (
+        key TEXT PRIMARY KEY,
+        updated_at INTEGER NOT NULL,
+        payload BLOB NOT NULL
       )`,
     ],
   },

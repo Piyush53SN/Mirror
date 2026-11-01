@@ -31,19 +31,34 @@ import type {
   GapReason,
   ImportRecord,
   KeyIntegrityResult,
+  MirrorExportBundle,
   RandomBytes,
   RollupRecord,
   SessionRepairSnapshot,
   SessionRow,
   SqlDriver,
+  StoredBudgetDefinition,
+  StoredBudgetPeriod,
+  StoredBudgetTargetKind,
   StoredEvent,
+  StoredGoalDefinition,
+  StoredGoalKind,
   StoreOptions,
   StoreResetAudit,
   StoreResetReason,
+  WeeklyReportPrefs,
 } from './types';
 
 const DEFAULT_RETENTION_DAYS = 180;
 const DAY_MS = 86_400_000;
+const WEEKLY_REPORT_PREFS_KEY = 'weekly_report';
+
+export const DEFAULT_WEEKLY_REPORT_PREFS: Readonly<WeeklyReportPrefs> = Object.freeze({
+  reminderEnabled: false,
+  reminderWeekday: 0,
+  reminderHourLocal: 19,
+  updatedAtMs: 0,
+});
 
 type EventRow = {
   id: string;
@@ -676,7 +691,20 @@ export class MirrorStore {
 
   async deleteAll(): Promise<void> {
     await this.driver.transaction(async () => {
-      const tables = ['events', 'event_vectors', 'sessions', 'data_gaps', 'daily_rollups', 'imports', 'connections', 'consent_log', 'meta'];
+      const tables = [
+        'events',
+        'event_vectors',
+        'sessions',
+        'data_gaps',
+        'daily_rollups',
+        'budgets',
+        'goals',
+        'sealed_preferences',
+        'imports',
+        'connections',
+        'consent_log',
+        'meta',
+      ];
       for (const table of tables) {
         if (!tables.includes(table)) throw new Error(`refusing table ${table}`);
         await this.driver.run(`DELETE FROM ${table}`);
@@ -776,6 +804,9 @@ export class MirrorStore {
       { table: 'sessions', sql: `SELECT payload FROM sessions ORDER BY start_ms ASC LIMIT 1` },
       { table: 'sessions', sql: `SELECT payload FROM sessions ORDER BY start_ms DESC LIMIT 1` },
       { table: 'daily_rollups', sql: `SELECT payload FROM daily_rollups ORDER BY day DESC LIMIT 1` },
+      { table: 'budgets', sql: `SELECT payload FROM budgets ORDER BY updated_at DESC LIMIT 1` },
+      { table: 'goals', sql: `SELECT payload FROM goals ORDER BY updated_at DESC LIMIT 1` },
+      { table: 'sealed_preferences', sql: `SELECT payload FROM sealed_preferences ORDER BY updated_at DESC LIMIT 1` },
     ];
     for (const c of checks) {
       const rows = await this.driver.all<{ payload: Uint8Array }>(c.sql);
@@ -1244,6 +1275,365 @@ export class MirrorStore {
       day,
       payload: open<Record<string, unknown>>(rows[0]!.payload, this.derived(), this.keyId),
       computed_at: Number(rows[0]!.computed_at),
+    };
+  }
+
+  /* --------------------------------------------------- budgets, goals, prefs */
+
+  async putBudget(def: StoredBudgetDefinition): Promise<StoredBudgetDefinition> {
+    if (!def || typeof def !== 'object') throw new Error('budget definition must be an object');
+    const id = typeof def.id === 'string' ? def.id.trim() : '';
+    if (!id || id.length > 128) throw new Error('budget.id must be a non-empty string (<= 128 chars)');
+    const name = typeof def.name === 'string' ? def.name.trim() : '';
+    if (!name || name.length > 120) throw new Error('budget.name must be a non-empty string (<= 120 chars)');
+    if (def.kind !== 'app' && def.kind !== 'group') throw new Error('budget.kind must be "app" or "group"');
+    if (def.period !== 'daily' && def.period !== 'weekly') throw new Error('budget.period must be "daily" or "weekly"');
+
+    const seen = new Set<string>();
+    const packages: string[] = [];
+    for (const item of Array.isArray(def.packages) ? def.packages : []) {
+      if (typeof item !== 'string') throw new Error('budget.packages entries must be strings');
+      const trimmed = item.trim();
+      if (trimmed && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        packages.push(trimmed);
+      }
+    }
+    if (packages.length === 0) throw new Error('budget.packages must contain at least one package');
+    if (def.kind === 'app' && packages.length > 1) {
+      throw new Error('budget with kind "app" must target a single package');
+    }
+
+    const maxPeriodMs = def.period === 'weekly' ? 7 * DAY_MS : DAY_MS;
+    const limitMs = Number.isFinite(def.limitMs) ? Math.round(def.limitMs) : NaN;
+    if (!Number.isFinite(limitMs) || limitMs <= 0 || limitMs > maxPeriodMs) {
+      throw new Error(`budget.limitMs must be in (0, ${maxPeriodMs}]`);
+    }
+    if (typeof def.enabled !== 'boolean') throw new Error('budget.enabled must be a boolean');
+
+    const now = this.clock();
+    const createdAtMs =
+      Number.isFinite(def.createdAtMs) && def.createdAtMs >= 0 ? Math.round(def.createdAtMs) : now;
+    const updatedAtMs =
+      Number.isFinite(def.updatedAtMs) && def.updatedAtMs >= 0 ? Math.round(def.updatedAtMs) : now;
+
+    const normalized: StoredBudgetDefinition = {
+      id,
+      name,
+      kind: def.kind as StoredBudgetTargetKind,
+      packages,
+      period: def.period as StoredBudgetPeriod,
+      limitMs,
+      enabled: def.enabled,
+      createdAtMs,
+      updatedAtMs,
+    };
+
+    const sealed = seal(
+      {
+        name: normalized.name,
+        kind: normalized.kind,
+        packages: normalized.packages,
+        limitMs: normalized.limitMs,
+      },
+      this.derived(),
+      this.keyId,
+      this.random,
+    );
+
+    await this.driver.run(
+      `INSERT OR REPLACE INTO budgets (id, period, enabled, created_at, updated_at, payload)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        normalized.id,
+        normalized.period,
+        normalized.enabled ? 1 : 0,
+        normalized.createdAtMs,
+        normalized.updatedAtMs,
+        sealed,
+      ],
+    );
+    return normalized;
+  }
+
+  async budgets(): Promise<StoredBudgetDefinition[]> {
+    const rows = await this.driver.all<{
+      id: string;
+      period: string;
+      enabled: number;
+      created_at: number;
+      updated_at: number;
+      payload: Uint8Array;
+    }>(`SELECT * FROM budgets ORDER BY created_at ASC, id ASC`);
+    return rows.map((row) => {
+      const payload = open<{
+        name: string;
+        kind: StoredBudgetTargetKind;
+        packages: string[];
+        limitMs: number;
+      }>(row.payload, this.derived(), this.keyId);
+      return {
+        id: row.id,
+        name: payload.name,
+        kind: payload.kind,
+        packages: payload.packages,
+        period: row.period as StoredBudgetPeriod,
+        limitMs: Number(payload.limitMs),
+        enabled: Number(row.enabled) !== 0,
+        createdAtMs: Number(row.created_at),
+        updatedAtMs: Number(row.updated_at),
+      };
+    });
+  }
+
+  async deleteBudget(id: string): Promise<boolean> {
+    const existing = await this.driver.all<{ id: string }>(`SELECT id FROM budgets WHERE id = ?`, [id]);
+    if (existing.length === 0) return false;
+    await this.driver.run(`DELETE FROM budgets WHERE id = ?`, [id]);
+    return true;
+  }
+
+  async putGoal(def: StoredGoalDefinition): Promise<StoredGoalDefinition> {
+    if (!def || typeof def !== 'object') throw new Error('goal definition must be an object');
+    const id = typeof def.id === 'string' ? def.id.trim() : '';
+    if (!id || id.length > 128) throw new Error('goal.id must be a non-empty string (<= 128 chars)');
+    const title = typeof def.title === 'string' ? def.title.trim() : '';
+    if (!title || title.length > 140) throw new Error('goal.title must be a non-empty string (<= 140 chars)');
+
+    const validKinds: StoredGoalKind[] = [
+      'daily_total_foreground',
+      'daily_app_foreground',
+      'daily_late_night_max',
+      'daily_sitting_count_max',
+    ];
+    if (!validKinds.includes(def.kind)) throw new Error('goal.kind is unsupported');
+    if (typeof def.enabled !== 'boolean') throw new Error('goal.enabled must be a boolean');
+
+    let packages: string[] | undefined;
+    if (def.packages !== undefined) {
+      if (!Array.isArray(def.packages)) throw new Error('goal.packages must be an array');
+      const seen = new Set<string>();
+      const deduped: string[] = [];
+      for (const item of def.packages) {
+        if (typeof item !== 'string') throw new Error('goal.packages entries must be strings');
+        const trimmed = item.trim();
+        if (trimmed && !seen.has(trimmed)) {
+          seen.add(trimmed);
+          deduped.push(trimmed);
+        }
+      }
+      if (deduped.length > 0) packages = deduped;
+    }
+    if (def.kind === 'daily_app_foreground' && (!packages || packages.length === 0)) {
+      throw new Error('daily_app_foreground requires at least one package');
+    }
+
+    let targetMs: number | undefined;
+    let targetCount: number | undefined;
+    if (def.kind === 'daily_total_foreground' || def.kind === 'daily_app_foreground') {
+      const raw = typeof def.targetMs === 'number' && Number.isFinite(def.targetMs) ? Math.round(def.targetMs) : NaN;
+      if (!Number.isFinite(raw) || raw <= 0 || raw > DAY_MS) {
+        throw new Error(`goal.targetMs must be in (0, ${DAY_MS}]`);
+      }
+      targetMs = raw;
+    } else if (def.kind === 'daily_late_night_max') {
+      const raw = typeof def.targetMs === 'number' && Number.isFinite(def.targetMs) ? Math.round(def.targetMs) : NaN;
+      if (!Number.isFinite(raw) || raw < 0 || raw > 6 * 3_600_000) {
+        throw new Error('goal.targetMs for daily_late_night_max must be between 0 and 6 hours');
+      }
+      targetMs = raw;
+    } else {
+      const raw =
+        typeof def.targetCount === 'number' && Number.isFinite(def.targetCount)
+          ? Math.round(def.targetCount)
+          : NaN;
+      if (!Number.isFinite(raw) || raw < 0 || raw > 1000) {
+        throw new Error('goal.targetCount must be between 0 and 1000');
+      }
+      targetCount = raw;
+    }
+
+    const now = this.clock();
+    const createdAtMs =
+      Number.isFinite(def.createdAtMs) && def.createdAtMs >= 0 ? Math.round(def.createdAtMs) : now;
+    const updatedAtMs =
+      Number.isFinite(def.updatedAtMs) && def.updatedAtMs >= 0 ? Math.round(def.updatedAtMs) : now;
+
+    const normalized: StoredGoalDefinition = {
+      id,
+      title,
+      kind: def.kind,
+      ...(targetMs !== undefined ? { targetMs } : {}),
+      ...(targetCount !== undefined ? { targetCount } : {}),
+      ...(packages !== undefined ? { packages } : {}),
+      enabled: def.enabled,
+      createdAtMs,
+      updatedAtMs,
+    };
+
+    const sealed = seal(
+      {
+        title: normalized.title,
+        ...(targetMs !== undefined ? { targetMs } : {}),
+        ...(targetCount !== undefined ? { targetCount } : {}),
+        ...(packages !== undefined ? { packages } : {}),
+      },
+      this.derived(),
+      this.keyId,
+      this.random,
+    );
+
+    await this.driver.run(
+      `INSERT OR REPLACE INTO goals (id, kind, enabled, created_at, updated_at, payload)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        normalized.id,
+        normalized.kind,
+        normalized.enabled ? 1 : 0,
+        normalized.createdAtMs,
+        normalized.updatedAtMs,
+        sealed,
+      ],
+    );
+    return normalized;
+  }
+
+  async goals(): Promise<StoredGoalDefinition[]> {
+    const rows = await this.driver.all<{
+      id: string;
+      kind: string;
+      enabled: number;
+      created_at: number;
+      updated_at: number;
+      payload: Uint8Array;
+    }>(`SELECT * FROM goals ORDER BY created_at ASC, id ASC`);
+    return rows.map((row) => {
+      const payload = open<{
+        title: string;
+        targetMs?: number;
+        targetCount?: number;
+        packages?: string[];
+      }>(row.payload, this.derived(), this.keyId);
+      return {
+        id: row.id,
+        title: payload.title,
+        kind: row.kind as StoredGoalKind,
+        ...(typeof payload.targetMs === 'number' ? { targetMs: payload.targetMs } : {}),
+        ...(typeof payload.targetCount === 'number' ? { targetCount: payload.targetCount } : {}),
+        ...(Array.isArray(payload.packages) ? { packages: payload.packages } : {}),
+        enabled: Number(row.enabled) !== 0,
+        createdAtMs: Number(row.created_at),
+        updatedAtMs: Number(row.updated_at),
+      };
+    });
+  }
+
+  async deleteGoal(id: string): Promise<boolean> {
+    const existing = await this.driver.all<{ id: string }>(`SELECT id FROM goals WHERE id = ?`, [id]);
+    if (existing.length === 0) return false;
+    await this.driver.run(`DELETE FROM goals WHERE id = ?`, [id]);
+    return true;
+  }
+
+  async weeklyReportPrefs(): Promise<WeeklyReportPrefs> {
+    const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
+      `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
+      [WEEKLY_REPORT_PREFS_KEY],
+    );
+    if (rows.length === 0) {
+      return { ...DEFAULT_WEEKLY_REPORT_PREFS };
+    }
+    const payload = open<Partial<WeeklyReportPrefs>>(rows[0]!.payload, this.derived(), this.keyId);
+    const weekday =
+      typeof payload.reminderWeekday === 'number' &&
+      Number.isInteger(payload.reminderWeekday) &&
+      payload.reminderWeekday >= 0 &&
+      payload.reminderWeekday <= 6
+        ? (payload.reminderWeekday as WeeklyReportPrefs['reminderWeekday'])
+        : DEFAULT_WEEKLY_REPORT_PREFS.reminderWeekday;
+    const hour =
+      typeof payload.reminderHourLocal === 'number' &&
+      Number.isInteger(payload.reminderHourLocal) &&
+      payload.reminderHourLocal >= 0 &&
+      payload.reminderHourLocal <= 23
+        ? payload.reminderHourLocal
+        : DEFAULT_WEEKLY_REPORT_PREFS.reminderHourLocal;
+    return {
+      reminderEnabled: Boolean(payload.reminderEnabled),
+      reminderWeekday: weekday,
+      reminderHourLocal: hour,
+      updatedAtMs: Number(rows[0]!.updated_at),
+    };
+  }
+
+  async setWeeklyReportPrefs(
+    patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,
+    updatedAtMs = this.clock(),
+  ): Promise<WeeklyReportPrefs> {
+    const current = await this.weeklyReportPrefs();
+    const nextWeekday = patch.reminderWeekday ?? current.reminderWeekday;
+    if (!Number.isInteger(nextWeekday) || nextWeekday < 0 || nextWeekday > 6) {
+      throw new Error('reminderWeekday must be an integer 0..6');
+    }
+    const nextHour = patch.reminderHourLocal ?? current.reminderHourLocal;
+    if (!Number.isInteger(nextHour) || nextHour < 0 || nextHour > 23) {
+      throw new Error('reminderHourLocal must be an integer 0..23');
+    }
+    const nextEnabled =
+      patch.reminderEnabled !== undefined ? Boolean(patch.reminderEnabled) : current.reminderEnabled;
+
+    const next: WeeklyReportPrefs = {
+      reminderEnabled: nextEnabled,
+      reminderWeekday: nextWeekday as WeeklyReportPrefs['reminderWeekday'],
+      reminderHourLocal: nextHour,
+      updatedAtMs: Math.max(0, Math.round(updatedAtMs)),
+    };
+
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [
+        WEEKLY_REPORT_PREFS_KEY,
+        next.updatedAtMs,
+        seal(
+          {
+            reminderEnabled: next.reminderEnabled,
+            reminderWeekday: next.reminderWeekday,
+            reminderHourLocal: next.reminderHourLocal,
+          },
+          this.derived(),
+          this.keyId,
+          this.random,
+        ),
+      ],
+    );
+    return next;
+  }
+
+  /**
+   * Build the complete local JSON archive bundle (events, sessions, gaps,
+   * budgets, goals, weekly report prefs, and reset audit).
+   */
+  async exportBundle(exportedAt = new Date(this.clock()).toISOString()): Promise<MirrorExportBundle> {
+    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset] = await Promise.all([
+      this.events(),
+      this.sessions(),
+      this.gaps(),
+      this.budgets(),
+      this.goals(),
+      this.weeklyReportPrefs(),
+      this.lastResetAudit(),
+    ]);
+    return {
+      exportedAt,
+      schemaVersion: SCHEMA_VERSION,
+      encryption: 'none',
+      events,
+      sessions,
+      gaps,
+      budgets,
+      goals,
+      weeklyReportPrefs,
+      lastReset,
     };
   }
 
