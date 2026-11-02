@@ -5,10 +5,13 @@
  */
 
 import { execSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..', '..');
+const appJson = JSON.parse(readFileSync(resolve(ROOT, 'apps/mobile/app.json'), 'utf8'));
+const currentManifestVersion = appJson?.expo?.version ?? '0.2.0';
+const currentVersionCode = appJson?.expo?.android?.versionCode ?? 3;
 
 function sh(cmd) {
   try {
@@ -94,7 +97,7 @@ ${shortlog}
 ## Verification
 
 - \`npm run verify\`: tokens, lockfile, typechecks, ESLint, unit/property/UI/config/manifest/release/privacy/security tests, secret scan, Metro bundle check
-- \`node scripts/release/bump-version.mjs --check\`: \`v0.1.0\` (\`versionCode 2\`, bumped above \`v0.1.0-rc1\` \`versionCode 1\` for in-place Android updates) aligned across manifests, \`build.gradle\`, and \`package-lock.json\`
+- \`node scripts/release/bump-version.mjs --check\`: \`v${currentManifestVersion}\` (\`versionCode ${currentVersionCode}\`, monotonic above \`v0.1.0\` \`versionCode 2\` for in-place Android updates) aligned across manifests, \`build.gradle\`, and \`package-lock.json\`
 - \`make release-stage1\`: preflight passed, no keystore in tree
 - \`node scripts/android/check-ota-guard.mjs\`: PASSED
 - \`node scripts/android/check-offline.mjs\`: PASSED

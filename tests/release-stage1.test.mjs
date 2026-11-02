@@ -78,41 +78,41 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   const bumpScript = join(ROOT, 'scripts', 'release', 'bump-version.mjs');
   const repoCheck = spawnSync(process.execPath, [bumpScript, '--check'], { encoding: 'utf8' });
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
-  assert.match(repoCheck.stdout, /Version check OK: v0\.1\.0 \(versionCode 2\)/);
+  assert.match(repoCheck.stdout, /Version check OK: v0\.2\.0 \(versionCode 3\)/);
 
   const shippedAppJson = JSON.parse(readFileSync(join(ROOT, 'apps', 'mobile', 'app.json'), 'utf8'));
   assert.ok(
-    shippedAppJson.expo.android.versionCode >= 2,
-    'v0.1.0 versionCode must be >= 2 (> v0.1.0-rc1 versionCode 1) for in-place Android upgrades',
+    shippedAppJson.expo.android.versionCode >= 3,
+    'v0.2.0 versionCode must be >= 3 (> v0.1.0 versionCode 2) for in-place Android upgrades',
   );
 
-  // Matching --tag v0.1.0 passes; suffixed pre-release tags with same base version pass; mismatched or malformed --tag fails loudly
-  const tagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0'], { encoding: 'utf8' });
+  // Matching --tag v0.2.0 passes; suffixed pre-release tags with same base version pass; mismatched or malformed --tag fails loudly
+  const tagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0'], { encoding: 'utf8' });
   assert.equal(tagOk.status, 0, tagOk.stdout + tagOk.stderr);
-  assert.match(tagOk.stdout, /\[tag v0\.1\.0 verified\]/);
+  assert.match(tagOk.stdout, /\[tag v0\.2\.0 verified\]/);
 
-  const rcTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0-rc1'], { encoding: 'utf8' });
+  const alphaTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0-alpha.1'], { encoding: 'utf8' });
+  assert.equal(alphaTagOk.status, 0, alphaTagOk.stdout + alphaTagOk.stderr);
+  assert.match(alphaTagOk.stdout, /\[tag v0\.2\.0-alpha\.1 verified, pre-release suffix "-alpha\.1"\]/);
+
+  const rcTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0-rc1'], { encoding: 'utf8' });
   assert.equal(rcTagOk.status, 0, rcTagOk.stdout + rcTagOk.stderr);
-  assert.match(rcTagOk.stdout, /\[tag v0\.1\.0-rc1 verified, pre-release suffix "-rc1"\]/);
+  assert.match(rcTagOk.stdout, /\[tag v0\.2\.0-rc1 verified, pre-release suffix "-rc1"\]/);
 
-  const betaTagOk = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0-beta.2'], { encoding: 'utf8' });
-  assert.equal(betaTagOk.status, 0, betaTagOk.stdout + betaTagOk.stderr);
-  assert.match(betaTagOk.stdout, /\[tag v0\.1\.0-beta\.2 verified, pre-release suffix "-beta\.2"\]/);
-
-  const rcBaseMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0-rc1'], { encoding: 'utf8' });
+  const rcBaseMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.3.0-rc1'], { encoding: 'utf8' });
   assert.equal(rcBaseMismatch.status, 1);
   assert.match(rcBaseMismatch.stderr, /::error::Version\/tag check FAILED/);
   assert.match(
     rcBaseMismatch.stderr,
-    /git tag "v0\.2\.0-rc1" base version "v0\.2\.0" does not match apps\/mobile\/app\.json version "v0\.1\.0"/,
+    /git tag "v0\.3\.0-rc1" base version "v0\.3\.0" does not match apps\/mobile\/app\.json version "v0\.2\.0"/,
   );
 
-  const tagMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.2.0'], { encoding: 'utf8' });
+  const tagMismatch = spawnSync(process.execPath, [bumpScript, '--check', '--tag', 'v0.1.0'], { encoding: 'utf8' });
   assert.equal(tagMismatch.status, 1);
   assert.match(tagMismatch.stderr, /::error::Version\/tag check FAILED/);
-  assert.match(tagMismatch.stderr, /does not match apps\/mobile\/app\.json version "v0\.1\.0"/);
+  assert.match(tagMismatch.stderr, /does not match apps\/mobile\/app\.json version "v0\.2\.0"/);
 
-  for (const badTag of ['0.1.0', '0.1.0-rc1', 'v0.1.0-', 'v0.1.0--rc1', 'v0.1.0-.1']) {
+  for (const badTag of ['0.2.0', '0.2.0-alpha.1', 'v0.2.0-', 'v0.2.0--rc1', 'v0.2.0-.1']) {
     const tagMalformed = spawnSync(process.execPath, [bumpScript, '--check', '--tag', badTag], { encoding: 'utf8' });
     assert.equal(tagMalformed.status, 1, `expected ${badTag} to fail`);
     assert.match(tagMalformed.stderr, /is not a valid v<semver> release tag/);
@@ -143,14 +143,14 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   assert.match(failRes.stderr, /package\.json version=0\.0\.9/);
 
   // Bumping aligns all manifests and build.gradle offline
-  const bumpRes = spawnSync(process.execPath, [bumpScript, '0.2.0', '--version-code', '2', '--root', dir], {
+  const bumpRes = spawnSync(process.execPath, [bumpScript, '0.3.0', '--version-code', '4', '--root', dir], {
     encoding: 'utf8',
   });
   assert.equal(bumpRes.status, 0, bumpRes.stdout + bumpRes.stderr);
   const recheckRes = spawnSync(process.execPath, [bumpScript, '--check', '--root', dir], { encoding: 'utf8' });
   rmSync(dir, { recursive: true, force: true });
   assert.equal(recheckRes.status, 0, recheckRes.stdout + recheckRes.stderr);
-  assert.match(recheckRes.stdout, /Version check OK: v0\.2\.0 \(versionCode 2\)/);
+  assert.match(recheckRes.stdout, /Version check OK: v0\.3\.0 \(versionCode 4\)/);
 });
 
 test('CHANGELOG.md reflects v0.1 day-clipped UsageEvents totals and P3 features without stale OS-aggregate or P3-on-hold copy', () => {
