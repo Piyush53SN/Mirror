@@ -171,6 +171,8 @@ export type EvaluateBudgetsInput = {
   recordedDays?: readonly string[];
   /** Optional earliest local day in Mirror's history (marks days before it unrecorded). */
   historyStartDay?: string | null;
+  /** Optional explicit flag when `referenceDay` is local today (defaults from `nowMs`). */
+  isSelectedToday?: boolean;
   utcOffsetMinutes?: number;
   nowMs?: number;
   ignorePackages?: readonly string[];
@@ -216,6 +218,8 @@ export type BudgetEvaluation = {
   sources: DayTotalsSource[];
   hasStoredDays: boolean;
   hasApproximateDays: boolean;
+  /** Concise, neutral status copy (for example "12m over 45m today", never red or judgmental). */
+  statusLine: string;
   /** Calm, non-judgmental one-line summary (never extrapolated on partial weeks). */
   summaryText: string;
 };
@@ -240,6 +244,60 @@ function listWindowDays(endDay: string, count: number): string[] {
     out.push(shiftLocalDay(endDay, -i));
   }
   return out;
+}
+
+export function formatBudgetStatusLine(params: {
+  period: BudgetPeriod;
+  enabled: boolean;
+  usedMs: number;
+  limitMs: number;
+  remainingMs: number;
+  overMs: number;
+  recordedDays: number;
+  isPartialWindow: boolean;
+  isSelectedToday: boolean;
+  referenceDay: string;
+}): string {
+  const usedText = formatDurationShort(params.usedMs);
+  const limitText = formatDurationShort(params.limitMs);
+  const remText = formatDurationShort(params.remainingMs);
+  const overText = formatDurationShort(params.overMs);
+
+  if (params.period === 'daily') {
+    const dayWord = params.isSelectedToday ? 'today' : `on ${params.referenceDay}`;
+    if (!params.enabled) {
+      return `Paused · ${usedText} ${dayWord} (${limitText} daily)`;
+    }
+    if (params.overMs > 0) {
+      return `${overText} over ${limitText} ${dayWord}`;
+    }
+    if (params.remainingMs === 0) {
+      return `${usedText} of ${limitText} ${dayWord}`;
+    }
+    return `${usedText} of ${limitText} ${dayWord} · ${remText} left`;
+  }
+
+  if (params.isPartialWindow) {
+    const partialClause = `partial week (${params.recordedDays} of 7 days)`;
+    if (!params.enabled) {
+      return `Paused · ${usedText} · ${partialClause}`;
+    }
+    if (params.overMs > 0) {
+      return `${overText} over ${limitText} · ${partialClause}`;
+    }
+    return `${usedText} of ${limitText} · ${partialClause}`;
+  }
+
+  if (!params.enabled) {
+    return `Paused · ${usedText} this week (${limitText} weekly)`;
+  }
+  if (params.overMs > 0) {
+    return `${overText} over ${limitText} this week`;
+  }
+  if (params.remainingMs === 0) {
+    return `${usedText} of ${limitText} this week`;
+  }
+  return `${usedText} of ${limitText} this week · ${remText} left`;
 }
 
 /**
@@ -406,6 +464,12 @@ export function evaluateBudgets(input: EvaluateBudgetsInput): BudgetsEvaluationS
     ? input.referenceDay
     : localDay(input.nowMs ?? Date.now(), utcOffsetMinutes);
   const todayDay = input.nowMs !== undefined ? localDay(input.nowMs, utcOffsetMinutes) : null;
+  const isSelectedToday =
+    input.isSelectedToday !== undefined
+      ? input.isSelectedToday
+      : todayDay !== null
+        ? todayDay === referenceDay
+        : false;
 
   const weekDays = listWindowDays(referenceDay, 7);
   const dayMap = resolveClippedDayMap({
@@ -524,6 +588,19 @@ export function evaluateBudgets(input: EvaluateBudgetsInput): BudgetsEvaluationS
       summaryText = `${usedText} of ${limitText} soft budget ${windowClause} (${formatDurationShort(remainingMs)} remaining).`;
     }
 
+    const statusLine = formatBudgetStatusLine({
+      period: budget.period,
+      enabled: budget.enabled,
+      usedMs,
+      limitMs: budget.limitMs,
+      remainingMs,
+      overMs,
+      recordedDays,
+      isPartialWindow,
+      isSelectedToday,
+      referenceDay,
+    });
+
     items.push({
       id: budget.id,
       name: budget.name,
@@ -549,6 +626,7 @@ export function evaluateBudgets(input: EvaluateBudgetsInput): BudgetsEvaluationS
       sources,
       hasStoredDays,
       hasApproximateDays,
+      statusLine,
       summaryText,
     });
   }

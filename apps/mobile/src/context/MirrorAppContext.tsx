@@ -8,6 +8,8 @@ import type {
 } from '@mirror/store';
 import {
   formatDurationShort,
+  type BudgetDefinition,
+  type BudgetsEvaluationSummary,
   type CuriositySplit,
   type DayTotalsSource,
   type DepthBand,
@@ -28,7 +30,14 @@ import {
 import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
 
-export type { DayTotalsSource, FlaggedAppDiscrepancy, SafeInsets, WhatIfScenarioId };
+export type {
+  BudgetDefinition,
+  BudgetsEvaluationSummary,
+  DayTotalsSource,
+  FlaggedAppDiscrepancy,
+  SafeInsets,
+  WhatIfScenarioId,
+};
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
 export type PermissionState = 'checking' | 'granted' | 'denied' | 'unavailable';
 
@@ -46,6 +55,16 @@ export type ExportDataResult = {
 };
 
 export type DailyTotal = { app: string; label: string; totalMs: number };
+
+export type BudgetCandidateApp = {
+  app: string;
+  label: string;
+  todayMs: number;
+};
+
+export type SaveBudgetResult =
+  | { ok: true; value: BudgetDefinition }
+  | { ok: false; errors: string[] };
 
 export type SingleDayRow = {
   app: string;
@@ -252,6 +271,13 @@ export type MirrorAppContextValue = {
   saveSessionLabel: (sessionId: string, label: 'intentional' | 'mindless' | 'unsure') => Promise<void>;
   clearStoredLabels: () => Promise<void>;
   copyRawEvents: () => Promise<void>;
+
+  /** User-created Tier D soft Attention Budgets (encrypted at rest in `budgets`). */
+  budgets?: BudgetDefinition[];
+  budgetsSummary?: BudgetsEvaluationSummary | null;
+  budgetApps?: BudgetCandidateApp[];
+  saveBudget?: (budget: BudgetDefinition) => Promise<SaveBudgetResult>;
+  deleteBudget?: (id: string) => Promise<boolean>;
 };
 
 export const MirrorAppContext = React.createContext<MirrorAppContextValue | null>(null);

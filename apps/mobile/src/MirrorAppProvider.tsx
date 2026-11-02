@@ -10,6 +10,9 @@ import {
   type StoreResetReason,
 } from '@mirror/store';
 import type {
+  BudgetDayForegroundInput,
+  BudgetDefinition,
+  BudgetsEvaluationSummary,
   CuriositySplit,
   DayTotalsSource,
   DepthBand,
@@ -39,12 +42,14 @@ import {
   computeWhatIf,
   curiositySplit,
   evaluateAppOsDiscrepancies,
+  evaluateBudgets,
   getTopInvalidPackages,
   isExcludedApp,
   scoreIqs,
   sessionBands,
   sumSittingSpanMs,
   summarizeOrphanDrops,
+  validateBudgetDefinition,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
 import { osRandom } from './storage/keys';
@@ -63,6 +68,7 @@ import {
   formatDuration,
   lastNDays,
   toDayStr,
+  type BudgetCandidateApp,
   type CombinableWhatIfScenarioId,
   type DailyTotal,
   type DebugRawEvent,
@@ -70,6 +76,7 @@ import {
   type ExportDataResult,
   type MirrorAppContextValue,
   type PermissionState,
+  type SaveBudgetResult,
   type ScaledSessionRow,
   type SingleDayRow,
   type TabKey,
@@ -136,6 +143,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = React.useState<string | null>(null);
   const [labelOptIn, setLabelOptIn] = React.useState(false);
+  const [budgets, setBudgets] = React.useState<BudgetDefinition[]>([]);
+  const [budgetWeekOtherDays, setBudgetWeekOtherDays] = React.useState<BudgetDayForegroundInput[]>([]);
+  const [budgetHistoryStartDay, setBudgetHistoryStartDay] = React.useState<string | null>(null);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
   const hasLoadedOnceRef = React.useRef(false);
@@ -163,8 +173,23 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       const runtime = await createRuntime();
       runtimeRef.current = runtime;
       try {
-        const resetAudit = await runtime.lastReset();
-        if (isCurrent()) setLastReset(resetAudit);
+        const [resetAudit, storedBudgets] = await Promise.all([
+          runtime.lastReset(),
+          runtime.listBudgets(),
+        ]);
+        if (isCurrent()) {
+          setLastReset(resetAudit);
+          setBudgets(storedBudgets);
+        }
+        const budgetPkgs = [...new Set(storedBudgets.flatMap((b) => [...b.packages]))];
+        if (budgetPkgs.length > 0) {
+          const resolvedBudgetLabels = await resolveAppLabels(budgetPkgs).catch(
+            () => ({}) as Record<string, string>,
+          );
+          if (isCurrent() && Object.keys(resolvedBudgetLabels).length > 0) {
+            setLabels((prev) => ({ ...prev, ...resolvedBudgetLabels }));
+          }
+        }
       } catch {}
       provideRuntime({
         store: runtime.store,
@@ -245,20 +270,38 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         if (!isCurrent()) return;
       }
 
-      // Refresh reset audit in case runtime.collectNow() recovered from a Keystore invalidation
+      // Refresh reset audit & budgets in case runtime.collectNow() recovered from a Keystore invalidation
       try {
-        const resetAudit = await runtime.lastReset();
-        if (isCurrent()) setLastReset(resetAudit);
+        const [resetAudit, refreshedBudgets] = await Promise.all([
+          runtime.lastReset(),
+          runtime.listBudgets(),
+        ]);
+        if (isCurrent()) {
+          setLastReset(resetAudit);
+          setBudgets(refreshedBudgets);
+        }
       } catch {}
 
+      let earliestStoreDayFromCounts: string | null = null;
       try {
-        const [rowCounts, repairSnap] = await Promise.all([
+        const [rowCounts, repairSnap, earliestEvAt] = await Promise.all([
           runtime.storeDayRowCounts(),
           runtime.sessionRepairSnapshot(),
+          runtime.store.earliestEventAt().catch(() => null),
         ]);
+        if (rowCounts.length > 0) {
+          earliestStoreDayFromCounts = rowCounts[0]!.day;
+        }
+        if (typeof earliestEvAt === 'number' && Number.isFinite(earliestEvAt)) {
+          const evDay = toDayStr(earliestEvAt);
+          if (!earliestStoreDayFromCounts || evDay < earliestStoreDayFromCounts) {
+            earliestStoreDayFromCounts = evDay;
+          }
+        }
         if (isCurrent()) {
           setStoreDayRowCounts(rowCounts);
           setSessionRepairSnapshot(repairSnap);
+          setBudgetHistoryStartDay(earliestStoreDayFromCounts);
         }
       } catch {}
 
@@ -362,6 +405,63 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         );
         setDayReady(true);
+
+        // Resolve day-clipped foreground totals for the preceding 6 days in the 7-day
+        // budget window (`targetDay - 6 .. targetDay - 1`) using the exact same
+        // `osTotalsWithSource` + `isExcludedApp` pipeline as `Home`. Days before
+        // `effectiveHistoryStart` remain unrecorded so partial weeks are never extrapolated.
+        try {
+          const effectiveHistoryStart =
+            earliestStoreDayFromCounts ??
+            (totals.length > 0 ? targetDay : null);
+          if (effectiveHistoryStart && isCurrent()) {
+            setBudgetHistoryStartDay(effectiveHistoryStart);
+          }
+          const priorDays = lastNDays(7, targetDay)
+            .slice(1)
+            .filter((d) => effectiveHistoryStart !== null && d >= effectiveHistoryStart);
+          const priorEntries = await Promise.all(
+            priorDays.map(async (d) => {
+              const resDay = await runtime.osTotalsWithSource({
+                fromMs: dayStartMs(d),
+                toMs: dayEndMs(d),
+              });
+              const cand = resDay.totals.filter(
+                (r) => !isExcludedApp(r.packageName, { ignorePackages: sharedIgnore }) && r.totalMs > 0,
+              );
+              const dayLabels = cand.length > 0 ? await resolveAppLabels(cand.map((r) => r.packageName)) : {};
+              const filt = cand.filter(
+                (r) =>
+                  !isExcludedApp(r.packageName, {
+                    ignorePackages: sharedIgnore,
+                    label: dayLabels[r.packageName],
+                  }),
+              );
+              return {
+                entry: {
+                  day: d,
+                  source: resDay.source,
+                  totals: filt.map((r) => ({ app: r.packageName, totalMs: r.totalMs })),
+                } satisfies BudgetDayForegroundInput,
+                dayLabels,
+              };
+            }),
+          );
+          if (isCurrent()) {
+            const extraLabels: Record<string, string> = {};
+            for (const item of priorEntries) {
+              Object.assign(extraLabels, item.dayLabels);
+            }
+            if (Object.keys(extraLabels).length > 0) {
+              setLabels((prev) => ({ ...prev, ...extraLabels }));
+            }
+            setBudgetWeekOtherDays(priorEntries.map((x) => x.entry));
+          }
+        } catch {
+          if (isCurrent()) {
+            setBudgetWeekOtherDays([]);
+          }
+        }
 
         try {
           const histFrom = dayTo - 30 * 86_400_000;
@@ -938,6 +1038,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setDiscovery(null);
           setRabbitHole(null);
           setFocusWindows(null);
+          setBudgets([]);
+          setBudgetWeekOtherDays([]);
+          setBudgetHistoryStartDay(null);
           setLastCollect(`store reset (${reason})`);
           await checkPermissionAndCollect();
         }
@@ -1046,6 +1149,123 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     () => sumSittingSpanMs(dayScoredSessions),
     [dayScoredSessions],
   );
+
+  const saveBudget = React.useCallback(
+    async (draft: BudgetDefinition): Promise<SaveBudgetResult> => {
+      const check = validateBudgetDefinition(draft);
+      if (!check.ok) {
+        return { ok: false, errors: check.errors };
+      }
+      const rt = runtimeRef.current ?? (await createRuntime());
+      runtimeRef.current = rt;
+      await rt.saveBudget(check.value);
+      const fresh = await rt.listBudgets();
+      setBudgets(fresh);
+      try {
+        const resolvedNew = await resolveAppLabels([...check.value.packages]);
+        if (Object.keys(resolvedNew).length > 0) {
+          setLabels((prev) => ({ ...prev, ...resolvedNew }));
+        }
+      } catch {}
+      return { ok: true, value: check.value };
+    },
+    [],
+  );
+
+  const deleteBudget = React.useCallback(async (id: string): Promise<boolean> => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    const removed = await rt.removeBudget(id);
+    const fresh = await rt.listBudgets();
+    setBudgets(fresh);
+    return removed;
+  }, []);
+
+  const effectiveBudgetHistoryStart =
+    budgetHistoryStartDay ??
+    focusWindows?.historyStartDay ??
+    evolution?.historyStartDay ??
+    (dailyTotals.length > 0 ? selectedDay : null);
+
+  const budgetsSummary: BudgetsEvaluationSummary = React.useMemo(() => {
+    const priorWindowDays = new Set(lastNDays(7, selectedDay).slice(1));
+    const combinedDayTotals: BudgetDayForegroundInput[] = [
+      {
+        day: selectedDay,
+        source: dailyTotalsSource,
+        totals: dailyTotals.map((t) => ({ app: t.app, totalMs: t.totalMs })),
+      },
+      ...budgetWeekOtherDays.filter((entry) => priorWindowDays.has(entry.day)),
+    ];
+
+    const weekWindow = lastNDays(7, selectedDay);
+    const recordedDays = weekWindow.filter((d) => {
+      if (d > todayStr) return false;
+      if (d === selectedDay && dailyTotals.length > 0) return true;
+      if (budgetWeekOtherDays.some((entry) => entry.day === d)) return true;
+      return effectiveBudgetHistoryStart !== null && d >= effectiveBudgetHistoryStart;
+    });
+
+    return evaluateBudgets({
+      budgets,
+      referenceDay: selectedDay,
+      dayTotals: combinedDayTotals,
+      recordedDays,
+      historyStartDay: effectiveBudgetHistoryStart,
+      isSelectedToday: selectedDay === todayStr,
+      utcOffsetMinutes: -new Date().getTimezoneOffset(),
+      nowMs: selectedDay === todayStr ? Date.now() : undefined,
+      ignorePackages: launcherPackages,
+      appLabels: labels,
+    });
+  }, [
+    budgets,
+    selectedDay,
+    dailyTotals,
+    dailyTotalsSource,
+    budgetWeekOtherDays,
+    todayStr,
+    effectiveBudgetHistoryStart,
+    launcherPackages,
+    labels,
+  ]);
+
+  const budgetApps: BudgetCandidateApp[] = React.useMemo(() => {
+    const todayMap = new Map<string, { label: string; todayMs: number }>();
+    for (const row of dailyTotals) {
+      if (isExcludedApp(row.app, { ignorePackages: launcherPackages, label: row.label })) continue;
+      todayMap.set(row.app, { label: row.label || labels[row.app] || row.app, todayMs: row.totalMs });
+    }
+    const ensurePkg = (pkg: string, fallbackLabel?: string) => {
+      const trimmed = pkg.trim();
+      if (!trimmed || todayMap.has(trimmed)) return;
+      const lbl = fallbackLabel ?? labels[trimmed] ?? getCachedLabel(trimmed);
+      if (isExcludedApp(trimmed, { ignorePackages: launcherPackages, label: lbl })) return;
+      todayMap.set(trimmed, { label: lbl, todayMs: 0 });
+    };
+    for (const dayEntry of budgetWeekOtherDays) {
+      for (const row of dayEntry.totals) {
+        const pkg = row.app ?? row.packageName;
+        if (pkg) ensurePkg(pkg);
+      }
+    }
+    for (const s of sessions) {
+      ensurePkg(s.app);
+    }
+    if (evolution?.rows) {
+      for (const r of evolution.rows) {
+        ensurePkg(r.app, r.label);
+      }
+    }
+    for (const b of budgets) {
+      for (const pkg of b.packages) {
+        ensurePkg(pkg);
+      }
+    }
+    return [...todayMap.entries()]
+      .map(([app, info]) => ({ app, label: info.label, todayMs: info.todayMs }))
+      .sort((a, b) => b.todayMs - a.todayMs || a.label.localeCompare(b.label) || a.app.localeCompare(b.app));
+  }, [dailyTotals, budgetWeekOtherDays, sessions, evolution?.rows, budgets, labels, launcherPackages]);
 
   const copyRawEvents = React.useCallback(async () => {
     try {
@@ -1215,6 +1435,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       saveSessionLabel,
       clearStoredLabels,
       copyRawEvents,
+      budgets,
+      budgetsSummary,
+      budgetApps,
+      saveBudget,
+      deleteBudget,
     }),
     [
       activeTab,
@@ -1285,6 +1510,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       saveSessionLabel,
       clearStoredLabels,
       copyRawEvents,
+      budgets,
+      budgetsSummary,
+      budgetApps,
+      saveBudget,
+      deleteBudget,
     ],
   );
 

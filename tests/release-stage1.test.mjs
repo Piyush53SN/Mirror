@@ -78,12 +78,12 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   const bumpScript = join(ROOT, 'scripts', 'release', 'bump-version.mjs');
   const repoCheck = spawnSync(process.execPath, [bumpScript, '--check'], { encoding: 'utf8' });
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
-  assert.match(repoCheck.stdout, /Version check OK: v0\.2\.0 \(versionCode 3\)/);
+  assert.match(repoCheck.stdout, /Version check OK: v0\.2\.0 \(versionCode 4\)/);
 
   const shippedAppJson = JSON.parse(readFileSync(join(ROOT, 'apps', 'mobile', 'app.json'), 'utf8'));
   assert.ok(
-    shippedAppJson.expo.android.versionCode >= 3,
-    'v0.2.0 versionCode must be >= 3 (> v0.1.0 versionCode 2) for in-place Android upgrades',
+    shippedAppJson.expo.android.versionCode >= 4,
+    'v0.2.0 P4.2 versionCode must be >= 4 (> v0.2.0-alpha.1 versionCode 3) for in-place Android upgrades',
   );
 
   // Matching --tag v0.2.0 passes; suffixed pre-release tags with same base version pass; mismatched or malformed --tag fails loudly
@@ -143,14 +143,14 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   assert.match(failRes.stderr, /package\.json version=0\.0\.9/);
 
   // Bumping aligns all manifests and build.gradle offline
-  const bumpRes = spawnSync(process.execPath, [bumpScript, '0.3.0', '--version-code', '4', '--root', dir], {
+  const bumpRes = spawnSync(process.execPath, [bumpScript, '0.3.0', '--version-code', '5', '--root', dir], {
     encoding: 'utf8',
   });
   assert.equal(bumpRes.status, 0, bumpRes.stdout + bumpRes.stderr);
   const recheckRes = spawnSync(process.execPath, [bumpScript, '--check', '--root', dir], { encoding: 'utf8' });
   rmSync(dir, { recursive: true, force: true });
   assert.equal(recheckRes.status, 0, recheckRes.stdout + recheckRes.stderr);
-  assert.match(recheckRes.stdout, /Version check OK: v0\.3\.0 \(versionCode 4\)/);
+  assert.match(recheckRes.stdout, /Version check OK: v0\.3\.0 \(versionCode 5\)/);
 });
 
 test('CHANGELOG.md reflects v0.1 day-clipped UsageEvents totals and P3 features without stale OS-aggregate or P3-on-hold copy', () => {

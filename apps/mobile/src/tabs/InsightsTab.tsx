@@ -21,6 +21,7 @@ import {
 } from '@mirror/ui';
 import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
+import { AttentionBudgetSection } from '../components/AttentionBudgetSection';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import {
   formatDuration,
@@ -29,10 +30,11 @@ import {
   type CombinableWhatIfScenarioId,
 } from '../context/MirrorAppContext';
 
-type InsightsFilter = 'all' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
+type InsightsFilter = 'all' | 'budgets' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
 
 const FILTER_OPTIONS: { id: InsightsFilter; label: string }[] = [
   { id: 'all', label: 'All' },
+  { id: 'budgets', label: 'Budgets' },
   { id: 'whatif', label: 'What-if' },
   { id: 'iqs', label: 'Score parts' },
   { id: 'curiosity', label: 'Curiosity vs Habit' },
@@ -109,6 +111,7 @@ export function InsightsTab(): React.ReactElement {
     sittingCount === 0 &&
     dailyTotals.length === 0;
 
+  const showBudgets = filter === 'all' || filter === 'budgets';
   const showWhatIf = !isEmptyDay && (filter === 'all' || filter === 'whatif');
   const showIqs = !isEmptyDay && (filter === 'all' || filter === 'iqs');
   const showCuriosity = !isEmptyDay && (filter === 'all' || filter === 'curiosity');
@@ -131,7 +134,7 @@ export function InsightsTab(): React.ReactElement {
   return (
     <AppShell
       title="Insights"
-      subtitle={`What-if · Score parts · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
+      subtitle={`Budgets · What-if · Score parts · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
@@ -139,6 +142,24 @@ export function InsightsTab(): React.ReactElement {
       }
     >
       <DayPickerStrip />
+
+      {!isEmptyDay ? (
+        <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+          {FILTER_OPTIONS.map((opt) => (
+            <Pill
+              key={opt.id}
+              theme={theme}
+              variant={filter === opt.id ? 'primary' : 'secondary'}
+              onPress={() => setFilter(opt.id)}
+            >
+              {opt.label}
+            </Pill>
+          ))}
+        </View>
+      ) : null}
+
+      {/* Soft Attention Budgets — always available so users can create/edit/delete even on quiet days */}
+      {showBudgets ? <AttentionBudgetSection /> : null}
 
       {isEmptyDay ? (
         <Surface
@@ -162,20 +183,7 @@ export function InsightsTab(): React.ReactElement {
             theme={theme}
           />
         </Surface>
-      ) : (
-        <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-          {FILTER_OPTIONS.map((opt) => (
-            <Pill
-              key={opt.id}
-              theme={theme}
-              variant={filter === opt.id ? 'primary' : 'secondary'}
-              onPress={() => setFilter(opt.id)}
-            >
-              {opt.label}
-            </Pill>
-          ))}
-        </View>
-      )}
+      ) : null}
 
       {/* What-if Simulator (every output labelled Estimate, fixed 100 scale) */}
       {showWhatIf ? (

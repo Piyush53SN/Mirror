@@ -23,6 +23,7 @@ import type { Score } from '@mirror/core-analytics';
 import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
+import { HomeBudgetStrip } from '../components/HomeBudgetStrip';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 
 const GAUGE_TICKS = 18;
@@ -519,6 +520,9 @@ export function HomeTab(): React.ReactElement {
           } Sitting spans (${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'} across ${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) merge reopens of the same app within 15 min into one sitting, so spans include brief pauses and switches between opens.`}
         </Callout>
       ) : null}
+
+      {/* Compact soft Attention Budget strip (same day-clipped foreground totals as Home) */}
+      <HomeBudgetStrip />
 
       {/* Per-app foreground totals with explicit source badge */}
       <Card theme={theme} style={{ marginBottom: 0 }}>

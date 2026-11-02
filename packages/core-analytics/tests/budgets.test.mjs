@@ -25,6 +25,7 @@ const core = await bundleTs(join(HERE, '..', 'src/index.ts'), {
 
 const {
   evaluateBudgets,
+  formatBudgetStatusLine,
   validateBudgetDefinition,
   dayStartMs,
 } = core;
@@ -287,3 +288,64 @@ test('property: budget arithmetic satisfies remainingMs + overMs === |limitMs - 
     { numRuns: 100 },
   );
 });
+
+test('neutral statusLine formats over-budget as "12m over 45m today", marks partial weeks, and handles paused targets', () => {
+  const overDaily = evaluateBudgets({
+    budgets: [
+      {
+        id: 'yt_over',
+        name: 'YouTube',
+        kind: 'app',
+        packages: ['com.google.android.youtube'],
+        period: 'daily',
+        limitMs: 45 * MIN_MS,
+        enabled: true,
+        createdAtMs: 1,
+        updatedAtMs: 1,
+      },
+    ],
+    referenceDay: '2026-11-01',
+    isSelectedToday: true,
+    dayTotals: [
+      {
+        day: '2026-11-01',
+        source: 'os_events',
+        totals: [{ app: 'com.google.android.youtube', totalMs: 57 * MIN_MS }],
+      },
+    ],
+  });
+  assert.equal(overDaily.items[0].statusLine, '12m over 45m today');
+
+  assert.equal(
+    formatBudgetStatusLine({
+      period: 'weekly',
+      enabled: true,
+      usedMs: 90 * MIN_MS,
+      limitMs: 120 * MIN_MS,
+      remainingMs: 30 * MIN_MS,
+      overMs: 0,
+      recordedDays: 3,
+      isPartialWindow: true,
+      isSelectedToday: true,
+      referenceDay: '2026-11-01',
+    }),
+    '1h 30m of 2h · partial week (3 of 7 days)',
+  );
+
+  assert.equal(
+    formatBudgetStatusLine({
+      period: 'daily',
+      enabled: false,
+      usedMs: 25 * MIN_MS,
+      limitMs: 45 * MIN_MS,
+      remainingMs: 20 * MIN_MS,
+      overMs: 0,
+      recordedDays: 1,
+      isPartialWindow: false,
+      isSelectedToday: true,
+      referenceDay: '2026-11-01',
+    }),
+    'Paused · 25m today (45m daily)',
+  );
+});
+

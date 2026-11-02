@@ -33,6 +33,7 @@ import {
   validateDailyTotals,
 } from '@mirror/core-analytics';
 import type {
+  BudgetDefinition,
   OsTotal,
   RawUsageBucketDiagnostic,
   ResolvedDayForegroundTotals,
@@ -90,6 +91,12 @@ export type MirrorRuntime = {
   loadIntentLabels(): Promise<Record<string, 'intentional' | 'mindless' | 'unsure'>>;
   /** Delete all stored `intent_label` events while keeping usage history intact */
   clearAllIntentLabels(): Promise<number>;
+  /** Load all user-created soft Attention Budgets (decrypted from `budgets`). */
+  listBudgets(): Promise<BudgetDefinition[]>;
+  /** Insert or update a soft Attention Budget (sealed with XChaCha20-Poly1305). */
+  saveBudget(budget: BudgetDefinition): Promise<void>;
+  /** Delete a soft Attention Budget by id. */
+  removeBudget(id: string): Promise<boolean>;
   /** Wipe all stored data, log when and why, and record a plaintext reset marker */
   resetStore(options: {
     reason: StoreResetReason;
@@ -477,6 +484,15 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         } catch {
           return 0;
         }
+      },
+      listBudgets: async () => {
+        return store.budgets();
+      },
+      saveBudget: async (budget: BudgetDefinition) => {
+        await store.putBudget(budget);
+      },
+      removeBudget: async (id: string) => {
+        return store.deleteBudget(id);
       },
       resetStore: async ({ reason, previousHistoryStartDay, detail, now = Date.now() }) => {
         const day = localDayKey(now, offsetNow());
