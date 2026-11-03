@@ -66,12 +66,17 @@ if (extra.remoteConfig && extra.remoteConfig !== 'narrow-only') {
   console.log('  ok: remoteConfig narrow-only or absent');
 }
 
-// 3. Permissions – only PACKAGE_USAGE_STATS allowed (POST_NOTIFICATIONS is withheld until P4.3 reminder ships), blockedPermissions must include forbidden
-const allowedPermissions = new Set(['android.permission.PACKAGE_USAGE_STATS', 'android.permission.VIBRATE', 'android.permission.USE_EXACT_ALARM']);
+// 3. Permissions – only PACKAGE_USAGE_STATS and P4.3 opt-in POST_NOTIFICATIONS allowed, blockedPermissions must include forbidden
+const allowedPermissions = new Set([
+  'android.permission.PACKAGE_USAGE_STATS',
+  'android.permission.POST_NOTIFICATIONS',
+  'android.permission.VIBRATE',
+  'android.permission.USE_EXACT_ALARM',
+]);
 const perms = android.permissions ?? [];
 for (const p of perms) {
   if (!allowedPermissions.has(p)) {
-    failures.push(`android.permissions contains ${p} – only PACKAGE_USAGE_STATS allowed before P4.3 opt-in reminder ships`);
+    failures.push(`android.permissions contains ${p} – only PACKAGE_USAGE_STATS and opt-in POST_NOTIFICATIONS allowed`);
   }
 }
 if (perms.includes('android.permission.PACKAGE_USAGE_STATS')) {

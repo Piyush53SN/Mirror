@@ -363,7 +363,7 @@ export function YouTab(): React.ReactElement {
                 Export local data (JSON)
               </Text>
               <Callout theme={theme} tone="limit">
-                Plaintext warning: Without a passphrase, your exported JSON contains readable app names, open timestamps, derived sittings, manual intent labels, and soft attention budgets. Add an optional passphrase below to encrypt the export with XChaCha20-Poly1305 before saving or sharing.
+                Plaintext warning: Without a passphrase, your exported JSON contains readable app names, open timestamps, derived sittings, manual intent labels, soft attention budgets, weekly goals, and local reminder preferences. Add an optional passphrase below to encrypt the export with XChaCha20-Poly1305 before saving or sharing.
               </Callout>
               <TextField
                 testID="export-passphrase-input"
@@ -459,7 +459,7 @@ export function YouTab(): React.ReactElement {
                 Delete all local data on this phone?
               </Text>
               <Text role="micro" tone="muted" theme={theme}>
-                This permanently erases all stored usage events, derived sittings, data-gap records, manual intent labels, and soft attention budgets inside Mirror, and records today as your local reset date. Android’s own UsageStats history in Settings is untouched.
+                This permanently erases all stored usage events, derived sittings, data-gap records, manual intent labels, soft attention budgets, weekly goals, and local reminder preferences inside Mirror, and records today as your local reset date. Android’s own UsageStats history in Settings is untouched.
               </Text>
               <Text role="micro" theme={theme}>
                 Type DELETE in capital letters to enable permanent deletion:

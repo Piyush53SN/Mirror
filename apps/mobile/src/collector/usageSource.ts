@@ -23,6 +23,9 @@ export type UsageSource = UsageSourcePort & {
   getLauncherPackages(): Promise<string[]>;
   getWindowInsets(): NativeWindowInsets | null;
   saveExportJson(fileName: string, content: string): Promise<boolean | null>;
+  areNotificationsEnabled(): boolean;
+  openNotificationSettings(): boolean;
+  postLocalNotification(notificationId: number, title: string, body: string): boolean;
 };
 
 export function nativeUsageSource(): UsageSource {
@@ -72,6 +75,32 @@ export function nativeUsageSource(): UsageSource {
         native?.openSettings();
       } catch {
         // Ignore missing activity / settings screen on headless test devices
+      }
+    },
+    areNotificationsEnabled(): boolean {
+      try {
+        return native && typeof native.areNotificationsEnabled === 'function'
+          ? Boolean(native.areNotificationsEnabled())
+          : false;
+      } catch {
+        return false;
+      }
+    },
+    openNotificationSettings(): boolean {
+      try {
+        return native && typeof native.openNotificationSettings === 'function'
+          ? Boolean(native.openNotificationSettings())
+          : false;
+      } catch {
+        return false;
+      }
+    },
+    postLocalNotification(notificationId: number, title: string, body: string): boolean {
+      try {
+        if (!native || typeof native.postLocalNotification !== 'function') return false;
+        return Boolean(native.postLocalNotification(notificationId, title, body));
+      } catch {
+        return false;
       }
     },
   };

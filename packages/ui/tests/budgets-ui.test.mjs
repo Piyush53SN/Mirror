@@ -341,6 +341,8 @@ function buildLiveTestHarness({ store, initialBudgets, activeTab = 'home', today
       budgets,
       budgetsSummary,
       budgetApps,
+      budgetWeekTotals: dayTotals,
+      budgetRecordedDays: recordedDays,
       saveBudget,
       deleteBudget,
     };
@@ -712,6 +714,145 @@ test('Attention Budget UI: empty states, validation errors, create/edit/delete, 
     }
   } finally {
     if (driver1) driver1.close();
+    rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('P4.2 polish: single non-duplicated status line on Insights budget card, and "Start from my average" + 30m/1h/2h quick chips never auto-run or save before Save is tapped', async () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'mirror-p42-polish-'));
+  const dbPath = join(tmpDir, 'mirror-budgets-polish.db');
+  const rootKeyBytes = new Uint8Array(mod.TEST_ROOT_KEY);
+  const keyProvider = {
+    keyId: async () => 'key-p42-polish',
+    rootKey: async () => new Uint8Array(rootKeyBytes),
+  };
+
+  const todayDay = mod.toDayStr(Date.now());
+  const recentDays = mod.lastNDays(3, todayDay);
+  // YouTube 3-day day-clipped foreground sum: 57m + 18m + 15m = 90m across 3 recorded days -> 30m/day average!
+  // (Whereas today's merged sitting span in harness is 74m — proving "Start from my average" uses day-clipped foreground!)
+  const priorDaysTotals = [
+    {
+      day: recentDays[1],
+      source: 'stored_events',
+      totals: [
+        { app: 'com.google.android.youtube', totalMs: 18 * MIN_MS },
+        { app: 'org.wikipedia', totalMs: 6 * MIN_MS },
+      ],
+    },
+    {
+      day: recentDays[2],
+      source: 'stored_events',
+      totals: [
+        { app: 'com.google.android.youtube', totalMs: 15 * MIN_MS },
+        { app: 'org.wikipedia', totalMs: 6 * MIN_MS },
+      ],
+    },
+  ];
+
+  const driver = mod.NodeSqliteDriver.file(dbPath);
+  try {
+    const store = new mod.MirrorStore({
+      driver,
+      keys: keyProvider,
+      random: (n) => new Uint8Array(randomBytes(n)),
+    });
+    await store.open();
+
+    const App = buildLiveTestHarness({
+      store,
+      initialBudgets: [],
+      activeTab: 'insights',
+      todayDay,
+      priorDaysTotals,
+    });
+    let renderer;
+    TestRenderer.act(() => {
+      renderer = TestRenderer.create(React.createElement(App));
+    });
+
+    // 1. Open editor: must NEVER auto-run "Start from my average" on its own!
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-empty-create-btn').props.onPress();
+    });
+    const hoursInput = () => renderer.root.find((el) => el.props?.['data-testid'] === 'budget-hours-input');
+    const minutesInput = () => renderer.root.find((el) => el.props?.['data-testid'] === 'budget-minutes-input');
+    assert.equal(hoursInput().props.value, '', 'hours input starts blank (never pre-filled automatically)');
+    assert.equal(minutesInput().props.value, '', 'minutes input starts blank (never pre-filled automatically)');
+    assert.equal(
+      renderer.root.findAll((el) => el.props?.['data-testid'] === 'budget-prefill-note').length,
+      0,
+      'prefill note absent before user taps Start from my average',
+    );
+    assert.equal((await store.budgets()).length, 0, 'store remains empty when editor opens');
+
+    // 2. Tap "Start from my average": pre-fills YouTube + 30m ((57+18+15)/3 = 30m), NEVER saves!
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-start-from-avg-btn').props.onPress();
+    });
+    assert.equal(hoursInput().props.value, '0');
+    assert.equal(minutesInput().props.value, '30', 'pre-fills 30m day-clipped 3-day average (never 74m merged span)');
+    const ytChip = renderer.root.find(
+      (el) => el.props?.['data-testid'] === 'budget-app-option-com.google.android.youtube',
+    );
+    assert.match(String(ytChip.props['aria-label'] ?? ''), /selected/i, 'pre-selects top 7-day app YouTube');
+    assert.equal((await store.budgets()).length, 0, 'Start from my average NEVER saves before Save is tapped');
+
+    // 3. Quick-amount chips (30m, 1h, 2h) update local fields ONLY and NEVER save before Save is tapped!
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-quick-1h').props.onPress();
+    });
+    assert.equal(hoursInput().props.value, '1');
+    assert.equal(minutesInput().props.value, '0');
+    assert.equal((await store.budgets()).length, 0, '1h quick chip NEVER saves before Save is tapped');
+
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-quick-2h').props.onPress();
+    });
+    assert.equal(hoursInput().props.value, '2');
+    assert.equal(minutesInput().props.value, '0');
+
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-quick-30m').props.onPress();
+    });
+    assert.equal(hoursInput().props.value, '0');
+    assert.equal(minutesInput().props.value, '30');
+    assert.equal((await store.budgets()).length, 0, '30m quick chip NEVER saves before Save is tapped');
+
+    // Cancel without saving -> SQLite store is STILL empty!
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-cancel-btn').props.onPress();
+    });
+    assert.equal((await store.budgets()).length, 0, 'cancelling after Start from my average leaves 0 saved budgets');
+
+    // 4. Reopen, tap Start from my average, then tap Save -> saves once, and card renders statusLine ONCE (not duplicated!)
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-empty-create-btn').props.onPress();
+    });
+    await TestRenderer.act(async () => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'budget-start-from-avg-btn').props.onPress();
+    });
+    await TestRenderer.act(async () => {
+      await renderer.root.find((el) => el.props?.['data-testid'] === 'budget-save-btn').props.onPress();
+    });
+    const saved = await store.budgets();
+    assert.equal(saved.length, 1, 'persisted only after tapping Save');
+    assert.equal(saved[0].limitMs, 30 * MIN_MS);
+
+    const cardNode = renderer.root.find(
+      (el) => el.props?.['data-testid'] === `insights-budget-card-${saved[0].id}`,
+    );
+    const cardStrings = collectText(cardNode);
+    const statusOccurrences = cardStrings.filter((s) => s.includes('27m over 30m today')).length;
+    assert.equal(
+      statusOccurrences,
+      1,
+      `Insights budget card must render status line once (no duplicate header line), got ${statusOccurrences} in ${JSON.stringify(cardStrings)}`,
+    );
+
+    renderer.unmount();
+  } finally {
+    driver.close();
     rmSync(tmpDir, { recursive: true, force: true });
   }
 });

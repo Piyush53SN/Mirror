@@ -19,6 +19,7 @@ import {
   isExcludedApp,
   validateBudgetDefinition,
   type BudgetDefinition,
+  type BudgetDayForegroundInput,
   type BudgetPeriod,
   type BudgetTargetKind,
   type BudgetsEvaluationSummary,
@@ -39,11 +40,15 @@ export function useResolvedBudgets(): {
   budgets: BudgetDefinition[];
   summary: BudgetsEvaluationSummary;
   candidateApps: BudgetCandidateApp[];
+  weekTotals: readonly BudgetDayForegroundInput[];
+  recordedDaysCount: number;
 } {
   const {
     budgets: ctxBudgets,
     budgetsSummary: ctxSummary,
     budgetApps: ctxApps,
+    budgetWeekTotals: ctxWeekTotals,
+    budgetRecordedDays: ctxRecordedDays,
     selectedDay,
     dailyTotals,
     dailyTotalsSource,
@@ -60,23 +65,34 @@ export function useResolvedBudgets(): {
     evolution?.historyStartDay ??
     (dailyTotals.length > 0 ? selectedDay : null);
 
-  const summary = React.useMemo<BudgetsEvaluationSummary>(() => {
-    if (ctxSummary) return ctxSummary;
-    const recordedDays =
+  const fallbackRecordedDays = React.useMemo<string[]>(
+    () =>
       dailyTotals.length > 0 || (historyStartDay !== null && selectedDay >= historyStartDay)
         ? [selectedDay]
-        : [];
+        : [],
+    [dailyTotals.length, historyStartDay, selectedDay],
+  );
+
+  const weekTotals = React.useMemo<readonly BudgetDayForegroundInput[]>(() => {
+    if (ctxWeekTotals && ctxWeekTotals.length > 0) return ctxWeekTotals;
+    return [
+      {
+        day: selectedDay,
+        source: dailyTotalsSource,
+        totals: dailyTotals.map((t) => ({ app: t.app, totalMs: t.totalMs })),
+      },
+    ];
+  }, [ctxWeekTotals, selectedDay, dailyTotalsSource, dailyTotals]);
+
+  const effectiveRecordedDays = ctxRecordedDays ?? fallbackRecordedDays;
+
+  const summary = React.useMemo<BudgetsEvaluationSummary>(() => {
+    if (ctxSummary) return ctxSummary;
     return evaluateBudgets({
       budgets,
       referenceDay: selectedDay,
-      dayTotals: [
-        {
-          day: selectedDay,
-          source: dailyTotalsSource,
-          totals: dailyTotals.map((t) => ({ app: t.app, totalMs: t.totalMs })),
-        },
-      ],
-      recordedDays,
+      dayTotals: weekTotals,
+      recordedDays: effectiveRecordedDays,
       historyStartDay,
       isSelectedToday: isToday,
       utcOffsetMinutes: -new Date().getTimezoneOffset(),
@@ -88,8 +104,8 @@ export function useResolvedBudgets(): {
     ctxSummary,
     budgets,
     selectedDay,
-    dailyTotals,
-    dailyTotalsSource,
+    weekTotals,
+    effectiveRecordedDays,
     historyStartDay,
     isToday,
     labels,
@@ -127,7 +143,13 @@ export function useResolvedBudgets(): {
     );
   }, [ctxApps, dailyTotals, sessions, budgets, labels]);
 
-  return { budgets, summary, candidateApps };
+  return {
+    budgets,
+    summary,
+    candidateApps,
+    weekTotals,
+    recordedDaysCount: effectiveRecordedDays.length,
+  };
 }
 
 function splitLimitToHoursMinutes(limitMs: number): { hours: string; minutes: string } {
@@ -143,7 +165,7 @@ function splitLimitToHoursMinutes(limitMs: number): { hours: string; minutes: st
 export function AttentionBudgetSection(): React.ReactElement {
   const theme = useTheme();
   const { selectedDay, labels, saveBudget, deleteBudget } = useMirrorApp();
-  const { budgets, summary, candidateApps } = useResolvedBudgets();
+  const { budgets, summary, candidateApps, weekTotals, recordedDaysCount } = useResolvedBudgets();
 
   // Optional local fallback list only when rendered in isolated stateless UI snapshots
   // without a live `saveBudget` / `deleteBudget` callback.
@@ -180,8 +202,32 @@ export function AttentionBudgetSection(): React.ReactElement {
   const [minutesText, setMinutesText] = React.useState('');
   const [enabled, setEnabled] = React.useState(true);
   const [formErrors, setFormErrors] = React.useState<string[]>([]);
+  const [prefillNote, setPrefillNote] = React.useState<string | null>(null);
   const [saving, setSaving] = React.useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
+
+  const sevenDayByApp = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const dayEntry of weekTotals) {
+      for (const row of dayEntry.totals) {
+        const pkg = (row.app ?? row.packageName ?? '').trim();
+        if (!pkg || row.totalMs <= 0) continue;
+        const lbl = labels[pkg] ?? pkg;
+        if (isExcludedApp(pkg, { ignorePackages: SHARED_EXCLUDED_PACKAGES, label: lbl })) continue;
+        map.set(pkg, (map.get(pkg) ?? 0) + row.totalMs);
+      }
+    }
+    return map;
+  }, [weekTotals, labels]);
+
+  const topSevenDayApps = React.useMemo(
+    () =>
+      [...sevenDayByApp.entries()]
+        .filter(([, ms]) => ms > 0)
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([app, totalMs]) => ({ app, totalMs })),
+    [sevenDayByApp],
+  );
 
   const labelForPkg = React.useCallback(
     (pkg: string): string => {
@@ -202,6 +248,7 @@ export function AttentionBudgetSection(): React.ReactElement {
     setMinutesText('');
     setEnabled(true);
     setFormErrors([]);
+    setPrefillNote(null);
   }, []);
 
   const openCreate = React.useCallback(() => {
@@ -225,11 +272,91 @@ export function AttentionBudgetSection(): React.ReactElement {
       setMinutesText(hm.minutes);
       setEnabled(existing.enabled);
       setFormErrors([]);
+      setPrefillNote(null);
       setConfirmDeleteId(null);
       setEditorOpen(true);
     },
     [effectiveBudgets],
   );
+
+  const handleStartFromAverage = React.useCallback(() => {
+    setFormErrors([]);
+    const daysDenom = Math.max(1, recordedDaysCount);
+    if (kind === 'app') {
+      const targetPkg =
+        selectedPackages[0] ?? topSevenDayApps[0]?.app ?? candidateApps[0]?.app ?? null;
+      if (!targetPkg) {
+        setPrefillNote(
+          'No recorded foreground app usage in the last 7 days yet. Select an app or use a quick amount chip below.',
+        );
+        return;
+      }
+      if (selectedPackages.length === 0) {
+        setSelectedPackages([targetPkg]);
+      }
+      const sumMs =
+        sevenDayByApp.get(targetPkg) ??
+        candidateApps.find((c) => c.app === targetPkg)?.todayMs ??
+        0;
+      const prefillMs =
+        period === 'daily'
+          ? Math.max(MIN_MS, Math.round(sumMs / daysDenom / MIN_MS) * MIN_MS)
+          : Math.max(MIN_MS, Math.round(sumMs / MIN_MS) * MIN_MS);
+      const hm = splitLimitToHoursMinutes(prefillMs);
+      setHoursText(hm.hours);
+      setMinutesText(hm.minutes);
+      const appLabel = labelForPkg(targetPkg);
+      setPrefillNote(
+        period === 'daily'
+          ? `Pre-filled ${appLabel} with ${formatDuration(prefillMs)}/day from ${daysDenom} recorded ${daysDenom === 1 ? 'day' : 'days'} in the last 7 local days (day-clipped foreground). Nothing is saved until you tap Save.`
+          : `Pre-filled ${appLabel} with ${formatDuration(prefillMs)} from ${daysDenom} recorded ${daysDenom === 1 ? 'day' : 'days'} in the last 7 local days (${daysDenom < 7 ? 'partial week, not extrapolated' : 'day-clipped foreground'}). Nothing is saved until you tap Save.`,
+      );
+      return;
+    }
+
+    const targetPkgs =
+      selectedPackages.length > 0
+        ? selectedPackages
+        : topSevenDayApps.slice(0, 2).map((x) => x.app);
+    if (targetPkgs.length === 0) {
+      setPrefillNote(
+        'No recorded foreground app usage in the last 7 days yet. Select apps or use a quick amount chip below.',
+      );
+      return;
+    }
+    if (selectedPackages.length === 0) {
+      setSelectedPackages(targetPkgs);
+    }
+    const sumMs = targetPkgs.reduce((acc, pkg) => acc + (sevenDayByApp.get(pkg) ?? 0), 0);
+    const prefillMs =
+      period === 'daily'
+        ? Math.max(MIN_MS, Math.round(sumMs / daysDenom / MIN_MS) * MIN_MS)
+        : Math.max(MIN_MS, Math.round(sumMs / MIN_MS) * MIN_MS);
+    const hm = splitLimitToHoursMinutes(prefillMs);
+    setHoursText(hm.hours);
+    setMinutesText(hm.minutes);
+    setPrefillNote(
+      period === 'daily'
+        ? `Pre-filled ${formatDuration(prefillMs)}/day across ${targetPkgs.length} ${targetPkgs.length === 1 ? 'app' : 'apps'} from ${daysDenom} recorded ${daysDenom === 1 ? 'day' : 'days'} in the last 7 local days. Nothing is saved until you tap Save.`
+        : `Pre-filled ${formatDuration(prefillMs)} across ${targetPkgs.length} ${targetPkgs.length === 1 ? 'app' : 'apps'} from ${daysDenom} recorded ${daysDenom === 1 ? 'day' : 'days'} (${daysDenom < 7 ? 'partial week, not extrapolated' : '7 local days'}). Nothing is saved until you tap Save.`,
+    );
+  }, [
+    recordedDaysCount,
+    kind,
+    selectedPackages,
+    topSevenDayApps,
+    candidateApps,
+    sevenDayByApp,
+    period,
+    labelForPkg,
+  ]);
+
+  const handleQuickAmount = React.useCallback((totalMinutes: number) => {
+    setFormErrors([]);
+    const hm = splitLimitToHoursMinutes(totalMinutes * MIN_MS);
+    setHoursText(hm.hours);
+    setMinutesText(hm.minutes);
+  }, []);
 
   const closeEditor = React.useCallback(() => {
     setEditorOpen(false);
@@ -635,10 +762,62 @@ export function AttentionBudgetSection(): React.ReactElement {
               )}
             </View>
 
-            <View style={{ gap: theme.space(1) }}>
+            <View style={{ gap: theme.space(1.5) }}>
               <Text role="micro" tone="muted" theme={theme}>
                 {period === 'daily' ? 'DAILY TARGET DURATION' : 'WEEKLY TARGET DURATION'}
               </Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  gap: theme.space(1.5),
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                }}
+              >
+                <Pill
+                  testID="budget-start-from-avg-btn"
+                  theme={theme}
+                  variant="secondary"
+                  onPress={handleStartFromAverage}
+                  accessibilityLabel="Start from my average over the last 7 days"
+                >
+                  Start from my average
+                </Pill>
+                <Pill
+                  testID="budget-quick-30m"
+                  theme={theme}
+                  variant="secondary"
+                  onPress={() => handleQuickAmount(30)}
+                  accessibilityLabel="Set target duration to 30 minutes"
+                >
+                  30m
+                </Pill>
+                <Pill
+                  testID="budget-quick-1h"
+                  theme={theme}
+                  variant="secondary"
+                  onPress={() => handleQuickAmount(60)}
+                  accessibilityLabel="Set target duration to 1 hour"
+                >
+                  1h
+                </Pill>
+                <Pill
+                  testID="budget-quick-2h"
+                  theme={theme}
+                  variant="secondary"
+                  onPress={() => handleQuickAmount(120)}
+                  accessibilityLabel="Set target duration to 2 hours"
+                >
+                  2h
+                </Pill>
+              </View>
+              {prefillNote ? (
+                <View testID="budget-prefill-note">
+                  <Text role="micro" tone="muted" theme={theme}>
+                    {prefillNote}
+                  </Text>
+                </View>
+              ) : null}
               <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap' }}>
                 <View style={{ flex: 1, minWidth: 120, gap: theme.space(0.5) }}>
                   <Text role="label" tone="muted" theme={theme}>
@@ -784,9 +963,6 @@ export function AttentionBudgetSection(): React.ReactElement {
                         {`${item.period === 'daily' ? 'Daily' : 'Weekly'} · ${scopeLabel}`}
                       </Text>
                     </View>
-                    <Text role="label" tone="muted" theme={theme}>
-                      {item.statusLine}
-                    </Text>
                   </View>
 
                   <Meter

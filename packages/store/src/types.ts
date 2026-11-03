@@ -218,12 +218,20 @@ export type StoredGoalDefinition = {
 };
 
 export type WeeklyReportPrefs = {
-  /** Strictly off by default; local opt-in reminder ships in P4.3 only. */
+  /** Strictly off by default; local opt-in weekly summary reminder. */
   reminderEnabled: boolean;
   /** Weekday for weekly report summary (`0` = Sunday .. `6` = Saturday). */
   reminderWeekday: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   /** Local hour `0..23` (default `19`, outside `23:00–05:00` quiet hours). */
   reminderHourLocal: number;
+  /** Optional separate toggle (strictly off by default) for a gentle local note when a budget is exceeded. */
+  budgetNoteEnabled?: boolean;
+  updatedAtMs: number;
+};
+
+export type ReminderDeliveryState = {
+  lastWeeklySlot: string | null;
+  sentBudgetKeys: readonly string[];
   updatedAtMs: number;
 };
 

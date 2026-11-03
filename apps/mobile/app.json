@@ -3,7 +3,7 @@
     "name": "Mirror",
     "slug": "mirror",
     "scheme": "mirror",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -17,13 +17,14 @@
         "ITSAppUsesNonExemptEncryption": false,
         "UIUserInterfaceStyle": "Dark"
       },
-      "buildNumber": "4"
+      "buildNumber": "5"
     },
     "android": {
       "package": "dev.mirror.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": [
-        "android.permission.PACKAGE_USAGE_STATS"
+        "android.permission.PACKAGE_USAGE_STATS",
+        "android.permission.POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
         "android.permission.ACCESS_COARSE_LOCATION",

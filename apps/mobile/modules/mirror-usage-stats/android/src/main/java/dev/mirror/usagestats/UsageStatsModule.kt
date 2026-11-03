@@ -2,11 +2,16 @@ package dev.mirror.usagestats
 
 import android.app.Activity
 import android.app.AppOpsManager
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
@@ -46,6 +51,8 @@ class UsageStatsModule : Module() {
 
   companion object {
     private const val REQUEST_SAVE_EXPORT_JSON = 4819
+    private const val LOCAL_REMINDER_CHANNEL_ID = "mirror_local_reminders"
+    private const val POST_NOTIFICATIONS_PERMISSION = "android.permission.POST_NOTIFICATIONS"
   }
 
   override fun definition() = ModuleDefinition {
@@ -322,6 +329,99 @@ class UsageStatsModule : Module() {
         Log.e("MirrorUsageStats", "saveExportJson write failed: ${e.message}")
         promise.resolve(false)
       }
+    }
+
+    Function("areNotificationsEnabled") {
+      val context = appContext.reactContext ?: return@Function false
+      canPostNotifications(context)
+    }
+
+    Function("openNotificationSettings") {
+      val context = appContext.reactContext ?: return@Function false
+      try {
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+            putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+          }
+        } else {
+          Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+            data = Uri.fromParts("package", context.packageName, null)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+          }
+        }
+        context.startActivity(intent)
+        true
+      } catch (e: Exception) {
+        false
+      }
+    }
+
+    Function("postLocalNotification") { notificationId: Int, title: String, body: String ->
+      val context = appContext.reactContext ?: return@Function false
+      if (!canPostNotifications(context)) return@Function false
+      try {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          val channel = NotificationChannel(
+            LOCAL_REMINDER_CHANNEL_ID,
+            "Local summaries and soft budget notes",
+            NotificationManager.IMPORTANCE_DEFAULT
+          ).apply {
+            description = "Opt-in local weekly summaries and gentle soft budget notes (no network or push)"
+            enableVibration(false)
+            setSound(null, null)
+          }
+          nm.createNotificationChannel(channel)
+        }
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          Notification.Builder(context, LOCAL_REMINDER_CHANNEL_ID)
+        } else {
+          @Suppress("DEPRECATION")
+          Notification.Builder(context)
+        }
+        val launchIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)?.apply {
+          flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val pendingFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+          PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+          PendingIntent.FLAG_UPDATE_CURRENT
+        }
+        val pendingIntent = if (launchIntent != null) {
+          PendingIntent.getActivity(context, notificationId, launchIntent, pendingFlags)
+        } else null
+        val iconRes = context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
+        builder
+          .setSmallIcon(iconRes)
+          .setContentTitle(title)
+          .setContentText(body)
+          .setStyle(Notification.BigTextStyle().bigText(body))
+          .setAutoCancel(true)
+          .setCategory(Notification.CATEGORY_STATUS)
+        if (pendingIntent != null) {
+          builder.setContentIntent(pendingIntent)
+        }
+        nm.notify(notificationId, builder.build())
+        true
+      } catch (e: Exception) {
+        Log.e("MirrorUsageStats", "postLocalNotification failed: ${e.message}")
+        false
+      }
+    }
+  }
+
+  private fun canPostNotifications(context: Context): Boolean {
+    if (Build.VERSION.SDK_INT >= 33) {
+      val granted = context.checkSelfPermission(POST_NOTIFICATIONS_PERMISSION) ==
+        PackageManager.PERMISSION_GRANTED
+      if (!granted) return false
+    }
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      nm.areNotificationsEnabled()
+    } else {
+      true
     }
   }
 

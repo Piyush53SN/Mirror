@@ -38,8 +38,11 @@ test('every connector redirect lives under the app scheme', () => {
 
 /* ------------------------------------------------------------ permissions -- */
 
-test('the only Android permission requested is usage access', () => {
-  assert.deepEqual(app.android.permissions, ['android.permission.PACKAGE_USAGE_STATS']);
+test('the only Android permissions declared are usage access and P4.3 opt-in local notifications', () => {
+  assert.deepEqual(app.android.permissions, [
+    'android.permission.PACKAGE_USAGE_STATS',
+    'android.permission.POST_NOTIFICATIONS',
+  ]);
 });
 
 test('advertising id, contacts, location, mic, camera, SMS and phone state are blocked', () => {
@@ -64,10 +67,9 @@ test('every declared permission is documented, and nothing is declared before it
   for (const permission of app.android.permissions) {
     assert.ok(permissionsDoc.includes(permission), `${permission} must be explained in docs/ANDROID_PERMISSIONS.md`);
   }
-  // Notifications are P4, OAuth/INTERNET is P5: neither is in the manifest yet.
-  assert.ok(!app.android.permissions.includes('android.permission.POST_NOTIFICATIONS'));
+  // P4.3 ships opt-in local notifications (POST_NOTIFICATIONS); OAuth/INTERNET remains P5 and must stay absent.
+  assert.ok(app.android.permissions.includes('android.permission.POST_NOTIFICATIONS'));
   assert.ok(!app.android.permissions.includes('android.permission.INTERNET'));
-  assert.ok(permissionsDoc.includes('POST_NOTIFICATIONS'), 'the planned notification permission must still be documented');
 });
 
 test('boot sync is documented as needing no permission of its own', () => {
@@ -102,7 +104,8 @@ test('dark is the default, and telemetry is off as configuration, not as a promi
 test('the bundle id is stable, and the app targets phones only', () => {
   assert.equal(app.ios.supportsTablet, false);
   assert.equal(app.orientation, 'portrait');
-  assert.equal(app.version, '0.2.0');
+  assert.equal(app.version, '0.3.0');
+  assert.equal(app.android.versionCode, 5);
 });
 
 /* -------------------------------------------------------------------- EAS -- */

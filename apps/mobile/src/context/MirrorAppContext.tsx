@@ -5,9 +5,11 @@ import type {
   SessionRow,
   StoreResetAudit,
   StoreResetReason,
+  WeeklyReportPrefs,
 } from '@mirror/store';
 import {
   formatDurationShort,
+  type BudgetDayForegroundInput,
   type BudgetDefinition,
   type BudgetsEvaluationSummary,
   type CuriositySplit,
@@ -16,6 +18,8 @@ import {
   type DiscoveryJourneyResult,
   type FlaggedAppDiscrepancy,
   type FocusWindowsResult,
+  type GoalDefinition,
+  type GoalsEvaluationSummary,
   type InterestEvolutionResult,
   type OrphanDiagnosticSummary,
   type RabbitHoleResult,
@@ -24,6 +28,7 @@ import {
   type ScoredSession,
   type TracedAppInterval,
   type ValidationResult,
+  type WeeklyReportResult,
   type WhatIfResult,
   type WhatIfScenarioId,
 } from '@mirror/core-analytics';
@@ -31,11 +36,16 @@ import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
 
 export type {
+  BudgetDayForegroundInput,
   BudgetDefinition,
   BudgetsEvaluationSummary,
   DayTotalsSource,
   FlaggedAppDiscrepancy,
+  GoalDefinition,
+  GoalsEvaluationSummary,
   SafeInsets,
+  WeeklyReportPrefs,
+  WeeklyReportResult,
   WhatIfScenarioId,
 };
 export type TabKey = 'home' | 'insights' | 'journey' | 'sessions' | 'you';
@@ -65,6 +75,14 @@ export type BudgetCandidateApp = {
 export type SaveBudgetResult =
   | { ok: true; value: BudgetDefinition }
   | { ok: false; errors: string[] };
+
+export type SaveGoalResult =
+  | { ok: true; value: GoalDefinition }
+  | { ok: false; errors: string[] };
+
+export type UpdateReminderPrefsResult =
+  | { ok: true; prefs: WeeklyReportPrefs }
+  | { ok: false; reason: 'permission_denied' | 'invalid'; prefs: WeeklyReportPrefs };
 
 export type SingleDayRow = {
   app: string;
@@ -276,8 +294,24 @@ export type MirrorAppContextValue = {
   budgets?: BudgetDefinition[];
   budgetsSummary?: BudgetsEvaluationSummary | null;
   budgetApps?: BudgetCandidateApp[];
+  budgetWeekTotals?: readonly BudgetDayForegroundInput[];
+  budgetRecordedDays?: readonly string[];
   saveBudget?: (budget: BudgetDefinition) => Promise<SaveBudgetResult>;
   deleteBudget?: (id: string) => Promise<boolean>;
+
+  /** User-created Tier D calm Weekly Goals & 7-day Weekly Report (P4.3). */
+  goals?: GoalDefinition[];
+  goalsSummary?: GoalsEvaluationSummary | null;
+  saveGoal?: (goal: GoalDefinition) => Promise<SaveGoalResult>;
+  deleteGoal?: (id: string) => Promise<boolean>;
+  weeklyReport?: WeeklyReportResult | null;
+  showWeeklyReport?: boolean;
+  setShowWeeklyReport?: React.Dispatch<React.SetStateAction<boolean>>;
+  weeklyReportPrefs?: WeeklyReportPrefs;
+  updateWeeklyReportPrefs?: (
+    patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,
+  ) => Promise<UpdateReminderPrefsResult>;
+  openNotificationSettings?: () => void;
 };
 
 export const MirrorAppContext = React.createContext<MirrorAppContextValue | null>(null);

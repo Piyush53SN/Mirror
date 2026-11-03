@@ -1471,6 +1471,7 @@ test('budgets, goals, and weekly prefs are XChaCha20-Poly1305 encrypted at rest,
     assert.equal(bundle.goals.length, 1);
     assert.equal(bundle.goals[0].title, 'MRRCANARY-goal-calm-evenings');
     assert.equal(bundle.weeklyReportPrefs.reminderEnabled, false);
+    assert.equal(bundle.weeklyReportPrefs.budgetNoteEnabled, false);
     assert.equal(bundle.weeklyReportPrefs.reminderWeekday, 1);
     assert.equal(bundle.weeklyReportPrefs.reminderHourLocal, 20);
 
@@ -1508,6 +1509,7 @@ test('budgets, goals, and weekly prefs are XChaCha20-Poly1305 encrypted at rest,
     assert.deepEqual(await s.goals(), []);
     const wipedPrefs = await s.weeklyReportPrefs();
     assert.equal(wipedPrefs.reminderEnabled, false);
+    assert.equal(wipedPrefs.budgetNoteEnabled, false);
     assert.equal(wipedPrefs.updatedAtMs, 0);
 
     const wipedDbText = readFileSync(file).toString('utf8');

@@ -17,6 +17,7 @@ import {
   type SessionRepairSnapshot,
   type StoreResetAudit,
   type StoreResetReason,
+  type WeeklyReportPrefs,
 } from '@mirror/store';
 import {
   DEFAULT_MAX_INTERVAL_MS,
@@ -26,14 +27,22 @@ import {
   collectUsage,
   computeDayForegroundTotals,
   computeDayForegroundTotalsFromStoredEvents,
+  computeWeeklyReport,
+  dayStartMs as coreDayStartMs,
   describeGapSummary,
+  evaluateBudgetExceededNotes,
+  evaluateBudgets,
+  evaluateWeeklyReminder,
+  isInQuietHoursLocal,
   resolveDayForegroundTotals,
   summarizeUsageStatsBucketsForDay,
   traceAppForegroundIntervals,
   validateDailyTotals,
 } from '@mirror/core-analytics';
 import type {
+  BudgetDayForegroundInput,
   BudgetDefinition,
+  GoalDefinition,
   OsTotal,
   RawUsageBucketDiagnostic,
   ResolvedDayForegroundTotals,
@@ -97,6 +106,20 @@ export type MirrorRuntime = {
   saveBudget(budget: BudgetDefinition): Promise<void>;
   /** Delete a soft Attention Budget by id. */
   removeBudget(id: string): Promise<boolean>;
+  /** Load all user-created calm Weekly Goals (decrypted from `goals`). */
+  listGoals(): Promise<GoalDefinition[]>;
+  /** Insert or update a Weekly Goal (sealed with XChaCha20-Poly1305). */
+  saveGoal(goal: GoalDefinition): Promise<void>;
+  /** Delete a Weekly Goal by id. */
+  removeGoal(id: string): Promise<boolean>;
+  /** Read local opt-in reminder preferences (`reminderEnabled` & `budgetNoteEnabled` off by default). */
+  getWeeklyReportPrefs(): Promise<WeeklyReportPrefs>;
+  /** Update local opt-in reminder preferences (sealed in `sealed_preferences`). */
+  updateWeeklyReportPrefs(
+    patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,
+  ): Promise<WeeklyReportPrefs>;
+  /** Evaluate & post any due opt-in local reminders outside quiet hours (never requests permission). */
+  syncLocalReminders(now?: number): Promise<void>;
   /** Wipe all stored data, log when and why, and record a plaintext reset marker */
   resetStore(options: {
     reason: StoreResetReason;
@@ -493,6 +516,151 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       removeBudget: async (id: string) => {
         return store.deleteBudget(id);
+      },
+      listGoals: async () => {
+        return store.goals();
+      },
+      saveGoal: async (goal: GoalDefinition) => {
+        await store.putGoal(goal);
+      },
+      removeGoal: async (id: string) => {
+        return store.deleteGoal(id);
+      },
+      getWeeklyReportPrefs: async () => {
+        return store.weeklyReportPrefs();
+      },
+      updateWeeklyReportPrefs: async (patch) => {
+        return store.setWeeklyReportPrefs(patch);
+      },
+      syncLocalReminders: async (now = Date.now()) => {
+        try {
+          const prefs = await store.weeklyReportPrefs();
+          if (!prefs.reminderEnabled && !prefs.budgetNoteEnabled) return;
+          if (!usage.areNotificationsEnabled()) return;
+          const utcOffsetMinutes = offsetNow();
+          if (isInQuietHoursLocal(now, utcOffsetMinutes)) return;
+
+          const ignorePackages = await resolveIgnoredPackages();
+          const todayDay = localDayKey(now, utcOffsetMinutes);
+          const todayStart = coreDayStartMs(todayDay, utcOffsetMinutes);
+          const weekDays: string[] = [];
+          for (let i = 0; i < 7; i += 1) {
+            weekDays.push(localDayKey(todayStart - i * 86_400_000 + 12 * 3_600_000, utcOffsetMinutes));
+          }
+
+          const rowCounts = await store.dayRowCounts(utcOffsetMinutes).catch(() => []);
+          const earliestDay = rowCounts.length > 0 ? rowCounts[0]!.day : todayDay;
+          const recordedSet = new Set<string>(rowCounts.map((r) => r.day));
+          recordedSet.add(todayDay);
+
+          const dayTotals: BudgetDayForegroundInput[] = [];
+          for (const d of weekDays) {
+            if (d < earliestDay) continue;
+            const dFrom = coreDayStartMs(d, utcOffsetMinutes);
+            const dTo = dFrom + 86_400_000;
+            if (Math.min(dTo, now) <= dFrom) continue;
+            const resolved = singleton
+              ? await singleton.osTotalsWithSource({ fromMs: dFrom, toMs: dTo })
+              : { source: 'stored_events' as const, totals: [] };
+            dayTotals.push({
+              day: d,
+              source: resolved.source,
+              totals: resolved.totals.map((r) => ({ app: r.packageName, totalMs: r.totalMs })),
+            });
+          }
+
+          const delivery = await store.reminderDeliveryState();
+          let nextWeeklySlot = delivery.lastWeeklySlot;
+          const nextBudgetKeys = [...delivery.sentBudgetKeys];
+          let changed = false;
+
+          if (prefs.reminderEnabled) {
+            const weekFrom = todayStart - 6 * 86_400_000;
+            const sessions = await store
+              .sessions({ fromMs: weekFrom, toMs: todayStart + 86_400_000 })
+              .catch(() => []);
+            const report = computeWeeklyReport({
+              endDay: todayDay,
+              dayTotals,
+              sessions: sessions.map((s) => ({
+                id: s.id,
+                app: s.app,
+                startMs: s.start_ms,
+                endMs: s.end_ms,
+              })),
+              recordedDays: [...recordedSet],
+              historyStartDay: earliestDay,
+              utcOffsetMinutes,
+              nowMs: now,
+              ignorePackages,
+            });
+            const decision = evaluateWeeklyReminder({
+              prefs,
+              report,
+              nowMs: now,
+              utcOffsetMinutes,
+              lastSentSlot: delivery.lastWeeklySlot,
+            });
+            if (decision.shouldPost) {
+              const posted = usage.postLocalNotification(
+                decision.notificationId,
+                decision.title,
+                decision.body,
+              );
+              if (posted) {
+                nextWeeklySlot = decision.slotKey;
+                changed = true;
+              }
+            }
+          }
+
+          if (prefs.budgetNoteEnabled) {
+            const budgets = await store.budgets().catch(() => []);
+            if (budgets.length > 0) {
+              const summary = evaluateBudgets({
+                budgets,
+                referenceDay: todayDay,
+                dayTotals,
+                recordedDays: [...recordedSet],
+                historyStartDay: earliestDay,
+                isSelectedToday: true,
+                utcOffsetMinutes,
+                nowMs: now,
+                ignorePackages,
+              });
+              const budgetDecision = evaluateBudgetExceededNotes({
+                prefs,
+                summary,
+                nowMs: now,
+                utcOffsetMinutes,
+                sentKeys: nextBudgetKeys,
+              });
+              for (const note of budgetDecision.notes) {
+                const posted = usage.postLocalNotification(
+                  note.notificationId,
+                  note.title,
+                  note.body,
+                );
+                if (posted) {
+                  nextBudgetKeys.push(note.dedupeKey);
+                  changed = true;
+                }
+              }
+            }
+          }
+
+          if (changed) {
+            await store.setReminderDeliveryState(
+              {
+                lastWeeklySlot: nextWeeklySlot,
+                sentBudgetKeys: nextBudgetKeys,
+              },
+              now,
+            );
+          }
+        } catch (err) {
+          console.info('[MirrorReminders]', err instanceof Error ? err.message : String(err));
+        }
       },
       resetStore: async ({ reason, previousHistoryStartDay, detail, now = Date.now() }) => {
         const day = localDayKey(now, offsetNow());

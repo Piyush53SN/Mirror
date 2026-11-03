@@ -30,8 +30,18 @@ const ROOT = join(HERE, '..', '..');
 export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
 
 /**
- * Permissions a library may legitimately contribute in BOTH debug and release.
- * Each one is here because a specific dependency needs it, not because it is common:
+ * Opt-in permissions declared by Mirror itself in `apps/mobile/app.json` starting in P4.3:
+ *   android.permission.POST_NOTIFICATIONS — P4.3 opt-in local weekly reminder & gentle
+ *     budget note: strictly off by default, runtime dialog requested ONLY after the user
+ *     turns on a reminder toggle, quiet-hours aware (23:00–05:00), neutral copy, zero
+ *     push servers and no internet permission.
+ */
+export const OPT_IN_APP_PERMISSIONS = ['android.permission.POST_NOTIFICATIONS'];
+
+/**
+ * Permissions a library (or Mirror's P4.3 opt-in local reminder) may legitimately
+ * contribute in BOTH debug and release.
+ * Each one is here because a specific dependency or reviewed opt-in feature needs it:
  *   ACCESS_NETWORK_STATE — contributed by `androidx.work:work-runtime:2.9.1` (pulled in by
  *     `expo-background-task@58.0.11`). `BackgroundTaskScheduler.kt:103` hardcodes
  *     `Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()`, causing
@@ -40,8 +50,8 @@ export const REQUIRED_PERMISSIONS = ['android.permission.PACKAGE_USAGE_STATS'];
  *     Read-only local connectivity boolean; grants no `AID_INET` GID and zero socket capability.
  *   WAKE_LOCK, RECEIVE_BOOT_COMPLETED, FOREGROUND_SERVICE — WorkManager
  *   VIBRATE, USE_BIOMETRIC, USE_FINGERPRINT — expo-haptics / local auth, P4
- *   (POST_NOTIFICATIONS is intentionally withheld until the P4.3 opt-in reminder
- *     ships off by default, quiet-hours aware, with no guilt copy or streaks.)
+ *   android.permission.POST_NOTIFICATIONS — P4.3 opt-in local reminder & gentle budget note
+ *     (off by default, requested only when enabled by user, quiet-hours aware, zero network)
  *   CHECK_LICENSE — Play licensing (Expo default)
  *   DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION — AndroidX (work, core) generates a
  *     per-package permission for RECEIVER_NOT_EXPORTED dynamic receivers, required
@@ -56,6 +66,7 @@ export const ALLOWED_FROM_LIBRARIES = [
   'android.permission.VIBRATE',
   'android.permission.USE_BIOMETRIC',
   'android.permission.USE_FINGERPRINT',
+  'android.permission.POST_NOTIFICATIONS',
   'com.android.vending.CHECK_LICENSE',
   'dev.mirror.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION',
 ];

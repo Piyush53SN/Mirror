@@ -24,6 +24,7 @@ type Runtime = {
   store: MirrorStore;
   collectNow?: (now?: number) => ReturnType<typeof collectUsage>;
   ingestRecent?: (now?: number) => ReturnType<typeof ingestRecentDays>;
+  syncLocalReminders?: (now?: number) => Promise<void>;
 };
 
 let runtime: Runtime | null = null;
@@ -63,6 +64,9 @@ export function defineUsageTask(): void {
       } else {
         const utcOffsetMinutes = -new Date().getTimezoneOffset();
         await ingestRecentDays(runtime.store, Date.now(), utcOffsetMinutes);
+      }
+      if (runtime.syncLocalReminders) {
+        await runtime.syncLocalReminders(Date.now()).catch(() => {});
       }
       return BackgroundTask.BackgroundTaskResult.Success;
     } catch {

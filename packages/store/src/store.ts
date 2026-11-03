@@ -33,6 +33,7 @@ import type {
   KeyIntegrityResult,
   MirrorExportBundle,
   RandomBytes,
+  ReminderDeliveryState,
   RollupRecord,
   SessionRepairSnapshot,
   SessionRow,
@@ -52,11 +53,13 @@ import type {
 const DEFAULT_RETENTION_DAYS = 180;
 const DAY_MS = 86_400_000;
 const WEEKLY_REPORT_PREFS_KEY = 'weekly_report';
+const REMINDER_DELIVERY_KEY = 'reminder_delivery_v1';
 
 export const DEFAULT_WEEKLY_REPORT_PREFS: Readonly<WeeklyReportPrefs> = Object.freeze({
   reminderEnabled: false,
   reminderWeekday: 0,
   reminderHourLocal: 19,
+  budgetNoteEnabled: false,
   updatedAtMs: 0,
 });
 
@@ -1562,6 +1565,7 @@ export class MirrorStore {
       reminderEnabled: Boolean(payload.reminderEnabled),
       reminderWeekday: weekday,
       reminderHourLocal: hour,
+      budgetNoteEnabled: Boolean(payload.budgetNoteEnabled),
       updatedAtMs: Number(rows[0]!.updated_at),
     };
   }
@@ -1581,11 +1585,16 @@ export class MirrorStore {
     }
     const nextEnabled =
       patch.reminderEnabled !== undefined ? Boolean(patch.reminderEnabled) : current.reminderEnabled;
+    const nextBudgetNoteEnabled =
+      patch.budgetNoteEnabled !== undefined
+        ? Boolean(patch.budgetNoteEnabled)
+        : Boolean(current.budgetNoteEnabled);
 
     const next: WeeklyReportPrefs = {
       reminderEnabled: nextEnabled,
       reminderWeekday: nextWeekday as WeeklyReportPrefs['reminderWeekday'],
       reminderHourLocal: nextHour,
+      budgetNoteEnabled: nextBudgetNoteEnabled,
       updatedAtMs: Math.max(0, Math.round(updatedAtMs)),
     };
 
@@ -1599,6 +1608,58 @@ export class MirrorStore {
             reminderEnabled: next.reminderEnabled,
             reminderWeekday: next.reminderWeekday,
             reminderHourLocal: next.reminderHourLocal,
+            budgetNoteEnabled: next.budgetNoteEnabled,
+          },
+          this.derived(),
+          this.keyId,
+          this.random,
+        ),
+      ],
+    );
+    return next;
+  }
+
+  async reminderDeliveryState(): Promise<ReminderDeliveryState> {
+    const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
+      `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
+      [REMINDER_DELIVERY_KEY],
+    );
+    if (rows.length === 0) {
+      return { lastWeeklySlot: null, sentBudgetKeys: [], updatedAtMs: 0 };
+    }
+    const payload = open<Partial<ReminderDeliveryState>>(rows[0]!.payload, this.derived(), this.keyId);
+    const keys = Array.isArray(payload.sentBudgetKeys)
+      ? payload.sentBudgetKeys.filter((x): x is string => typeof x === 'string').slice(-64)
+      : [];
+    return {
+      lastWeeklySlot: typeof payload.lastWeeklySlot === 'string' ? payload.lastWeeklySlot : null,
+      sentBudgetKeys: keys,
+      updatedAtMs: Number(rows[0]!.updated_at),
+    };
+  }
+
+  async setReminderDeliveryState(
+    patch: Partial<Omit<ReminderDeliveryState, 'updatedAtMs'>>,
+    updatedAtMs = this.clock(),
+  ): Promise<ReminderDeliveryState> {
+    const current = await this.reminderDeliveryState();
+    const lastWeeklySlot =
+      patch.lastWeeklySlot !== undefined ? patch.lastWeeklySlot : current.lastWeeklySlot;
+    const sentBudgetKeys = (patch.sentBudgetKeys ?? current.sentBudgetKeys).slice(-64);
+    const next: ReminderDeliveryState = {
+      lastWeeklySlot,
+      sentBudgetKeys,
+      updatedAtMs: Math.max(0, Math.round(updatedAtMs)),
+    };
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [
+        REMINDER_DELIVERY_KEY,
+        next.updatedAtMs,
+        seal(
+          {
+            lastWeeklySlot: next.lastWeeklySlot,
+            sentBudgetKeys: next.sentBudgetKeys,
           },
           this.derived(),
           this.keyId,

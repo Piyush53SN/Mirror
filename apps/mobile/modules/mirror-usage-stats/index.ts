@@ -57,6 +57,12 @@ export type MirrorUsageStatsModule = {
   getWindowInsets?(): NativeWindowInsets;
   /** Opens Android's Storage Access Framework save dialog (ACTION_CREATE_DOCUMENT) and writes UTF-8 JSON. */
   saveExportJson?(fileName: string, content: string): Promise<boolean>;
+  /** True when Android notifications are enabled (including POST_NOTIFICATIONS on Android 13+). */
+  areNotificationsEnabled?(): boolean;
+  /** Opens Android's app notification settings screen for Mirror. */
+  openNotificationSettings?(): boolean;
+  /** Posts a calm, silent local notification when opt-in reminders are enabled. */
+  postLocalNotification?(notificationId: number, title: string, body: string): boolean;
 };
 
 let cached: MirrorUsageStatsModule | null | undefined;

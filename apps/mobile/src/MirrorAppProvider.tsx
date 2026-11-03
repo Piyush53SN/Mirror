@@ -2,12 +2,14 @@
 import * as React from 'react';
 import { AppState, Share } from 'react-native';
 import {
+  DEFAULT_WEEKLY_REPORT_PREFS,
   encryptExportBundle,
   type DayStoreRowCounts,
   type SessionRepairSnapshot,
   type SessionRow,
   type StoreResetAudit,
   type StoreResetReason,
+  type WeeklyReportPrefs,
 } from '@mirror/store';
 import type {
   BudgetDayForegroundInput,
@@ -19,6 +21,8 @@ import type {
   DiscoveryJourneyResult,
   FlaggedAppDiscrepancy,
   FocusWindowsResult,
+  GoalDefinition,
+  GoalsEvaluationSummary,
   InterestEvolutionResult,
   OrphanDiagnosticSummary,
   RabbitHoleResult,
@@ -26,8 +30,10 @@ import type {
   Score,
   ScoreGap,
   ScoredSession,
+  StoredForegroundEventInput,
   TracedAppInterval,
   ValidationResult,
+  WeeklyReportResult,
   WhatIfResult,
 } from '@mirror/core-analytics';
 import {
@@ -39,10 +45,12 @@ import {
   computeFocusWindows,
   computeInterestEvolution,
   computeRabbitHoles,
+  computeWeeklyReport,
   computeWhatIf,
   curiositySplit,
   evaluateAppOsDiscrepancies,
   evaluateBudgets,
+  evaluateGoals,
   getTopInvalidPackages,
   isExcludedApp,
   scoreIqs,
@@ -50,6 +58,7 @@ import {
   sumSittingSpanMs,
   summarizeOrphanDrops,
   validateBudgetDefinition,
+  validateGoalDefinition,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
 import { osRandom } from './storage/keys';
@@ -60,6 +69,7 @@ import {
   unregisterUsageTask,
 } from './collector/background';
 import { getCachedLabel, resolveAppLabels } from './collector/appLabels';
+import { requestOptInNotificationPermission } from './collector/notifications';
 import { fallbackSafeInsets, normalizeSafeInsets, type SafeInsets } from './components/useSafeInsets';
 import {
   MirrorAppContext,
@@ -77,9 +87,11 @@ import {
   type MirrorAppContextValue,
   type PermissionState,
   type SaveBudgetResult,
+  type SaveGoalResult,
   type ScaledSessionRow,
   type SingleDayRow,
   type TabKey,
+  type UpdateReminderPrefsResult,
 } from './context/MirrorAppContext';
 
 export function MirrorAppProvider({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -146,6 +158,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [budgets, setBudgets] = React.useState<BudgetDefinition[]>([]);
   const [budgetWeekOtherDays, setBudgetWeekOtherDays] = React.useState<BudgetDayForegroundInput[]>([]);
   const [budgetHistoryStartDay, setBudgetHistoryStartDay] = React.useState<string | null>(null);
+  const [goals, setGoals] = React.useState<GoalDefinition[]>([]);
+  const [weeklyReportPrefs, setWeeklyReportPrefs] = React.useState<WeeklyReportPrefs>(
+    () => ({ ...DEFAULT_WEEKLY_REPORT_PREFS }),
+  );
+  const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
+  const [histScoredSessions, setHistScoredSessions] = React.useState<ScoredSession[]>([]);
+  const [histStoredEvents, setHistStoredEvents] = React.useState<StoredForegroundEventInput[]>([]);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
   const hasLoadedOnceRef = React.useRef(false);
@@ -173,21 +192,30 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       const runtime = await createRuntime();
       runtimeRef.current = runtime;
       try {
-        const [resetAudit, storedBudgets] = await Promise.all([
+        const [resetAudit, storedBudgets, storedGoals, storedPrefs] = await Promise.all([
           runtime.lastReset(),
           runtime.listBudgets(),
+          runtime.listGoals(),
+          runtime.getWeeklyReportPrefs(),
         ]);
         if (isCurrent()) {
           setLastReset(resetAudit);
           setBudgets(storedBudgets);
+          setGoals(storedGoals);
+          setWeeklyReportPrefs(storedPrefs);
         }
-        const budgetPkgs = [...new Set(storedBudgets.flatMap((b) => [...b.packages]))];
-        if (budgetPkgs.length > 0) {
-          const resolvedBudgetLabels = await resolveAppLabels(budgetPkgs).catch(
+        const savedPkgs = [
+          ...new Set([
+            ...storedBudgets.flatMap((b) => [...b.packages]),
+            ...storedGoals.flatMap((g) => [...(g.packages ?? [])]),
+          ]),
+        ];
+        if (savedPkgs.length > 0) {
+          const resolvedSavedLabels = await resolveAppLabels(savedPkgs).catch(
             () => ({}) as Record<string, string>,
           );
-          if (isCurrent() && Object.keys(resolvedBudgetLabels).length > 0) {
-            setLabels((prev) => ({ ...prev, ...resolvedBudgetLabels }));
+          if (isCurrent() && Object.keys(resolvedSavedLabels).length > 0) {
+            setLabels((prev) => ({ ...prev, ...resolvedSavedLabels }));
           }
         }
       } catch {}
@@ -195,6 +223,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         store: runtime.store,
         collectNow: runtime.collectNow,
         ingestRecent: runtime.ingestRecent,
+        syncLocalReminders: runtime.syncLocalReminders,
       });
       defineUsageTask();
 
@@ -267,18 +296,23 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         }
 
         await runtime.ingestRecent();
+        runtime.syncLocalReminders().catch(() => {});
         if (!isCurrent()) return;
       }
 
-      // Refresh reset audit & budgets in case runtime.collectNow() recovered from a Keystore invalidation
+      // Refresh reset audit, budgets, goals, & prefs in case runtime.collectNow() recovered from a Keystore invalidation
       try {
-        const [resetAudit, refreshedBudgets] = await Promise.all([
+        const [resetAudit, refreshedBudgets, refreshedGoals, refreshedPrefs] = await Promise.all([
           runtime.lastReset(),
           runtime.listBudgets(),
+          runtime.listGoals(),
+          runtime.getWeeklyReportPrefs(),
         ]);
         if (isCurrent()) {
           setLastReset(resetAudit);
           setBudgets(refreshedBudgets);
+          setGoals(refreshedGoals);
+          setWeeklyReportPrefs(refreshedPrefs);
         }
       } catch {}
 
@@ -406,10 +440,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         );
         setDayReady(true);
 
-        // Resolve day-clipped foreground totals for the preceding 6 days in the 7-day
-        // budget window (`targetDay - 6 .. targetDay - 1`) using the exact same
-        // `osTotalsWithSource` + `isExcludedApp` pipeline as `Home`. Days before
-        // `effectiveHistoryStart` remain unrecorded so partial weeks are never extrapolated.
+        // Resolve day-clipped foreground totals for the preceding 13 days in the 14-day
+        // window (`targetDay - 13 .. targetDay - 1`) using the exact same `osTotalsWithSource`
+        // + `isExcludedApp` pipeline as `Home`. Days before `effectiveHistoryStart` remain
+        // unrecorded so partial weeks are never extrapolated, while 14+ recorded days unlock
+        // Weekly Report prior-week comparison.
         try {
           const effectiveHistoryStart =
             earliestStoreDayFromCounts ??
@@ -417,7 +452,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           if (effectiveHistoryStart && isCurrent()) {
             setBudgetHistoryStartDay(effectiveHistoryStart);
           }
-          const priorDays = lastNDays(7, targetDay)
+          const priorDays = lastNDays(14, targetDay)
             .slice(1)
             .filter((d) => effectiveHistoryStart !== null && d >= effectiveHistoryStart);
           const priorEntries = await Promise.all(
@@ -516,6 +551,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             startMs: s.start_ms,
             endMs: s.end_ms,
           }));
+          setHistScoredSessions(histScored);
+          setHistStoredEvents(histEvents);
           const utcOffsetMinutes = -new Date().getTimezoneOffset();
           const evalNowMs = Math.min(Date.now(), dayTo);
           setEvolution(
@@ -567,6 +604,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             setDiscovery(null);
             setRabbitHole(null);
             setFocusWindows(null);
+            setHistScoredSessions([]);
+            setHistStoredEvents([]);
           }
         }
 
@@ -896,6 +935,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           startMs: x.start_ms,
           endMs: x.end_ms,
         }));
+        setHistScoredSessions(histScored);
+        setHistStoredEvents(histEvents);
         setDiscovery(
           computeDiscoveryJourney({
             sessions: histScored,
@@ -1041,6 +1082,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setBudgets([]);
           setBudgetWeekOtherDays([]);
           setBudgetHistoryStartDay(null);
+          setGoals([]);
+          setWeeklyReportPrefs({ ...DEFAULT_WEEKLY_REPORT_PREFS });
+          setShowWeeklyReport(false);
+          setHistScoredSessions([]);
+          setHistStoredEvents([]);
           setLastCollect(`store reset (${reason})`);
           await checkPermissionAndCollect();
         }
@@ -1167,6 +1213,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setLabels((prev) => ({ ...prev, ...resolvedNew }));
         }
       } catch {}
+      rt.syncLocalReminders().catch(() => {});
       return { ok: true, value: check.value };
     },
     [],
@@ -1181,15 +1228,84 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     return removed;
   }, []);
 
+  const saveGoal = React.useCallback(
+    async (draft: GoalDefinition): Promise<SaveGoalResult> => {
+      const check = validateGoalDefinition(draft);
+      if (!check.ok) {
+        return { ok: false, errors: check.errors };
+      }
+      const rt = runtimeRef.current ?? (await createRuntime());
+      runtimeRef.current = rt;
+      await rt.saveGoal(check.value);
+      const fresh = await rt.listGoals();
+      setGoals(fresh);
+      if (check.value.packages && check.value.packages.length > 0) {
+        try {
+          const resolvedNew = await resolveAppLabels([...check.value.packages]);
+          if (Object.keys(resolvedNew).length > 0) {
+            setLabels((prev) => ({ ...prev, ...resolvedNew }));
+          }
+        } catch {}
+      }
+      return { ok: true, value: check.value };
+    },
+    [],
+  );
+
+  const deleteGoal = React.useCallback(async (id: string): Promise<boolean> => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    const removed = await rt.removeGoal(id);
+    const fresh = await rt.listGoals();
+    setGoals(fresh);
+    return removed;
+  }, []);
+
+  const updateWeeklyReportPrefs = React.useCallback(
+    async (
+      patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,
+    ): Promise<UpdateReminderPrefsResult> => {
+      const rt = runtimeRef.current ?? (await createRuntime());
+      runtimeRef.current = rt;
+      const currentPrefs = await rt.getWeeklyReportPrefs().catch(() => weeklyReportPrefs);
+      const enablingWeekly = patch.reminderEnabled === true && !currentPrefs.reminderEnabled;
+      const enablingBudgetNote =
+        patch.budgetNoteEnabled === true && !Boolean(currentPrefs.budgetNoteEnabled);
+      if (enablingWeekly || enablingBudgetNote) {
+        const perm = await requestOptInNotificationPermission(rt.usage());
+        if (perm !== 'granted') {
+          return { ok: false, reason: 'permission_denied', prefs: currentPrefs };
+        }
+      }
+      try {
+        const updated = await rt.updateWeeklyReportPrefs(patch);
+        setWeeklyReportPrefs(updated);
+        if (updated.reminderEnabled || updated.budgetNoteEnabled) {
+          rt.syncLocalReminders().catch(() => {});
+        }
+        return { ok: true, prefs: updated };
+      } catch {
+        return { ok: false, reason: 'invalid', prefs: currentPrefs };
+      }
+    },
+    [weeklyReportPrefs],
+  );
+
+  const openNotificationSettings = React.useCallback(() => {
+    try {
+      runtimeRef.current?.usage().openNotificationSettings();
+    } catch {}
+  }, []);
+
   const effectiveBudgetHistoryStart =
     budgetHistoryStartDay ??
     focusWindows?.historyStartDay ??
     evolution?.historyStartDay ??
     (dailyTotals.length > 0 ? selectedDay : null);
 
-  const budgetsSummary: BudgetsEvaluationSummary = React.useMemo(() => {
+  const budgetWeekTotals: BudgetDayForegroundInput[] = React.useMemo(() => {
     const priorWindowDays = new Set(lastNDays(7, selectedDay).slice(1));
-    const combinedDayTotals: BudgetDayForegroundInput[] = [
+    return [
       {
         day: selectedDay,
         source: dailyTotalsSource,
@@ -1197,20 +1313,24 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       },
       ...budgetWeekOtherDays.filter((entry) => priorWindowDays.has(entry.day)),
     ];
+  }, [selectedDay, dailyTotalsSource, dailyTotals, budgetWeekOtherDays]);
 
+  const budgetRecordedDays: string[] = React.useMemo(() => {
     const weekWindow = lastNDays(7, selectedDay);
-    const recordedDays = weekWindow.filter((d) => {
+    return weekWindow.filter((d) => {
       if (d > todayStr) return false;
       if (d === selectedDay && dailyTotals.length > 0) return true;
       if (budgetWeekOtherDays.some((entry) => entry.day === d)) return true;
       return effectiveBudgetHistoryStart !== null && d >= effectiveBudgetHistoryStart;
     });
+  }, [selectedDay, todayStr, dailyTotals, budgetWeekOtherDays, effectiveBudgetHistoryStart]);
 
+  const budgetsSummary: BudgetsEvaluationSummary = React.useMemo(() => {
     return evaluateBudgets({
       budgets,
       referenceDay: selectedDay,
-      dayTotals: combinedDayTotals,
-      recordedDays,
+      dayTotals: budgetWeekTotals,
+      recordedDays: budgetRecordedDays,
       historyStartDay: effectiveBudgetHistoryStart,
       isSelectedToday: selectedDay === todayStr,
       utcOffsetMinutes: -new Date().getTimezoneOffset(),
@@ -1221,11 +1341,97 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   }, [
     budgets,
     selectedDay,
-    dailyTotals,
-    dailyTotalsSource,
-    budgetWeekOtherDays,
+    budgetWeekTotals,
+    budgetRecordedDays,
     todayStr,
     effectiveBudgetHistoryStart,
+    launcherPackages,
+    labels,
+  ]);
+
+  const fortnightDayTotals: BudgetDayForegroundInput[] = React.useMemo(() => {
+    const prior14Days = new Set(lastNDays(14, selectedDay).slice(1));
+    return [
+      {
+        day: selectedDay,
+        source: dailyTotalsSource,
+        totals: dailyTotals.map((t) => ({ app: t.app, totalMs: t.totalMs })),
+      },
+      ...budgetWeekOtherDays.filter((entry) => prior14Days.has(entry.day)),
+    ];
+  }, [selectedDay, dailyTotalsSource, dailyTotals, budgetWeekOtherDays]);
+
+  const allDistinctRecordedDays: string[] = React.useMemo(() => {
+    const set = new Set<string>();
+    for (const r of storeDayRowCounts) {
+      if (r.day <= selectedDay) set.add(r.day);
+    }
+    for (const d of budgetRecordedDays) {
+      if (d <= selectedDay) set.add(d);
+    }
+    for (const entry of budgetWeekOtherDays) {
+      if (entry.day <= selectedDay) set.add(entry.day);
+    }
+    return [...set].sort();
+  }, [storeDayRowCounts, budgetRecordedDays, budgetWeekOtherDays, selectedDay]);
+
+  const mergedReportSessions: ScoredSession[] = React.useMemo(() => {
+    const byId = new Map<string, ScoredSession>();
+    for (const s of histScoredSessions) byId.set(s.id, s);
+    for (const s of dayScoredSessions) byId.set(s.id, s);
+    return [...byId.values()];
+  }, [histScoredSessions, dayScoredSessions]);
+
+  const weeklyReport: WeeklyReportResult = React.useMemo(() => {
+    return computeWeeklyReport({
+      endDay: selectedDay,
+      dayTotals: fortnightDayTotals,
+      events: histStoredEvents,
+      sessions: mergedReportSessions,
+      intentLabels,
+      recordedDays: allDistinctRecordedDays,
+      historyStartDay: effectiveBudgetHistoryStart,
+      utcOffsetMinutes: -new Date().getTimezoneOffset(),
+      nowMs: selectedDay === todayStr ? Date.now() : undefined,
+      ignorePackages: launcherPackages,
+      appLabels: labels,
+    });
+  }, [
+    selectedDay,
+    fortnightDayTotals,
+    histStoredEvents,
+    mergedReportSessions,
+    intentLabels,
+    allDistinctRecordedDays,
+    effectiveBudgetHistoryStart,
+    todayStr,
+    launcherPackages,
+    labels,
+  ]);
+
+  const goalsSummary: GoalsEvaluationSummary = React.useMemo(() => {
+    return evaluateGoals({
+      goals,
+      endDay: selectedDay,
+      dayTotals: budgetWeekTotals,
+      events: histStoredEvents,
+      sessions: mergedReportSessions,
+      recordedDays: budgetRecordedDays,
+      historyStartDay: effectiveBudgetHistoryStart,
+      utcOffsetMinutes: -new Date().getTimezoneOffset(),
+      nowMs: selectedDay === todayStr ? Date.now() : undefined,
+      ignorePackages: launcherPackages,
+      appLabels: labels,
+    });
+  }, [
+    goals,
+    selectedDay,
+    budgetWeekTotals,
+    histStoredEvents,
+    mergedReportSessions,
+    budgetRecordedDays,
+    effectiveBudgetHistoryStart,
+    todayStr,
     launcherPackages,
     labels,
   ]);
@@ -1262,10 +1468,15 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         ensurePkg(pkg);
       }
     }
+    for (const g of goals) {
+      for (const pkg of g.packages ?? []) {
+        ensurePkg(pkg);
+      }
+    }
     return [...todayMap.entries()]
       .map(([app, info]) => ({ app, label: info.label, todayMs: info.todayMs }))
       .sort((a, b) => b.todayMs - a.todayMs || a.label.localeCompare(b.label) || a.app.localeCompare(b.app));
-  }, [dailyTotals, budgetWeekOtherDays, sessions, evolution?.rows, budgets, labels, launcherPackages]);
+  }, [dailyTotals, budgetWeekOtherDays, sessions, evolution?.rows, budgets, goals, labels, launcherPackages]);
 
   const copyRawEvents = React.useCallback(async () => {
     try {
@@ -1438,8 +1649,20 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgets,
       budgetsSummary,
       budgetApps,
+      budgetWeekTotals,
+      budgetRecordedDays,
       saveBudget,
       deleteBudget,
+      goals,
+      goalsSummary,
+      saveGoal,
+      deleteGoal,
+      weeklyReport,
+      showWeeklyReport,
+      setShowWeeklyReport,
+      weeklyReportPrefs,
+      updateWeeklyReportPrefs,
+      openNotificationSettings,
     }),
     [
       activeTab,
@@ -1513,8 +1736,19 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgets,
       budgetsSummary,
       budgetApps,
+      budgetWeekTotals,
+      budgetRecordedDays,
       saveBudget,
       deleteBudget,
+      goals,
+      goalsSummary,
+      saveGoal,
+      deleteGoal,
+      weeklyReport,
+      showWeeklyReport,
+      weeklyReportPrefs,
+      updateWeeklyReportPrefs,
+      openNotificationSettings,
     ],
   );
 

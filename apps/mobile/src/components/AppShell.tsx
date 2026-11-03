@@ -4,6 +4,7 @@ import { Backdrop, Callout, Pill, TabBar, Text, Toolbar, rgba, useLiveBlur, useT
 import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
 import { useSafeInsets } from './useSafeInsets';
+import { WeeklyReportSheet } from './WeeklyReportSheet';
 import { WhyScoreSheet } from './WhyScoreSheet';
 
 export function AppShell({
@@ -27,9 +28,12 @@ export function AppShell({
     iqs,
     showWhy,
     setShowWhy,
+    showWeeklyReport = false,
+    setShowWeeklyReport,
   } = useMirrorApp();
   const tabBarBlur = useLiveBlur('tab-bar');
   const insets = useSafeInsets(contextInsets);
+  const anySheetOpen = showWhy || Boolean(showWeeklyReport);
 
   const topInset = insets.top + theme.space(2);
   const horizontalInset = Math.max(theme.space(4), Math.max(insets.left, insets.right) + theme.space(4));
@@ -43,7 +47,7 @@ export function AppShell({
       <StatusBar barStyle={theme.isDark ? 'light-content' : 'dark-content'} />
       <Backdrop theme={theme} />
       <View
-        importantForAccessibility={showWhy ? 'no-hide-descendants' : 'auto'}
+        importantForAccessibility={anySheetOpen ? 'no-hide-descendants' : 'auto'}
         style={{ flex: 1 }}
       >
         <View style={{ paddingTop: topInset, paddingLeft: insets.left, paddingRight: insets.right }}>
@@ -138,6 +142,10 @@ export function AppShell({
         </View>
       </View>
       {iqs ? <WhyScoreSheet open={showWhy} iqs={iqs} onClose={() => setShowWhy(false)} /> : null}
+      <WeeklyReportSheet
+        open={Boolean(showWeeklyReport)}
+        onClose={() => setShowWeeklyReport?.(false)}
+      />
     </View>
   );
 }

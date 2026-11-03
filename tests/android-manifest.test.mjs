@@ -19,6 +19,7 @@ import {
   auditManifest,
   findMergedManifest,
   REQUIRED_PERMISSIONS,
+  OPT_IN_APP_PERMISSIONS,
   FORBIDDEN_PERMISSIONS,
   ALLOWED_FROM_LIBRARIES,
   DEBUG_ONLY_PERMISSIONS,
@@ -128,17 +129,53 @@ test('an unknown permission is a review decision, not a silent pass', () => {
   assert.deepEqual(result.unexpected, ['android.permission.SEND_SMS']);
 });
 
-test('POST_NOTIFICATIONS is withheld from the manifest gate allowlist until the P4.3 opt-in reminder ships', () => {
+test('P4.3 merged-manifest gate allows opt-in POST_NOTIFICATIONS while still forbidding INTERNET in release and NotificationListener', () => {
+  assert.deepEqual(OPT_IN_APP_PERMISSIONS, ['android.permission.POST_NOTIFICATIONS']);
   assert.ok(
-    !ALLOWED_FROM_LIBRARIES.includes('android.permission.POST_NOTIFICATIONS'),
-    'POST_NOTIFICATIONS must not be pre-allowed before the P4.3 reminder ships',
+    ALLOWED_FROM_LIBRARIES.includes('android.permission.POST_NOTIFICATIONS'),
+    'POST_NOTIFICATIONS must be on the P4.3 release allowlist',
   );
-  const result = auditManifest(
-    `<manifest><uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" /><uses-permission android:name="android.permission.POST_NOTIFICATIONS" /></manifest>`,
+  assert.ok(
+    !REQUIRED_PERMISSIONS.includes('android.permission.POST_NOTIFICATIONS'),
+    'POST_NOTIFICATIONS is opt-in and must not fail baseline manifests without it',
+  );
+
+  // Clean P4.3 release manifest with PACKAGE_USAGE_STATS + POST_NOTIFICATIONS + WorkManager passes
+  const p43Release = auditManifest(
+    `<manifest>
+      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+      <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    </manifest>`,
     { variant: 'release' },
   );
-  assert.equal(result.ok, false, 'release manifest must reject POST_NOTIFICATIONS until P4.3 ships');
-  assert.deepEqual(result.unexpected, ['android.permission.POST_NOTIFICATIONS']);
+  assert.equal(p43Release.ok, true, p43Release.problems.join('; '));
+  assert.ok(p43Release.parsed.permissions.includes('android.permission.POST_NOTIFICATIONS'));
+  assert.ok(!p43Release.parsed.permissions.includes('android.permission.INTERNET'));
+
+  // Release manifest with POST_NOTIFICATIONS + INTERNET still fails strictly on INTERNET
+  const withInternet = auditManifest(
+    `<manifest>
+      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+      <uses-permission android:name="android.permission.INTERNET" />
+    </manifest>`,
+    { variant: 'release' },
+  );
+  assert.equal(withInternet.ok, false);
+  assert.ok(withInternet.forbidden.includes('android.permission.INTERNET'));
+
+  // Release manifest with POST_NOTIFICATIONS + BIND_NOTIFICATION_LISTENER_SERVICE still fails strictly
+  const withListener = auditManifest(
+    `<manifest>
+      <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
+      <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+      <uses-permission android:name="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" />
+    </manifest>`,
+    { variant: 'release' },
+  );
+  assert.equal(withListener.ok, false);
+  assert.ok(withListener.forbidden.includes('android.permission.BIND_NOTIFICATION_LISTENER_SERVICE'));
 });
 
 /* ------------------------------------------------------- policy vs config -- */
@@ -149,8 +186,16 @@ test('every permission blocked in app.json is also forbidden by the manifest gat
   }
 });
 
-test('the only declared permission is the one the gate requires', () => {
-  assert.deepEqual([...app.android.permissions], [...REQUIRED_PERMISSIONS]);
+test('declared app.json permissions match required + P4.3 opt-in permissions only', () => {
+  assert.deepEqual([...app.android.permissions], [...REQUIRED_PERMISSIONS, ...OPT_IN_APP_PERMISSIONS]);
+  const mainManifest = readFileSync(
+    join(ROOT, 'apps/mobile/android/app/src/main/AndroidManifest.xml'),
+    'utf8',
+  );
+  const parsedMain = parseManifest(mainManifest);
+  assert.ok(parsedMain.permissions.includes('android.permission.PACKAGE_USAGE_STATS'));
+  assert.ok(parsedMain.permissions.includes('android.permission.POST_NOTIFICATIONS'));
+  assert.ok(!parsedMain.permissions.includes('android.permission.INTERNET'));
 });
 
 test('the library allowlist and debug-only list are disjoint from forbidden permissions', () => {

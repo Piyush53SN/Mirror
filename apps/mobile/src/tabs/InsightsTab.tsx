@@ -23,6 +23,7 @@ import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { AttentionBudgetSection } from '../components/AttentionBudgetSection';
 import { DayPickerStrip } from '../components/DayPickerStrip';
+import { WeeklyGoalsSection } from '../components/WeeklyGoalsSection';
 import {
   formatDuration,
   toDayStr,
@@ -30,11 +31,12 @@ import {
   type CombinableWhatIfScenarioId,
 } from '../context/MirrorAppContext';
 
-type InsightsFilter = 'all' | 'budgets' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
+type InsightsFilter = 'all' | 'budgets' | 'weekly' | 'whatif' | 'iqs' | 'curiosity' | 'depth';
 
 const FILTER_OPTIONS: { id: InsightsFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'budgets', label: 'Budgets' },
+  { id: 'weekly', label: 'Weekly & Goals' },
   { id: 'whatif', label: 'What-if' },
   { id: 'iqs', label: 'Score parts' },
   { id: 'curiosity', label: 'Curiosity vs Habit' },
@@ -112,6 +114,7 @@ export function InsightsTab(): React.ReactElement {
     dailyTotals.length === 0;
 
   const showBudgets = filter === 'all' || filter === 'budgets';
+  const showWeekly = filter === 'all' || filter === 'weekly';
   const showWhatIf = !isEmptyDay && (filter === 'all' || filter === 'whatif');
   const showIqs = !isEmptyDay && (filter === 'all' || filter === 'iqs');
   const showCuriosity = !isEmptyDay && (filter === 'all' || filter === 'curiosity');
@@ -134,7 +137,7 @@ export function InsightsTab(): React.ReactElement {
   return (
     <AppShell
       title="Insights"
-      subtitle={`Budgets · What-if · Score parts · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
+      subtitle={`Budgets · Weekly & Goals · What-if · Score parts · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
       actions={
         <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
           Refresh
@@ -160,6 +163,9 @@ export function InsightsTab(): React.ReactElement {
 
       {/* Soft Attention Budgets — always available so users can create/edit/delete even on quiet days */}
       {showBudgets ? <AttentionBudgetSection /> : null}
+
+      {/* Weekly Report Sheet Trigger, Calm Weekly Goals & Opt-in Local Reminders */}
+      {showWeekly ? <WeeklyGoalsSection /> : null}
 
       {isEmptyDay ? (
         <Surface

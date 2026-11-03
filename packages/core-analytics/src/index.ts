@@ -5,6 +5,7 @@ export * from './focuswindows';
 export * from './goals';
 export * from './ingest';
 export * from './rabbithole';
+export * from './reminders';
 export * from './scoring';
 export * from './sessionize';
 export * from './synthetic';

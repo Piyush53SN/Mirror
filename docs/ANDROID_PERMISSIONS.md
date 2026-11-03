@@ -11,11 +11,12 @@ feature that needs it ships, and requested from the person at the moment they us
 that feature.** Declaring a permission early is not harmful, but *asking* early is
 a dark pattern, so the two dates are different.
 
-## 1. Declared now (P0/P1 / v0.1)
+## 1. Declared now (v0.1 – v0.3 / P4.3)
 
 | Permission | Kind | Declared | Requested | Why |
 | --- | --- | --- | --- | --- |
 | `android.permission.PACKAGE_USAGE_STATS` | Special app access (not a runtime permission) | now | P1, from the primer in J2 → deep-links to **Settings → Special app access → Usage access** | The only Android API that reports which app was in the foreground and for how long. There is no alternative that is not accessibility scraping or screen capture — both forbidden. |
+| `android.permission.POST_NOTIFICATIONS` | Runtime (Android 13+) | P4.3 (`v0.3.0`) | Only when the person turns on `Weekly summary reminder` or `Gentle budget note` on `Insights` — never at launch, never after onboarding | Opt-in local weekly report reminder and optional gentle soft-budget note (both **off by default**, quiet-hours aware `23:00–05:00`, zero network/push). If the person never enables a toggle, Android's permission prompt is never shown. Refusal keeps every feature working. |
 
 `PACKAGE_USAGE_STATS` is an *appop*: the system does not show a dialog. The app
 opens the Settings page, the person flips the switch, and the app re-checks on
