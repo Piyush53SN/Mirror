@@ -16,6 +16,7 @@ import {
   useTheme,
 } from '@mirror/ui';
 import { DEFAULT_WEEKLY_REPORT_PREFS, type WeeklyReportPrefs } from '@mirror/store';
+import { NIGHT_WINDOW, formatWindowLabel } from '@mirror/shared-types';
 import {
   MIUI_BEST_EFFORT_REMINDER_NOTE,
   SHARED_EXCLUDED_PACKAGES,
@@ -70,6 +71,13 @@ const WEEKDAY_OPTIONS: readonly { day: 0 | 1 | 2 | 3 | 4 | 5 | 6; short: string;
   { day: 4, short: 'Thu', spoken: 'Thursday' },
   { day: 5, short: 'Fri', spoken: 'Friday' },
   { day: 6, short: 'Sat', spoken: 'Saturday' },
+];
+
+/** Reminder quiet-hour presets. The first entry is the shared night window (default). */
+const QUIET_HOUR_PRESETS: readonly { startHour: number; endHour: number; id: string }[] = [
+  { startHour: NIGHT_WINDOW.startHour, endHour: NIGHT_WINDOW.endHour, id: 'night' },
+  { startHour: 22, endHour: 7, id: 'late' },
+  { startHour: 0, endHour: 6, id: 'after_midnight' },
 ];
 
 const DAYTIME_HOUR_OPTIONS: readonly { hour: number; label: string }[] = [
@@ -155,6 +163,10 @@ export function WeeklyGoalsSection(): React.ReactElement {
   const [savingGoal, setSavingGoal] = React.useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
   const [reminderNotice, setReminderNotice] = React.useState<string | null>(null);
+  const quietLabel = formatWindowLabel({
+    startHour: prefs.quietHoursStartHour,
+    endHour: prefs.quietHoursEndHour,
+  });
   const [savingPrefs, setSavingPrefs] = React.useState(false);
 
   const labelForPkg = React.useCallback(
@@ -885,7 +897,7 @@ export function WeeklyGoalsSection(): React.ReactElement {
             <SectionHeader
               theme={theme}
               title="Local reminders"
-              caption="permission requested only if you turn a toggle on · quiet hours 23:00 to 05:00"
+              caption={`permission requested only if you turn a toggle on · quiet hours ${quietLabel}`}
             />
           </View>
 
@@ -921,7 +933,7 @@ export function WeeklyGoalsSection(): React.ReactElement {
           {prefs.reminderEnabled ? (
             <View testID="weekly-reminder-schedule" style={{ gap: theme.space(1.5) }}>
               <Text role="micro" tone="muted" theme={theme}>
-                PREFERRED DAY & DAYTIME HOUR (OUTSIDE 23:00 TO 05:00 QUIET HOURS)
+                PREFERRED DAY & DAYTIME HOUR (OUTSIDE {quietLabel.toUpperCase()} QUIET HOURS)
               </Text>
               <View style={{ flexDirection: 'row', gap: theme.space(1), flexWrap: 'wrap' }}>
                 {WEEKDAY_OPTIONS.map((w) => (
@@ -955,6 +967,46 @@ export function WeeklyGoalsSection(): React.ReactElement {
               </View>
             </View>
           ) : null}
+
+          <Divider theme={theme} />
+
+          <View testID="reminder-quiet-hours" style={{ gap: theme.space(1.5) }}>
+            <Text role="label" theme={theme}>
+              Reminder quiet hours
+            </Text>
+            <Text role="micro" tone="muted" theme={theme}>
+              No reminder or note is posted inside this window. Default is the night window {quietLabel}. Your goals and score are not affected.
+            </Text>
+            <View style={{ flexDirection: 'row', gap: theme.space(1), flexWrap: 'wrap' }}>
+              {QUIET_HOUR_PRESETS.map((preset) => {
+                const selected =
+                  prefs.quietHoursStartHour === preset.startHour &&
+                  prefs.quietHoursEndHour === preset.endHour;
+                const presetLabel = formatWindowLabel({
+                  startHour: preset.startHour,
+                  endHour: preset.endHour,
+                });
+                return (
+                  <Pill
+                    key={preset.id}
+                    testID={`quiet-hours-${preset.id}`}
+                    theme={theme}
+                    variant={selected ? 'primary' : 'secondary'}
+                    disabled={savingPrefs}
+                    onPress={() =>
+                      handleUpdatePrefs({
+                        quietHoursStartHour: preset.startHour,
+                        quietHoursEndHour: preset.endHour,
+                      })
+                    }
+                    accessibilityLabel={`Reminder quiet hours ${presetLabel}${selected ? ', selected' : ''}`}
+                  >
+                    {presetLabel}
+                  </Pill>
+                );
+              })}
+            </View>
+          </View>
 
           <Divider theme={theme} />
 

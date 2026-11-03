@@ -21,6 +21,7 @@ import {
 } from './budgets';
 import type { StoredForegroundEventInput } from './evolution';
 import { dayStartMs, localDay, overlapMs } from './ingest';
+import { NIGHT_WINDOW_LABEL } from './nightWindow';
 import { formatDurationShort, lateNightMs, type ScoredSession } from './scoring';
 import { isExcludedApp, type DayTotalsSource } from './usage';
 
@@ -320,8 +321,8 @@ function buildTargetDescription(
   if (goal.kind === 'daily_late_night_max') {
     const t = goal.targetMs ?? 0;
     return t === 0
-      ? '0m foreground time during 23:00–05:00 local'
-      : `Up to ${formatDurationShort(t)} during 23:00–05:00 local`;
+      ? `0m foreground time during ${NIGHT_WINDOW_LABEL} local`
+      : `Up to ${formatDurationShort(t)} during ${NIGHT_WINDOW_LABEL} local`;
   }
   const c = goal.targetCount ?? 0;
   if (goal.packages && goal.packages.length > 0) {

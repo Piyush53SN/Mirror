@@ -28,6 +28,8 @@ import type { DataTier } from '@mirror/shared-types';
 import { SHORT_SESSION_MS } from './sessionize';
 import { isIgnoredSystemApp, isLabelingExcludedApp } from './usage';
 
+import { NIGHT_WINDOW } from './nightWindow';
+
 const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -252,7 +254,13 @@ function overlap(start: number, end: number, from: number, to: number): number {
  * Handles a window that wraps midnight (23 → 5) by walking the local days the
  * session touches. A session spanning two days is counted on both.
  */
-export function lateNightMs(startMs: number, endMs: number, utcOffsetMinutes: number, startHour = 23, endHour = 5): number {
+export function lateNightMs(
+  startMs: number,
+  endMs: number,
+  utcOffsetMinutes: number,
+  startHour: number = NIGHT_WINDOW.startHour,
+  endHour: number = NIGHT_WINDOW.endHour,
+): number {
   const start = Math.max(0, Math.min(startHour, 23));
   const end = Math.max(0, Math.min(endHour, 24));
   const offset = utcOffsetMinutes * MINUTE_MS;

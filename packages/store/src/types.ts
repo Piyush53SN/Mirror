@@ -226,6 +226,12 @@ export type WeeklyReportPrefs = {
   reminderHourLocal: number;
   /** Optional separate toggle (strictly off by default) for a gentle local note when a budget is exceeded. */
   budgetNoteEnabled?: boolean;
+  /**
+   * Reminder quiet hours (local). Defaults to the shared night window `23:00–05:00`.
+   * Notifications are never posted inside this window. Score and goal definitions do not use it.
+   */
+  quietHoursStartHour: number;
+  quietHoursEndHour: number;
   updatedAtMs: number;
 };
 

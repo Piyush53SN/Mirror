@@ -5,3 +5,4 @@ export * from './preferences';
 export * from './consent';
 export * from './retention';
 export * from './connection';
+export * from './nightWindow';

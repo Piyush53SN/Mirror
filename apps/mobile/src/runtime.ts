@@ -34,6 +34,7 @@ import {
   evaluateBudgets,
   evaluateWeeklyReminder,
   isInQuietHoursLocal,
+  pruneBudgetNoteKeys,
   resolveDayForegroundTotals,
   summarizeUsageStatsBucketsForDay,
   traceAppForegroundIntervals,
@@ -538,7 +539,11 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           if (!prefs.reminderEnabled && !prefs.budgetNoteEnabled) return;
           if (!usage.areNotificationsEnabled()) return;
           const utcOffsetMinutes = offsetNow();
-          if (isInQuietHoursLocal(now, utcOffsetMinutes)) return;
+          const quietHours = {
+            startHour: prefs.quietHoursStartHour,
+            endHour: prefs.quietHoursEndHour,
+          };
+          if (isInQuietHoursLocal(now, utcOffsetMinutes, quietHours)) return;
 
           const ignorePackages = await resolveIgnoredPackages();
           const todayDay = localDayKey(now, utcOffsetMinutes);
@@ -571,7 +576,8 @@ export async function createRuntime(options: { allowContent?: boolean; retention
 
           const delivery = await store.reminderDeliveryState();
           let nextWeeklySlot = delivery.lastWeeklySlot;
-          const nextBudgetKeys = [...delivery.sentBudgetKeys];
+          // Keep only today's once-per-day budget-note keys (bounded storage).
+          const nextBudgetKeys = pruneBudgetNoteKeys(delivery.sentBudgetKeys, todayDay);
           let changed = false;
 
           if (prefs.reminderEnabled) {
@@ -600,6 +606,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
               nowMs: now,
               utcOffsetMinutes,
               lastSentSlot: delivery.lastWeeklySlot,
+              quietHours,
             });
             if (decision.shouldPost) {
               const posted = usage.postLocalNotification(
@@ -634,6 +641,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
                 nowMs: now,
                 utcOffsetMinutes,
                 sentKeys: nextBudgetKeys,
+                quietHours,
               });
               for (const note of budgetDecision.notes) {
                 const posted = usage.postLocalNotification(

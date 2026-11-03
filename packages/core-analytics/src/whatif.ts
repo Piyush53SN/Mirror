@@ -15,6 +15,7 @@
  *      substitution, per-sitting truncation vs day-clipped foreground totals, no evening
  *      displacement before quiet hours).
  */
+import { NIGHT_WINDOW } from '@mirror/shared-types';
 import {
   buildCanonicalDaySittings,
   formatDurationShort,
@@ -30,8 +31,8 @@ import { SHORT_SESSION_MS } from './sessionize';
 import { isIgnoredSystemApp, type DayTotalsSource } from './usage';
 
 export const DEFAULT_WHATIF_CAP_MINUTES = 10;
-export const DEFAULT_WHATIF_QUIET_START_HOUR = 23;
-export const DEFAULT_WHATIF_QUIET_END_HOUR = 5;
+export const DEFAULT_WHATIF_QUIET_START_HOUR = NIGHT_WINDOW.startHour;
+export const DEFAULT_WHATIF_QUIET_END_HOUR = NIGHT_WINDOW.endHour;
 
 export type WhatIfOsTotal = {
   app: string;

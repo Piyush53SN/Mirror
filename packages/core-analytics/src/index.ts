@@ -2,6 +2,7 @@ export * from './budgets';
 export * from './discovery';
 export * from './evolution';
 export * from './focuswindows';
+export * from './nightWindow';
 export * from './goals';
 export * from './ingest';
 export * from './rabbithole';

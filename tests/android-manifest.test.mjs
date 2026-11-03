@@ -279,3 +279,15 @@ test('--json writes a report and --variant split enforces release no-INTERNET vs
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('P4.4 pre-release: POST_NOTIFICATIONS is declared in app.json (source of truth) and the generated main manifest matches it', () => {
+  // app.json is the only place the permission is declared; `expo prebuild --clean` (run by CI before every gate)
+  // regenerates android/ from it. This test pins the relationship so android/ is never hand-edited.
+  assert.ok(app.android.permissions.includes('android.permission.POST_NOTIFICATIONS'));
+  const main = readFileSync(join(ROOT, 'apps/mobile/android/app/src/main/AndroidManifest.xml'), 'utf8');
+  assert.match(main, /<uses-permission android:name="android\.permission\.POST_NOTIFICATIONS"\s*\/>/);
+  // Release variant strips INTERNET (plugin-generated) and no release file re-adds it.
+  const release = readFileSync(join(ROOT, 'apps/mobile/android/app/src/release/AndroidManifest.xml'), 'utf8');
+  assert.match(release, /android\.permission\.INTERNET"\s+tools:node="remove"/);
+  assert.equal(app.android.permissions.includes('android.permission.INTERNET'), false);
+});

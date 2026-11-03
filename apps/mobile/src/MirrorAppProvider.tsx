@@ -36,6 +36,7 @@ import type {
   WeeklyReportResult,
   WhatIfResult,
 } from '@mirror/core-analytics';
+import { NIGHT_WINDOW } from '@mirror/shared-types';
 import {
   DEFAULT_MAX_INTERVAL_MS,
   SHARED_EXCLUDED_PACKAGES,
@@ -1131,7 +1132,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       const quietHours =
         whatIfQuietPreset === '22-07'
           ? { startHour: 22, endHour: 7 }
-          : { startHour: 23, endHour: 5 };
+          : { startHour: NIGHT_WINDOW.startHour, endHour: NIGHT_WINDOW.endHour };
       const isProvisionalToday = dayWindow.day === todayStr;
       return computeWhatIf({
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },

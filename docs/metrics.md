@@ -26,6 +26,12 @@ awaiting approval, not a detail to be smoothed over.
 
 ---
 
+## 1a. Night window (one definition)
+
+`23:00–05:00` local is defined once in `packages/shared-types/src/nightWindow.ts` (`NIGHT_WINDOW`) and used by the late-night score factor (`lateNightMs`), the `Quiet hours max` goal, the weekly report and rabbit-hole late-night shares, and the what-if quiet-hours scenario. Score and goal definitions never change with user settings.
+
+The only user-changeable quiet hours are the **reminder** quiet hours (`WeeklyReportPrefs.quietHoursStartHour/EndHour`, default = the night window; presets `23:00–05:00`, `22:00–07:00`, `00:00–06:00`). They gate local reminders and budget notes only.
+
 ## 2. The brief's formula, and the deviation
 
 ### 2.1 What the brief specifies

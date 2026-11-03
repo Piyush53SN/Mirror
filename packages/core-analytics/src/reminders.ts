@@ -13,6 +13,7 @@
  */
 
 import type { BudgetsEvaluationSummary } from './budgets';
+import { isHourInWindow, NIGHT_WINDOW, type NightWindow } from './nightWindow';
 import type { WeeklyReportResult } from './weekly';
 
 function formatReminderDuration(ms: number): string {
@@ -27,11 +28,6 @@ function formatReminderDuration(ms: number): string {
   return `${h}h ${m}m`;
 }
 
-export const DEFAULT_REMINDER_QUIET_HOURS = Object.freeze({
-  startHour: 23,
-  endHour: 5,
-});
-
 export const WEEKLY_REMINDER_NOTIFICATION_ID = 4301;
 
 export const MIUI_BEST_EFFORT_REMINDER_NOTE =
@@ -44,12 +40,8 @@ export type ReminderPrefsInput = {
   budgetNoteEnabled?: boolean;
 };
 
-export type QuietHoursRange = {
-  /** Local start hour `0..23` inclusive (e.g. `23` for `23:00`). */
-  startHour: number;
-  /** Local end hour `0..23` exclusive (e.g. `5` for `05:00`). */
-  endHour: number;
-};
+/** Reminder quiet hours; default is the shared night window (`NIGHT_WINDOW`). */
+export type QuietHoursRange = NightWindow;
 
 export type LocalClockSnapshot = {
   dayKey: string;
@@ -71,28 +63,13 @@ export function localClockAt(nowMs: number, utcOffsetMinutes: number): LocalCloc
   };
 }
 
-export function isHourInQuietHours(
-  hour: number,
-  quietHours: QuietHoursRange = DEFAULT_REMINDER_QUIET_HOURS,
-): boolean {
-  const h = ((Math.trunc(hour) % 24) + 24) % 24;
-  const start = ((Math.trunc(quietHours.startHour) % 24) + 24) % 24;
-  const end = ((Math.trunc(quietHours.endHour) % 24) + 24) % 24;
-  if (start === end) return false;
-  if (start < end) {
-    return h >= start && h < end;
-  }
-  // Overnight wrap (e.g. 23:00 -> 05:00)
-  return h >= start || h < end;
-}
-
 export function isInQuietHoursLocal(
   nowMs: number,
   utcOffsetMinutes: number,
-  quietHours: QuietHoursRange = DEFAULT_REMINDER_QUIET_HOURS,
+  quietHours: QuietHoursRange = NIGHT_WINDOW,
 ): boolean {
   const { hour } = localClockAt(nowMs, utcOffsetMinutes);
-  return isHourInQuietHours(hour, quietHours);
+  return isHourInWindow(hour, quietHours);
 }
 
 export type WeeklyReminderDecision =
@@ -123,14 +100,14 @@ export function evaluateWeeklyReminder(input: {
     nowMs,
     utcOffsetMinutes,
     lastSentSlot = null,
-    quietHours = DEFAULT_REMINDER_QUIET_HOURS,
+    quietHours = NIGHT_WINDOW,
   } = input;
 
   if (!prefs.reminderEnabled) {
     return { shouldPost: false, reason: 'disabled' };
   }
   const clock = localClockAt(nowMs, utcOffsetMinutes);
-  if (isHourInQuietHours(clock.hour, quietHours)) {
+  if (isHourInWindow(clock.hour, quietHours)) {
     return { shouldPost: false, reason: 'quiet_hours' };
   }
   if (!report || report.recordedDays <= 0) {
@@ -138,7 +115,7 @@ export function evaluateWeeklyReminder(input: {
   }
 
   // If the configured hour somehow fell inside quiet hours, defer to 08:00 daytime.
-  const effectiveHour = isHourInQuietHours(prefs.reminderHourLocal, quietHours)
+  const effectiveHour = isHourInWindow(prefs.reminderHourLocal, quietHours)
     ? 8
     : prefs.reminderHourLocal;
 
@@ -188,6 +165,17 @@ function stableBudgetNotificationId(key: string): number {
   return 4400 + (Math.abs(hash) % 5000);
 }
 
+/** Key for the once-per-day budget note: `budget-note:<budgetId>:<YYYY-MM-DD>`. */
+export function budgetNoteDedupeKey(budgetId: string, dayKey: string): string {
+  return `budget-note:${budgetId}:${dayKey}`;
+}
+
+/** Drops delivery keys that belong to a day other than `dayKey` (keeps storage bounded). */
+export function pruneBudgetNoteKeys(keys: readonly string[], dayKey: string): string[] {
+  const suffix = `:${dayKey}`;
+  return keys.filter((k) => k.startsWith('budget-note:') && k.endsWith(suffix));
+}
+
 export function evaluateBudgetExceededNotes(input: {
   prefs: Pick<ReminderPrefsInput, 'budgetNoteEnabled'>;
   summary: BudgetsEvaluationSummary | null;
@@ -202,7 +190,7 @@ export function evaluateBudgetExceededNotes(input: {
     nowMs,
     utcOffsetMinutes,
     sentKeys = [],
-    quietHours = DEFAULT_REMINDER_QUIET_HOURS,
+    quietHours = NIGHT_WINDOW,
   } = input;
 
   if (!prefs.budgetNoteEnabled) {
@@ -217,10 +205,12 @@ export function evaluateBudgetExceededNotes(input: {
 
   const sentSet = new Set(sentKeys);
   const notes: BudgetExceededNoteItem[] = [];
+  const { dayKey } = localClockAt(nowMs, utcOffsetMinutes);
 
   for (const item of summary.items) {
     if (!item.enabled || item.state !== 'over_budget' || item.overMs <= 0) continue;
-    const dedupeKey = `${item.id}:${item.period}:${item.windowEndDay}`;
+    // At most one note per budget per local day, whatever the budget period.
+    const dedupeKey = budgetNoteDedupeKey(item.id, dayKey);
     if (sentSet.has(dedupeKey)) continue;
     notes.push({
       dedupeKey,

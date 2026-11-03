@@ -1526,3 +1526,49 @@ test('budgets, goals, and weekly prefs are XChaCha20-Poly1305 encrypted at rest,
 
 
 
+
+test('reminder quiet hours: default is the shared night window, configurable, validated, and persisted', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-p43-quiet-'));
+  const file = join(dir, 'mirror.db');
+  let driver = NodeSqliteDriver.file(file);
+  let reopenDriver = null;
+  try {
+    const s = new MirrorStore({ driver, keys, random: counterRandom() });
+    await s.open();
+
+    // Default equals the night window shared with core-analytics (23:00–05:00).
+    const defaults = await s.weeklyReportPrefs();
+    assert.equal(defaults.quietHoursStartHour, 23);
+    assert.equal(defaults.quietHoursEndHour, 5);
+    assert.equal(defaults.quietHoursStartHour, core.NIGHT_WINDOW.startHour);
+    assert.equal(defaults.quietHoursEndHour, core.NIGHT_WINDOW.endHour);
+
+    // Configurable and persisted across reopen.
+    await s.setWeeklyReportPrefs({ quietHoursStartHour: 22, quietHoursEndHour: 7 }, 1_700_000_002_000);
+    driver.close();
+    driver = null;
+    reopenDriver = NodeSqliteDriver.file(file);
+    const reopened = new MirrorStore({ driver: reopenDriver, keys, random: counterRandom() });
+    await reopened.open();
+    const persisted = await reopened.weeklyReportPrefs();
+    assert.equal(persisted.quietHoursStartHour, 22);
+    assert.equal(persisted.quietHoursEndHour, 7);
+
+    // Invalid or empty windows are refused and do not overwrite the stored value.
+    await assert.rejects(() => reopened.setWeeklyReportPrefs({ quietHoursStartHour: 24 }), /quiet hours/);
+    await assert.rejects(() => reopened.setWeeklyReportPrefs({ quietHoursStartHour: 6, quietHoursEndHour: 6 }), /must differ/);
+    await assert.rejects(() => reopened.setWeeklyReportPrefs({ quietHoursEndHour: 1.5 }), /quiet hours/);
+    const unchanged = await reopened.weeklyReportPrefs();
+    assert.equal(unchanged.quietHoursStartHour, 22);
+    assert.equal(unchanged.quietHoursEndHour, 7);
+
+    // Quiet hours are part of the JSON export.
+    const bundle = await reopened.exportBundle();
+    assert.equal(bundle.weeklyReportPrefs.quietHoursStartHour, 22);
+    assert.equal(bundle.weeklyReportPrefs.quietHoursEndHour, 7);
+  } finally {
+    if (driver) driver.close();
+    if (reopenDriver) reopenDriver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

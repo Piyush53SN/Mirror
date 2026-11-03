@@ -16,7 +16,7 @@
  * All SQL is parameterised. The only string interpolation is a table name from a
  * closed set, and it is checked before use.
  */
-import { validateEvent, type MirrorEvent } from '@mirror/shared-types';
+import { validateEvent, NIGHT_WINDOW, type MirrorEvent } from '@mirror/shared-types';
 import { deriveKeys, itemHash, seal, sealBytes, open, openBytes, DecryptionError, type DerivedKeys } from './crypto';
 import { encodeVector, decodeVector } from './vector';
 import { migrate, readMeta, writeMeta, SCHEMA_VERSION } from './schema';
@@ -60,8 +60,14 @@ export const DEFAULT_WEEKLY_REPORT_PREFS: Readonly<WeeklyReportPrefs> = Object.f
   reminderWeekday: 0,
   reminderHourLocal: 19,
   budgetNoteEnabled: false,
+  quietHoursStartHour: NIGHT_WINDOW.startHour,
+  quietHoursEndHour: NIGHT_WINDOW.endHour,
   updatedAtMs: 0,
 });
+
+function isValidHour(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 23;
+}
 
 type EventRow = {
   id: string;
@@ -1561,11 +1567,19 @@ export class MirrorStore {
       payload.reminderHourLocal <= 23
         ? payload.reminderHourLocal
         : DEFAULT_WEEKLY_REPORT_PREFS.reminderHourLocal;
+    const quietStart = isValidHour(payload.quietHoursStartHour)
+      ? payload.quietHoursStartHour
+      : DEFAULT_WEEKLY_REPORT_PREFS.quietHoursStartHour;
+    const quietEnd = isValidHour(payload.quietHoursEndHour)
+      ? payload.quietHoursEndHour
+      : DEFAULT_WEEKLY_REPORT_PREFS.quietHoursEndHour;
     return {
       reminderEnabled: Boolean(payload.reminderEnabled),
       reminderWeekday: weekday,
       reminderHourLocal: hour,
       budgetNoteEnabled: Boolean(payload.budgetNoteEnabled),
+      quietHoursStartHour: quietStart,
+      quietHoursEndHour: quietEnd === quietStart ? DEFAULT_WEEKLY_REPORT_PREFS.quietHoursEndHour : quietEnd,
       updatedAtMs: Number(rows[0]!.updated_at),
     };
   }
@@ -1583,6 +1597,14 @@ export class MirrorStore {
     if (!Number.isInteger(nextHour) || nextHour < 0 || nextHour > 23) {
       throw new Error('reminderHourLocal must be an integer 0..23');
     }
+    const nextQuietStart = patch.quietHoursStartHour ?? current.quietHoursStartHour;
+    const nextQuietEnd = patch.quietHoursEndHour ?? current.quietHoursEndHour;
+    if (!isValidHour(nextQuietStart) || !isValidHour(nextQuietEnd)) {
+      throw new Error('quiet hours must be integers 0..23');
+    }
+    if (nextQuietStart === nextQuietEnd) {
+      throw new Error('quiet hours start and end must differ');
+    }
     const nextEnabled =
       patch.reminderEnabled !== undefined ? Boolean(patch.reminderEnabled) : current.reminderEnabled;
     const nextBudgetNoteEnabled =
@@ -1595,6 +1617,8 @@ export class MirrorStore {
       reminderWeekday: nextWeekday as WeeklyReportPrefs['reminderWeekday'],
       reminderHourLocal: nextHour,
       budgetNoteEnabled: nextBudgetNoteEnabled,
+      quietHoursStartHour: nextQuietStart,
+      quietHoursEndHour: nextQuietEnd,
       updatedAtMs: Math.max(0, Math.round(updatedAtMs)),
     };
 
@@ -1609,6 +1633,8 @@ export class MirrorStore {
             reminderWeekday: next.reminderWeekday,
             reminderHourLocal: next.reminderHourLocal,
             budgetNoteEnabled: next.budgetNoteEnabled,
+            quietHoursStartHour: next.quietHoursStartHour,
+            quietHoursEndHour: next.quietHoursEndHour,
           },
           this.derived(),
           this.keyId,

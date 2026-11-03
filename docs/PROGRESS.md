@@ -1842,6 +1842,14 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
   3. Live store wiring (`runtime.ts`, `MirrorAppContext.tsx`, `MirrorAppProvider.tsx`): evaluates budgets directly from the same `osTotalsWithSource` day-clipped foreground totals shown on `Home` (never merged sitting spans), persists encrypted to `budgets` (`XChaCha20-Poly1305`), and bumps `versionCode` `3 -> 4`.
   4. `packages/ui/tests/budgets-ui.test.mjs` & `budgets.test.mjs`: end-to-end UI + `NodeSqliteDriver` tests covering empty states, validation errors, create/edit/delete, neutral `"12m over 45m today"` copy, zero red colors, partial-week non-extrapolation, `Home` day-clipped parity vs merged spans, 48dp/a11y checks, and cold SQLite restart persistence. Stopping for review before P4.3.
 
+### P4.3 pre-release fixes (2026-11-04, still `0.3.0` / `versionCode: 5`, not tagged)
+
+- **Night window:** single definition in `@mirror/shared-types` (`NIGHT_WINDOW`, `23:00–05:00`), used by score, goals, weekly, rabbit hole, what-if, and as the reminder default.
+- **Reminder quiet hours are configurable** (`quietHoursStartHour/EndHour` in sealed `weekly_report` prefs; presets `23:00–05:00` default, `22:00–07:00`, `00:00–06:00`; invalid or equal hours refused). Export includes them.
+- **Budget notes capped at one per budget per local day** (`budget-note:<budgetId>:<YYYY-MM-DD>`); keys from other days are pruned on each delivery.
+- **`POST_NOTIFICATIONS`** is declared only in `app.json`. `expo prebuild --clean` regenerates `android/` with no diff, and a test pins that relationship. A real merged release manifest still needs an Android build on CI (not run in this sandbox).
+- Tag check: `bump-version.mjs --check --tag v0.3.0-alpha.1` is run at the newest commit before this entry is pushed.
+
 ### v0.2.0-alpha.2 Phone Verification, P4.2 Polish, & P4.3 Delivered (`0.3.0`, `versionCode: 5`) (2026-11-03)
 
 - **`v0.2.0-alpha.2` (`versionCode: 4`) verified on phone:** Soft Attention Budgets create cleanly, appear on `Home` & `Insights`, and match day-clipped foreground totals.
