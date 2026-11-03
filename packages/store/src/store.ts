@@ -54,6 +54,10 @@ const DEFAULT_RETENTION_DAYS = 180;
 const DAY_MS = 86_400_000;
 const WEEKLY_REPORT_PREFS_KEY = 'weekly_report';
 const REMINDER_DELIVERY_KEY = 'reminder_delivery_v1';
+const BUDGET_SUGGESTION_KEY = 'budget_suggestions_v1';
+/** Mirrors `BUDGET_SUGGESTION_DISMISS_MS` in core-analytics (7 days). Asserted equal in store tests. */
+export const BUDGET_SUGGESTION_DISMISS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const BUDGET_SUGGESTION_MAX_DISMISSALS = 200;
 
 export const DEFAULT_WEEKLY_REPORT_PREFS: Readonly<WeeklyReportPrefs> = Object.freeze({
   reminderEnabled: false,
@@ -1645,6 +1649,39 @@ export class MirrorStore {
     return next;
   }
 
+  /** Dismissed budget suggestions (package -> dismissed-at ms). Entries older than 7 days are dropped. */
+  async budgetSuggestionDismissals(): Promise<Record<string, number>> {
+    const rows = await this.driver.all<{ payload: Uint8Array }>(
+      `SELECT payload FROM sealed_preferences WHERE key = ?`,
+      [BUDGET_SUGGESTION_KEY],
+    );
+    if (rows.length === 0) return {};
+    const payload = open<{ dismissed?: Record<string, unknown> }>(rows[0]!.payload, this.derived(), this.keyId);
+    const out: Record<string, number> = {};
+    for (const [app, at] of Object.entries(payload.dismissed ?? {})) {
+      if (typeof at === 'number' && Number.isFinite(at)) out[app] = at;
+    }
+    return out;
+  }
+
+  async dismissBudgetSuggestion(app: string, nowMs = this.clock()): Promise<Record<string, number>> {
+    const trimmed = app.trim();
+    if (!trimmed) throw new Error('dismissBudgetSuggestion: app is required');
+    const now = Math.max(0, Math.round(nowMs));
+    const current = await this.budgetSuggestionDismissals();
+    current[trimmed] = now;
+    const kept = Object.entries(current)
+      .filter(([, at]) => now - at < BUDGET_SUGGESTION_DISMISS_WINDOW_MS)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, BUDGET_SUGGESTION_MAX_DISMISSALS);
+    const next = Object.fromEntries(kept);
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [BUDGET_SUGGESTION_KEY, now, seal({ dismissed: next }, this.derived(), this.keyId, this.random)],
+    );
+    return next;
+  }
+
   async reminderDeliveryState(): Promise<ReminderDeliveryState> {
     const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
       `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
@@ -1701,15 +1738,17 @@ export class MirrorStore {
    * budgets, goals, weekly report prefs, and reset audit).
    */
   async exportBundle(exportedAt = new Date(this.clock()).toISOString()): Promise<MirrorExportBundle> {
-    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset] = await Promise.all([
-      this.events(),
-      this.sessions(),
-      this.gaps(),
-      this.budgets(),
-      this.goals(),
-      this.weeklyReportPrefs(),
-      this.lastResetAudit(),
-    ]);
+    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset, budgetSuggestionDismissals] =
+      await Promise.all([
+        this.events(),
+        this.sessions(),
+        this.gaps(),
+        this.budgets(),
+        this.goals(),
+        this.weeklyReportPrefs(),
+        this.lastResetAudit(),
+        this.budgetSuggestionDismissals(),
+      ]);
     return {
       exportedAt,
       schemaVersion: SCHEMA_VERSION,
@@ -1720,6 +1759,7 @@ export class MirrorStore {
       budgets,
       goals,
       weeklyReportPrefs,
+      budgetSuggestionDismissals,
       lastReset,
     };
   }

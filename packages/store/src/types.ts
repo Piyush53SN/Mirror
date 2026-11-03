@@ -251,6 +251,8 @@ export type MirrorExportBundle = {
   budgets: StoredBudgetDefinition[];
   goals: StoredGoalDefinition[];
   weeklyReportPrefs: WeeklyReportPrefs;
+  /** Dismissed budget suggestions (package -> dismissed-at ms), kept 7 days. */
+  budgetSuggestionDismissals: Record<string, number>;
   lastReset: StoreResetAudit | null;
 };
 

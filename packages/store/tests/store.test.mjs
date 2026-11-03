@@ -1572,3 +1572,48 @@ test('reminder quiet hours: default is the shared night window, configurable, va
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('budget suggestion dismissals: persist across reopen, expire after 7 days, exported, wiped by typed DELETE', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-p44a-dismiss-'));
+  const file = join(dir, 'mirror.db');
+  let driver = NodeSqliteDriver.file(file);
+  let reopenDriver = null;
+  const DAY = 86_400_000;
+  const t0 = 1_700_000_000_000;
+  try {
+    const s = new MirrorStore({ driver, keys, random: counterRandom() });
+    await s.open();
+    assert.deepEqual(await s.budgetSuggestionDismissals(), {});
+
+    await s.dismissBudgetSuggestion('com.google.android.youtube', t0);
+    await s.dismissBudgetSuggestion('org.wikipedia', t0 + DAY);
+    driver.close();
+    driver = null;
+
+    reopenDriver = NodeSqliteDriver.file(file);
+    const reopened = new MirrorStore({ driver: reopenDriver, keys, random: counterRandom() });
+    await reopened.open();
+    assert.deepEqual(await reopened.budgetSuggestionDismissals(), {
+      'com.google.android.youtube': t0,
+      'org.wikipedia': t0 + DAY,
+    });
+
+    // Dismissing again much later prunes entries older than 7 days.
+    const kept = await reopened.dismissBudgetSuggestion('app.later', t0 + 8 * DAY);
+    assert.deepEqual(Object.keys(kept).sort(), ['app.later']);
+    assert.equal(core.BUDGET_SUGGESTION_DISMISS_MS, 7 * DAY);
+    assert.equal(store.BUDGET_SUGGESTION_DISMISS_WINDOW_MS, core.BUDGET_SUGGESTION_DISMISS_MS);
+
+    // Exported in the JSON archive.
+    const bundle = await reopened.exportBundle();
+    assert.deepEqual(bundle.budgetSuggestionDismissals, { 'app.later': t0 + 8 * DAY });
+
+    // Typed DELETE wipes it along with the other sealed preferences.
+    await reopened.deleteAll();
+    assert.deepEqual(await reopened.budgetSuggestionDismissals(), {});
+  } finally {
+    if (driver) driver.close();
+    if (reopenDriver) reopenDriver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

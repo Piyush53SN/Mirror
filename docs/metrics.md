@@ -32,6 +32,12 @@ awaiting approval, not a detail to be smoothed over.
 
 The only user-changeable quiet hours are the **reminder** quiet hours (`WeeklyReportPrefs.quietHoursStartHour/EndHour`, default = the night window; presets `23:00–05:00`, `22:00–07:00`, `00:00–06:00`). They gate local reminders and budget notes only.
 
+## 1b. Budget suggestion (P4.4a, Weekly Report)
+
+`Set a <limit> budget?` is a question, not a budget. Source: per-app **day-clipped foreground** over the 7 local days ending on the selected day. Only **recorded** days count, and the average divides by recorded days in the window (never by 7 when history is partial). Fewer than 3 recorded days means no suggestion. The suggested limit is the average rounded to the nearest 15 minutes, and must be at least 30 minutes. Apps that already have an enabled budget, shared excluded/launcher packages, and apps dismissed in the last 7 days are skipped. At most one suggestion is shown.
+
+Mirror never guesses intent here. A suggestion only reads time. **Accept** is the only path that writes a budget, and it runs on a tap. **Dismiss** stores a timestamp (encrypted, included in the JSON export, wiped by typed `DELETE`) that hides that app's suggestion for 7 days.
+
 ## 2. The brief's formula, and the deviation
 
 ### 2.1 What the brief specifies

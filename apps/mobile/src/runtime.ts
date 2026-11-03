@@ -107,6 +107,10 @@ export type MirrorRuntime = {
   saveBudget(budget: BudgetDefinition): Promise<void>;
   /** Delete a soft Attention Budget by id. */
   removeBudget(id: string): Promise<boolean>;
+  /** Dismissed budget suggestions (package -> dismissed-at ms), kept 7 days. */
+  budgetSuggestionDismissals(): Promise<Record<string, number>>;
+  /** Record a dismissal for one app's budget suggestion (never creates a budget). */
+  dismissBudgetSuggestion(app: string): Promise<Record<string, number>>;
   /** Load all user-created calm Weekly Goals (decrypted from `goals`). */
   listGoals(): Promise<GoalDefinition[]>;
   /** Insert or update a Weekly Goal (sealed with XChaCha20-Poly1305). */
@@ -511,6 +515,12 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       listBudgets: async () => {
         return store.budgets();
+      },
+      budgetSuggestionDismissals: async () => {
+        return store.budgetSuggestionDismissals();
+      },
+      dismissBudgetSuggestion: async (app: string) => {
+        return store.dismissBudgetSuggestion(app);
       },
       saveBudget: async (budget: BudgetDefinition) => {
         await store.putBudget(budget);

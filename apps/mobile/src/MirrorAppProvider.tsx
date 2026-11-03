@@ -60,6 +60,8 @@ import {
   summarizeOrphanDrops,
   validateBudgetDefinition,
   validateGoalDefinition,
+  suggestBudgets,
+  type BudgetSuggestion,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
 import { osRandom } from './storage/keys';
@@ -157,6 +159,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [expandedSessionId, setExpandedSessionId] = React.useState<string | null>(null);
   const [labelOptIn, setLabelOptIn] = React.useState(false);
   const [budgets, setBudgets] = React.useState<BudgetDefinition[]>([]);
+  const [suggestionDismissals, setSuggestionDismissals] = React.useState<Record<string, number>>({});
   const [budgetWeekOtherDays, setBudgetWeekOtherDays] = React.useState<BudgetDayForegroundInput[]>([]);
   const [budgetHistoryStartDay, setBudgetHistoryStartDay] = React.useState<string | null>(null);
   const [goals, setGoals] = React.useState<GoalDefinition[]>([]);
@@ -204,6 +207,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setBudgets(storedBudgets);
           setGoals(storedGoals);
           setWeeklyReportPrefs(storedPrefs);
+          setSuggestionDismissals(await runtime.budgetSuggestionDismissals().catch(() => ({})));
         }
         const savedPkgs = [
           ...new Set([
@@ -1220,6 +1224,33 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     [],
   );
 
+  /** Accept is the only path that creates a budget from a suggestion, and it runs on a tap. */
+  const acceptBudgetSuggestion = React.useCallback(
+    async (suggestion: BudgetSuggestion): Promise<SaveBudgetResult> => {
+      const now = Date.now();
+      const safeApp = suggestion.app.replace(/[^a-zA-Z0-9._-]/g, '_');
+      return saveBudget({
+        id: `b_sugg_${safeApp}_${now}`,
+        name: suggestion.label,
+        kind: 'app',
+        packages: [suggestion.app],
+        period: 'daily',
+        limitMs: suggestion.suggestedLimitMs,
+        enabled: true,
+        createdAtMs: now,
+        updatedAtMs: now,
+      });
+    },
+    [saveBudget],
+  );
+
+  const dismissBudgetSuggestion = React.useCallback(async (app: string): Promise<void> => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    const next = await rt.dismissBudgetSuggestion(app);
+    setSuggestionDismissals(next);
+  }, []);
+
   const deleteBudget = React.useCallback(async (id: string): Promise<boolean> => {
     const rt = runtimeRef.current ?? (await createRuntime());
     runtimeRef.current = rt;
@@ -1325,6 +1356,19 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       return effectiveBudgetHistoryStart !== null && d >= effectiveBudgetHistoryStart;
     });
   }, [selectedDay, todayStr, dailyTotals, budgetWeekOtherDays, effectiveBudgetHistoryStart]);
+
+  const budgetSuggestions: BudgetSuggestion[] = React.useMemo(() => {
+    return suggestBudgets({
+      endDay: selectedDay,
+      dayTotals: budgetWeekTotals,
+      recordedDays: budgetRecordedDays,
+      existingBudgetPackages: budgets.filter((b) => b.enabled).flatMap((b) => [...b.packages]),
+      ignorePackages: [...launcherPackages],
+      dismissals: suggestionDismissals,
+      nowMs: Date.now(),
+      appLabels: labels,
+    });
+  }, [selectedDay, budgetWeekTotals, budgetRecordedDays, budgets, launcherPackages, suggestionDismissals, labels]);
 
   const budgetsSummary: BudgetsEvaluationSummary = React.useMemo(() => {
     return evaluateBudgets({
@@ -1654,6 +1698,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgetRecordedDays,
       saveBudget,
       deleteBudget,
+      budgetSuggestions,
+      acceptBudgetSuggestion,
+      dismissBudgetSuggestion,
       goals,
       goalsSummary,
       saveGoal,
@@ -1741,6 +1788,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgetRecordedDays,
       saveBudget,
       deleteBudget,
+      budgetSuggestions,
+      acceptBudgetSuggestion,
+      dismissBudgetSuggestion,
       goals,
       goalsSummary,
       saveGoal,

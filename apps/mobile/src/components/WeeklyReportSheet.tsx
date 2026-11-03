@@ -5,9 +5,11 @@ import {
   Chip,
   Divider,
   Meter,
+  Pill,
   SectionHeader,
   Sheet,
   Stat,
+  Surface,
   Text,
   TierBadge,
   useTheme,
@@ -24,6 +26,7 @@ import {
   toDayStr,
   useMirrorApp,
 } from '../context/MirrorAppContext';
+import type { BudgetSuggestion } from '@mirror/core-analytics';
 import { useSafeInsets } from './useSafeInsets';
 
 function formatDayProvenanceBadge(row: WeeklyDayEntry): string {
@@ -100,6 +103,91 @@ export function useResolvedWeeklyReport(): WeeklyReportResult {
   ]);
 }
 
+/**
+ * P4.4a: "Set a 1h budget?" with Accept / Dismiss. Nothing is created unless the
+ * person taps Accept, and a dismissed suggestion stays hidden for 7 days.
+ */
+function WeeklyBudgetSuggestions({
+  suggestions,
+  onAccept,
+  onDismiss,
+}: {
+  suggestions: readonly BudgetSuggestion[];
+  onAccept: (s: BudgetSuggestion) => Promise<{ ok: boolean; errors?: string[] }>;
+  onDismiss: (app: string) => Promise<void>;
+}): React.ReactElement | null {
+  const theme = useTheme();
+  const [busyApp, setBusyApp] = React.useState<string | null>(null);
+  const [notice, setNotice] = React.useState<string | null>(null);
+  if (suggestions.length === 0) return null;
+  return (
+    <Surface theme={theme}>
+      <View testID="weekly-budget-suggestions" style={{ gap: theme.space(2) }}>
+        <Text role="micro" tone="muted" theme={theme}>
+          BUDGET SUGGESTION · 7 DAYS · YOU DECIDE
+        </Text>
+        {suggestions.map((s) => (
+          <View key={s.app} testID={`budget-suggestion-${s.app}`} style={{ gap: theme.space(1) }}>
+            <Text role="label" theme={theme}>
+              {s.title}
+            </Text>
+            <Text role="micro" tone="muted" theme={theme}>
+              {s.body}
+            </Text>
+            <View style={{ flexDirection: 'row', gap: theme.space(1), flexWrap: 'wrap' }}>
+              <Pill
+                testID="budget-suggestion-accept"
+                theme={theme}
+                variant="primary"
+                disabled={busyApp !== null}
+                onPress={async () => {
+                  setBusyApp(s.app);
+                  setNotice(null);
+                  try {
+                    const res = await onAccept(s);
+                    setNotice(
+                      res.ok
+                        ? `Soft budget added for ${s.label}. You can change or remove it on Insights.`
+                        : 'That budget could not be saved. Please check the amount and try again.',
+                    );
+                  } finally {
+                    setBusyApp(null);
+                  }
+                }}
+                accessibilityLabel={`Accept budget suggestion for ${s.label}`}
+              >
+                Accept
+              </Pill>
+              <Pill
+                testID="budget-suggestion-dismiss"
+                theme={theme}
+                variant="secondary"
+                disabled={busyApp !== null}
+                onPress={async () => {
+                  setBusyApp(s.app);
+                  try {
+                    await onDismiss(s.app);
+                  } finally {
+                    setBusyApp(null);
+                  }
+                }}
+                accessibilityLabel={`Dismiss budget suggestion for ${s.label} for 7 days`}
+              >
+                Dismiss
+              </Pill>
+            </View>
+          </View>
+        ))}
+        {notice ? (
+          <Callout theme={theme} tone="neutral">
+            {notice}
+          </Callout>
+        ) : null}
+      </View>
+    </Surface>
+  );
+}
+
 export function WeeklyReportSheet({
   open,
   onClose,
@@ -117,6 +205,9 @@ export function WeeklyReportSheet({
     budgetRecordedDays,
     dayScoredSessions,
     labels,
+    budgetSuggestions,
+    acceptBudgetSuggestion,
+    dismissBudgetSuggestion,
   } = useMirrorApp();
   const insets = useSafeInsets(contextInsets);
   const report = useResolvedWeeklyReport();
@@ -189,6 +280,14 @@ export function WeeklyReportSheet({
               {report.partialWeekNote}
             </Callout>
           </View>
+        ) : null}
+
+        {budgetSuggestions && budgetSuggestions.length > 0 && acceptBudgetSuggestion && dismissBudgetSuggestion ? (
+          <WeeklyBudgetSuggestions
+            suggestions={budgetSuggestions}
+            onAccept={acceptBudgetSuggestion}
+            onDismiss={dismissBudgetSuggestion}
+          />
         ) : null}
 
         {/* Top-line 7-day day-clipped metrics */}

@@ -31,6 +31,7 @@ import {
   type WeeklyReportResult,
   type WhatIfResult,
   type WhatIfScenarioId,
+  type BudgetSuggestion,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
@@ -298,6 +299,10 @@ export type MirrorAppContextValue = {
   budgetRecordedDays?: readonly string[];
   saveBudget?: (budget: BudgetDefinition) => Promise<SaveBudgetResult>;
   deleteBudget?: (id: string) => Promise<boolean>;
+  /** P4.4a weekly-report budget suggestions (never creates a budget by itself). */
+  budgetSuggestions?: readonly BudgetSuggestion[];
+  acceptBudgetSuggestion?: (suggestion: BudgetSuggestion) => Promise<SaveBudgetResult>;
+  dismissBudgetSuggestion?: (app: string) => Promise<void>;
 
   /** User-created Tier D calm Weekly Goals & 7-day Weekly Report (P4.3). */
   goals?: GoalDefinition[];

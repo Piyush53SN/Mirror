@@ -1842,6 +1842,14 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
   3. Live store wiring (`runtime.ts`, `MirrorAppContext.tsx`, `MirrorAppProvider.tsx`): evaluates budgets directly from the same `osTotalsWithSource` day-clipped foreground totals shown on `Home` (never merged sitting spans), persists encrypted to `budgets` (`XChaCha20-Poly1305`), and bumps `versionCode` `3 -> 4`.
   4. `packages/ui/tests/budgets-ui.test.mjs` & `budgets.test.mjs`: end-to-end UI + `NodeSqliteDriver` tests covering empty states, validation errors, create/edit/delete, neutral `"12m over 45m today"` copy, zero red colors, partial-week non-extrapolation, `Home` day-clipped parity vs merged spans, 48dp/a11y checks, and cold SQLite restart persistence. Stopping for review before P4.3.
 
+### P4.4a Budget suggestions in the Weekly Report (not tagged; review stop)
+
+- `suggestBudgets()` (`packages/core-analytics/src/budgetSuggestions.ts`): day-clipped 7-day foreground, recorded-day averages, rounded to 15 min, >= 30 min, >= 3 recorded days, one suggestion max, skips budgeted/excluded/dismissed (7 days).
+- Weekly Report card `Set a 1h budget?` with Accept / Dismiss. Nothing is created on render; Accept is the only write.
+- Store: sealed `budget_suggestions_v1` dismissals (7-day prune, 200 max). Included in JSON export; wiped by typed `DELETE`.
+- Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
+- Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
+
 ### P4.3 pre-release fixes (2026-11-04, still `0.3.0` / `versionCode: 5`, not tagged)
 
 - **Night window:** single definition in `@mirror/shared-types` (`NIGHT_WINDOW`, `23:00–05:00`), used by score, goals, weekly, rabbit hole, what-if, and as the reminder default.
