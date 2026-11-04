@@ -1617,3 +1617,32 @@ test('budget suggestion dismissals: persist across reopen, expire after 7 days, 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('first-run reminder offer: reminderOfferSeen defaults false, persists across reopen, never turns reminders on', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'mirror-p44ux-offer-'));
+  const file = join(dir, 'mirror.db');
+  let driver = NodeSqliteDriver.file(file);
+  let reopenDriver = null;
+  try {
+    const s = new MirrorStore({ driver, keys, random: counterRandom() });
+    await s.open();
+    const d = await s.weeklyReportPrefs();
+    assert.equal(d.reminderOfferSeen, false);
+    assert.equal(d.reminderEnabled, false, 'declining or seeing the offer never enables reminders');
+
+    await s.setWeeklyReportPrefs({ reminderOfferSeen: true }, 1_700_000_003_000);
+    driver.close();
+    driver = null;
+    reopenDriver = NodeSqliteDriver.file(file);
+    const reopened = new MirrorStore({ driver: reopenDriver, keys, random: counterRandom() });
+    await reopened.open();
+    const after = await reopened.weeklyReportPrefs();
+    assert.equal(after.reminderOfferSeen, true);
+    assert.equal(after.reminderEnabled, false);
+    assert.equal((await reopened.exportBundle()).weeklyReportPrefs.reminderOfferSeen, true);
+  } finally {
+    if (driver) driver.close();
+    if (reopenDriver) reopenDriver.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

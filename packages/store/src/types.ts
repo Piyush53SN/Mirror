@@ -232,6 +232,8 @@ export type WeeklyReportPrefs = {
    */
   quietHoursStartHour: number;
   quietHoursEndHour: number;
+  /** True once the one-time first-run reminder offer on Home was answered (accepted or declined). */
+  reminderOfferSeen: boolean;
   updatedAtMs: number;
 };
 

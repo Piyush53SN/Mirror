@@ -66,6 +66,7 @@ export const DEFAULT_WEEKLY_REPORT_PREFS: Readonly<WeeklyReportPrefs> = Object.f
   budgetNoteEnabled: false,
   quietHoursStartHour: NIGHT_WINDOW.startHour,
   quietHoursEndHour: NIGHT_WINDOW.endHour,
+  reminderOfferSeen: false,
   updatedAtMs: 0,
 });
 
@@ -1584,6 +1585,7 @@ export class MirrorStore {
       budgetNoteEnabled: Boolean(payload.budgetNoteEnabled),
       quietHoursStartHour: quietStart,
       quietHoursEndHour: quietEnd === quietStart ? DEFAULT_WEEKLY_REPORT_PREFS.quietHoursEndHour : quietEnd,
+      reminderOfferSeen: Boolean(payload.reminderOfferSeen),
       updatedAtMs: Number(rows[0]!.updated_at),
     };
   }
@@ -1616,7 +1618,11 @@ export class MirrorStore {
         ? Boolean(patch.budgetNoteEnabled)
         : Boolean(current.budgetNoteEnabled);
 
+    const nextOfferSeen =
+      patch.reminderOfferSeen !== undefined ? Boolean(patch.reminderOfferSeen) : Boolean(current.reminderOfferSeen);
+
     const next: WeeklyReportPrefs = {
+      reminderOfferSeen: nextOfferSeen,
       reminderEnabled: nextEnabled,
       reminderWeekday: nextWeekday as WeeklyReportPrefs['reminderWeekday'],
       reminderHourLocal: nextHour,
@@ -1639,6 +1645,7 @@ export class MirrorStore {
             budgetNoteEnabled: next.budgetNoteEnabled,
             quietHoursStartHour: next.quietHoursStartHour,
             quietHoursEndHour: next.quietHoursEndHour,
+            reminderOfferSeen: next.reminderOfferSeen,
           },
           this.derived(),
           this.keyId,
