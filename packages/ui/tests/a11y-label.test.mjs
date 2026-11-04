@@ -745,11 +745,17 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
         { initialTheme: 'dark' },
         React.createElement(
           ui.MirrorAppContext.Provider,
-          { value: { ...populatedCtx, activeTab, showWhy: activeTab === 'home' } },
+          { value: { ...populatedCtx, activeTab, showWhy: activeTab === 'home', showSettings: activeTab === 'you' } },
           React.createElement(ui.MirrorTabShell),
         ),
       ),
     );
+    // P4.4-UX: What-if, goals, score parts, curiosity and depth are collapsed under Advanced.
+    if (activeTab === 'insights') {
+      TestRenderer.act(() => {
+        renderer.root.find((el) => el.props?.['data-testid'] === 'insights-advanced-toggle').props.onPress();
+      });
+    }
     const json = renderer.toJSON();
     const rawTree = JSON.stringify(json);
     const fullText = collectText(json).join(' ');
@@ -996,6 +1002,7 @@ test('revoked Usage Access & Keystore invalidation recovery render non-blocking 
         {
           value: makeMockMobileContext({
             activeTab: 'you',
+            showSettings: true,
             permission: 'denied',
             openSettings: () => { settingsOpened += 1; },
             storeDayRowCounts: [
@@ -1065,6 +1072,11 @@ test('day picker defaults to today, events-without-sittings renders plain messag
         ),
       ),
     );
+    if (activeTab === 'insights') {
+      TestRenderer.act(() => {
+        renderer.root.find((el) => el.props?.['data-testid'] === 'insights-advanced-toggle').props.onPress();
+      });
+    }
     const textNodes = collectText(renderer.toJSON());
     const text = textNodes.join(' ');
     assert.ok(

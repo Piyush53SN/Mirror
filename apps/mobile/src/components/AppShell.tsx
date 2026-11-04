@@ -5,6 +5,7 @@ import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
 import { useSafeInsets } from './useSafeInsets';
 import { WeeklyReportSheet } from './WeeklyReportSheet';
+import { SettingsSheet } from './SettingsSheet';
 import { WhyScoreSheet } from './WhyScoreSheet';
 
 export function AppShell({
@@ -30,10 +31,12 @@ export function AppShell({
     setShowWhy,
     showWeeklyReport = false,
     setShowWeeklyReport,
+    showSettings = false,
+    setShowSettings,
   } = useMirrorApp();
   const tabBarBlur = useLiveBlur('tab-bar');
   const insets = useSafeInsets(contextInsets);
-  const anySheetOpen = showWhy || Boolean(showWeeklyReport);
+  const anySheetOpen = showWhy || Boolean(showWeeklyReport) || Boolean(showSettings);
 
   const topInset = insets.top + theme.space(2);
   const horizontalInset = Math.max(theme.space(4), Math.max(insets.left, insets.right) + theme.space(4));
@@ -146,6 +149,7 @@ export function AppShell({
         open={Boolean(showWeeklyReport)}
         onClose={() => setShowWeeklyReport?.(false)}
       />
+      <SettingsSheet open={Boolean(showSettings)} onClose={() => setShowSettings?.(false)} />
     </View>
   );
 }

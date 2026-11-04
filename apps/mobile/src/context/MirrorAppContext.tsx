@@ -312,6 +312,8 @@ export type MirrorAppContextValue = {
   weeklyReport?: WeeklyReportResult | null;
   showWeeklyReport?: boolean;
   setShowWeeklyReport?: React.Dispatch<React.SetStateAction<boolean>>;
+  showSettings?: boolean;
+  setShowSettings?: React.Dispatch<React.SetStateAction<boolean>>;
   weeklyReportPrefs?: WeeklyReportPrefs;
   updateWeeklyReportPrefs?: (
     patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,

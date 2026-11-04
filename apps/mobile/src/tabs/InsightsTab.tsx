@@ -71,6 +71,8 @@ export function InsightsTab(): React.ReactElement {
     setActiveTab,
   } = useMirrorApp();
   const [filter, setFilter] = React.useState<InsightsFilter>('all');
+  // P4.4-UX: What-if, goals, score parts, curiosity and depth start collapsed under Advanced.
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
   const [localScenarios, setLocalScenarios] = React.useState<CombinableWhatIfScenarioId[]>([]);
   const activeScenarioIds = whatIfActiveScenarios ?? localScenarios;
   const handleToggleScenario = React.useCallback(
@@ -119,6 +121,7 @@ export function InsightsTab(): React.ReactElement {
   const showIqs = !isEmptyDay && (filter === 'all' || filter === 'iqs');
   const showCuriosity = !isEmptyDay && (filter === 'all' || filter === 'curiosity');
   const showDepth = !isEmptyDay && (filter === 'all' || filter === 'depth');
+  const showAdvanced = showWeekly || showWhatIf || showIqs || showCuriosity || showDepth;
 
   const measuredIqsFactors = React.useMemo(
     () => (iqs ? iqs.factors.filter((f) => f.measurable && f.max > 0) : []),
@@ -165,7 +168,7 @@ export function InsightsTab(): React.ReactElement {
       {showBudgets ? <AttentionBudgetSection /> : null}
 
       {/* Weekly Report Sheet Trigger, Calm Weekly Goals & Opt-in Local Reminders */}
-      {showWeekly ? <WeeklyGoalsSection /> : null}
+      {showWeekly ? <WeeklyGoalsSection part="report" /> : null}
 
       {isEmptyDay ? (
         <Surface
@@ -190,6 +193,22 @@ export function InsightsTab(): React.ReactElement {
           />
         </Surface>
       ) : null}
+
+      {showAdvanced ? (
+        <Pill
+          testID="insights-advanced-toggle"
+          theme={theme}
+          variant="secondary"
+          onPress={() => setAdvancedOpen((o) => !o)}
+          accessibilityLabel={advancedOpen ? 'Hide advanced insights' : 'Show advanced insights'}
+        >
+          {advancedOpen ? 'Hide advanced' : 'Advanced · What-if, goals, score parts, curiosity, depth'}
+        </Pill>
+      ) : null}
+
+      {showAdvanced && advancedOpen ? (
+      <View testID="insights-advanced" style={{ gap: theme.space(4) }}>
+      {showWeekly ? <WeeklyGoalsSection part="goals" /> : null}
 
       {/* What-if Simulator (every output labelled Estimate, fixed 100 scale) */}
       {showWhatIf ? (
@@ -826,6 +845,8 @@ export function InsightsTab(): React.ReactElement {
             )}
           </View>
         </Card>
+      ) : null}
+      </View>
       ) : null}
     </AppShell>
   );

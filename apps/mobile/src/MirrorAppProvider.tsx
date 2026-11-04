@@ -167,6 +167,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     () => ({ ...DEFAULT_WEEKLY_REPORT_PREFS }),
   );
   const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
+  const [showSettings, setShowSettings] = React.useState(false);
   const [histScoredSessions, setHistScoredSessions] = React.useState<ScoredSession[]>([]);
   const [histStoredEvents, setHistStoredEvents] = React.useState<StoredForegroundEventInput[]>([]);
 
@@ -1708,6 +1709,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       weeklyReport,
       showWeeklyReport,
       setShowWeeklyReport,
+      showSettings,
+      setShowSettings,
       weeklyReportPrefs,
       updateWeeklyReportPrefs,
       openNotificationSettings,
@@ -1797,6 +1800,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       deleteGoal,
       weeklyReport,
       showWeeklyReport,
+      showSettings,
       weeklyReportPrefs,
       updateWeeklyReportPrefs,
       openNotificationSettings,

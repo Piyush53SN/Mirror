@@ -153,6 +153,9 @@ function buildP43Harness({
     'com.discord': 'Discord',
   };
 
+  // P4.4-UX test seam: the reminder + data controls now live in the Settings sheet.
+  const settingsHolder = { open: () => {} };
+
   function Harness() {
     const [tab, setTab] = React.useState(activeTab);
     const [budgets, setBudgets] = React.useState(initialBudgets);
@@ -161,6 +164,8 @@ function buildP43Harness({
       initialPrefs ?? { ...mod.DEFAULT_WEEKLY_REPORT_PREFS },
     );
     const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
+    const [showSettings, setShowSettings] = React.useState(false);
+    settingsHolder.open = () => setShowSettings(true);
     const [lastReset, setLastReset] = React.useState(null);
 
     const weekSet = React.useMemo(() => new Set(mod.lastNDays(7, selectedDay)), []);
@@ -404,6 +409,8 @@ function buildP43Harness({
       weeklyReport,
       showWeeklyReport,
       setShowWeeklyReport,
+      showSettings,
+      setShowSettings,
       weeklyReportPrefs,
       updateWeeklyReportPrefs,
       openNotificationSettings: () => {},
@@ -420,6 +427,7 @@ function buildP43Harness({
     );
   }
 
+  Harness.showSettingsSheet = () => settingsHolder.open();
   return Harness;
 }
 
@@ -518,6 +526,11 @@ test('P4.3 Goals CRUD + restart, calm "4 of 7 days within target" ratios, Weekly
     let renderer;
     TestRenderer.act(() => {
       renderer = TestRenderer.create(React.createElement(App14));
+    });
+    // P4.4-UX: goals sit under Advanced (collapsed by default) and reminders in Settings.
+    TestRenderer.act(() => {
+      renderer.root.find((el) => el.props?.['data-testid'] === 'insights-advanced-toggle').props.onPress();
+      App14.showSettingsSheet();
     });
 
     // 1. INITIAL MOUNT INVARIANTS:
@@ -736,6 +749,11 @@ test('P4.3 Goals CRUD + restart, calm "4 of 7 days within target" ratios, Weekly
       let restartedRenderer;
       TestRenderer.act(() => {
         restartedRenderer = TestRenderer.create(React.createElement(RestartedApp));
+      });
+      // P4.4-UX: open Advanced (goals) and Settings (reminders + typed DELETE) on the restarted app.
+      TestRenderer.act(() => {
+        restartedRenderer.root.find((el) => el.props?.['data-testid'] === 'insights-advanced-toggle').props.onPress();
+        RestartedApp.showSettingsSheet();
       });
 
       const restartedText = collectText(restartedRenderer.toJSON()).join(' ');
