@@ -1850,6 +1850,12 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
 - Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
 
+### Version 0.4.0 / versionCode 6 (P4.4a + P4.4-UX, not yet tagged)
+
+- Bumped with `scripts/release/bump-version.mjs 0.4.0 --version-code 6` across the six manifests, `build.gradle`, and `package-lock.json`.
+- `bump-version.mjs --check --tag v0.4.0-alpha.1` passes. `tests/config.test.mjs` and `tests/release-stage1.test.mjs` now pin `0.4.0` / `versionCode 6` for the repo, and the `0.3.0` tag cases are kept as mismatch checks.
+- Versions `0.3.0` / `versionCode 5` were never tagged. The next tag is `v0.4.0-alpha.1`.
+
 ### P4.4-UX small pass (not tagged; review stop; still `0.3.0` / `versionCode: 5`)
 
 Scope: between P4.4a and P4.4b. P4.4b and P4.4c are not started. Design notes: `docs/design/P4.4-ux-notes.md`.

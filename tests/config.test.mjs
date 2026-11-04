@@ -104,8 +104,8 @@ test('dark is the default, and telemetry is off as configuration, not as a promi
 test('the bundle id is stable, and the app targets phones only', () => {
   assert.equal(app.ios.supportsTablet, false);
   assert.equal(app.orientation, 'portrait');
-  assert.equal(app.version, '0.3.0');
-  assert.equal(app.android.versionCode, 5);
+  assert.equal(app.version, '0.4.0');
+  assert.equal(app.android.versionCode, 6);
 });
 
 /* -------------------------------------------------------------------- EAS -- */
