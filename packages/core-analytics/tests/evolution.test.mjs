@@ -9,8 +9,8 @@
  *       * hidden below 3 distinct local days (empty, zero, 1 day, 2 days)
  *       * uses "Seen since YYYY-MM-DD (history starts ...)" — never "First seen"
  *       * never emits "New after ..." or 'new' trend on limited history
- *       * attaches "(limited history)" caveat on growing/fading below 14 days,
- *         and omits the caveat once 14+ distinct days exist
+ *       * below 14 recorded days shows "Not enough history yet" (no growing/fading word),
+ *         and growing/fading labels appear once 14+ distinct days exist
  *       * summary growing/fading counts match displayed rows 1-for-1
  */
 import { test } from 'node:test';
@@ -149,20 +149,26 @@ test('computeInterestEvolution: 4-day window uses "Seen since ... (history start
   assert.ok(wiki && reddit && obsidian);
 
   assert.equal(wiki.seenSinceText, 'Seen since 2026-10-21 (history starts)');
-  assert.equal(wiki.trend, 'growing');
-  assert.equal(wiki.trendLabel, 'growing (limited history)');
+  // P4.4-UX: below 14 recorded days, no growing/fading label is shown at all.
+  assert.equal(wiki.trend, 'not_enough_history');
+  assert.equal(wiki.trendLabel, 'Not enough history yet');
 
   assert.equal(reddit.seenSinceText, 'Seen since 2026-10-21 (history starts)');
-  assert.equal(reddit.trend, 'fading');
-  assert.equal(reddit.trendLabel, 'fading (limited history)');
+  assert.equal(reddit.trend, 'not_enough_history');
+  assert.equal(reddit.trendLabel, 'Not enough history yet');
 
   assert.equal(obsidian.seenSinceText, 'Seen since 2026-10-24 (history starts 2026-10-21)');
-  assert.equal(obsidian.trend, 'steady');
-  assert.equal(obsidian.trendLabel, 'steady');
+  assert.equal(obsidian.trend, 'not_enough_history');
+  assert.equal(obsidian.trendLabel, 'Not enough history yet');
 
-  assert.equal(evo.growingCount, 1);
-  assert.equal(evo.fadedCount, 1);
+  assert.equal(evo.growingCount, 0);
+  assert.equal(evo.fadedCount, 0);
   assert.match(evo.summaryLine, /History starts 2026-10-21 \(4 days, limited history\)/);
+  assert.doesNotMatch(evo.summaryLine, /growing|fading/);
+  assert.match(evo.summaryLine, /Not enough history yet/);
+  for (const row of evo.rows) {
+    assert.doesNotMatch(row.trendLabel, /growing|fading/i, 'no growing/fading word below 14 days');
+  }
 });
 
 test('computeInterestEvolution: 14+ day window drops limited-history caveat', () => {
@@ -180,7 +186,8 @@ test('computeInterestEvolution: 14+ day window drops limited-history caveat', ()
   assert.equal(evo.hasHistory, true);
   assert.equal(evo.limitedHistory, false);
   assert.equal(evo.rows[0].trendLabel, 'growing');
-  assert.ok(!/limited history/i.test(evo.summaryLine));
+  assert.equal(evo.rows[0].trend, 'growing');
+  assert.ok(!/limited history|Not enough history/i.test(evo.summaryLine));
 });
 
 test('computeInterestEvolution property: counts reconcile with shown rows and no NaN appears', () => {

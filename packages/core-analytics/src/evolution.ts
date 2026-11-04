@@ -12,7 +12,8 @@
  *     merged spans (`sessions`) are used ONLY for sitting counts and sitting-depth bands
  *   - Short/long-window direction (growing / steady / fading) comparing earlier vs
  *     recent halves of the recorded days using day-clipped foreground time, with an
- *     explicit "(limited history)" caveat whenever fewer than `FULL_EVOLUTION_DAYS` (14)
+ *     below `FULL_EVOLUTION_DAYS` (14) recorded days, growing/fading labels are NOT shown;
+ *     each row reads "Not enough history yet" instead (P4.4-UX)
  *     days exist
  */
 import { localDay } from './ingest';
@@ -33,7 +34,9 @@ export const FULL_EVOLUTION_DAYS = 14;
 const DAY_MS = 86_400_000;
 const MIN_MS = 60_000;
 
-export type EvolutionTrend = 'growing' | 'steady' | 'fading';
+export type EvolutionTrend = 'growing' | 'steady' | 'fading' | 'not_enough_history';
+
+export const NOT_ENOUGH_HISTORY_LABEL = 'Not enough history yet';
 
 export type AppEvolutionRow = {
   app: string;
@@ -56,7 +59,7 @@ export type AppEvolutionRow = {
   totalSessionMs: number;
   dominantBand: string;
   trend: EvolutionTrend;
-  /** Includes "(limited history)" on growing/fading when distinctDays < FULL_EVOLUTION_DAYS. */
+  /** "Not enough history yet" whenever distinctDays < FULL_EVOLUTION_DAYS (no growing/fading word). */
   trendLabel: string;
 };
 
@@ -88,8 +91,8 @@ export type InterestEvolutionInput = {
 };
 
 export function formatEvolutionTrendLabel(trend: EvolutionTrend, limitedHistory: boolean): string {
-  if (!limitedHistory || trend === 'steady') return trend;
-  return `${trend} (limited history)`;
+  if (limitedHistory || trend === 'not_enough_history') return NOT_ENOUGH_HISTORY_LABEL;
+  return trend;
 }
 
 export function formatSeenSinceText(seenSinceDay: string, historyStartDay: string): string {
@@ -273,7 +276,10 @@ export function computeInterestEvolution(input: InterestEvolutionInput): Interes
     const earlierAvg = earlierMs / earlierSpan;
     const recentAvg = recentMs / recentSpan;
     let trend: EvolutionTrend;
-    if (earlierMs > 0 && (recentAvg < earlierAvg * 0.5 || (lastSeenDay < lastDay && recentMs === 0))) {
+    if (limitedHistory) {
+      // Growing/fading need FULL_EVOLUTION_DAYS of recorded history; never guess direction.
+      trend = 'not_enough_history';
+    } else if (earlierMs > 0 && (recentAvg < earlierAvg * 0.5 || (lastSeenDay < lastDay && recentMs === 0))) {
       trend = 'fading';
     } else if (activeDays >= 2 && recentAvg > earlierAvg * 1.25) {
       trend = 'growing';
@@ -312,7 +318,7 @@ export function computeInterestEvolution(input: InterestEvolutionInput): Interes
   const growingCount = rows.filter((r) => r.trend === 'growing').length;
   const fadedCount = rows.filter((r) => r.trend === 'fading').length;
   const summaryLine = limitedHistory
-    ? `History starts ${historyStartDay} (${orderedDays.length} days, limited history) · Shown: ${growingCount} growing, ${fadedCount} fading`
+    ? `History starts ${historyStartDay} (${orderedDays.length} days, limited history) · Trends: ${NOT_ENOUGH_HISTORY_LABEL}`
     : `History starts ${historyStartDay} (${orderedDays.length} days) · Shown: ${growingCount} growing, ${fadedCount} fading`;
 
   return {

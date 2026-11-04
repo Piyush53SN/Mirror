@@ -39,7 +39,7 @@ export const P3_GUARD_FULL = (orphanCount: number) =>
 export const J4_FULL = [
   'Interest Evolution requires clean session boundaries (unmatched ≤50, total ≤100) and multi-day history (3+ distinct local days).',
   'Dates are labelled “Seen since YYYY-MM-DD (history starts ...)” so the start of Mirror’s recording window never implies a first-ever app use.',
-  'Direction compares recent vs earlier recorded days (growing / steady / fading) and carries “(limited history)” whenever fewer than 14 days are recorded.',
+  'Direction compares recent vs earlier recorded days (growing / steady / fading). With fewer than 14 recorded days, no direction is shown and each app reads “Not enough history yet”.',
 ].join('\n');
 
 export const J9_FULL = [
