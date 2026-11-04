@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { isLabelingExcludedApp } from '@mirror/core-analytics';
+import { describeRuleCoverage, isLabelingExcludedApp } from '@mirror/core-analytics';
 import {
   Card,
   Chip,
@@ -17,6 +17,7 @@ import {
   useTheme,
 } from '@mirror/ui';
 import { AppShell } from '../components/AppShell';
+import { AppRulesCard } from '../components/AppRulesCard';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
 
@@ -34,6 +35,11 @@ export function SessionsTab(): React.ReactElement {
     expandedSessionId,
     setExpandedSessionId,
     saveSessionLabel,
+    appRules,
+    appRuleCoverage,
+    ruleSourceIds,
+    saveAppRule,
+    removeAppRule,
     checkPermissionAndCollect,
   } = useMirrorApp();
 
@@ -166,6 +172,13 @@ export function SessionsTab(): React.ReactElement {
             </View>
           </Surface>
 
+          <AppRulesCard
+            rules={appRules ?? {}}
+            coverage={appRuleCoverage}
+            appLabel={(app) => labels[app] || app}
+            onRemove={(app) => removeAppRule?.(app)}
+          />
+
           {/* Chronological sitting list */}
           <Card theme={theme} style={{ marginBottom: 0 }}>
             <View style={{ gap: theme.space(0.5), marginBottom: theme.space(2) }}>
@@ -202,6 +215,8 @@ export function SessionsTab(): React.ReactElement {
                 {scaledSessions.map((s) => {
                   const utilityExcluded = isLabelingExcludedApp(s.app);
                   const explicitLabel = intentLabels[s.id];
+                  const fromRule = ruleSourceIds?.has(s.id) ?? false;
+                  const appRule = appRules?.[s.app];
                   const isExpanded = expandedSessionId === s.id;
                   const displayMs = s.scaled_duration_ms > 0 ? s.scaled_duration_ms : s.duration_ms;
                   const hintLabel = s.duration_ms >= 5 * 60_000 ? 'long sitting (≥5m)' : 'brief sitting (<5m)';
@@ -242,9 +257,11 @@ export function SessionsTab(): React.ReactElement {
                             {`${startClock}–${endClock} · ${
                               utilityExcluded
                                 ? 'labeling skipped (system/utility)'
-                                : explicitLabel
-                                  ? `user label: ${explicitLabel} · ${hintLabel}`
-                                  : 'unlabeled'
+                                : explicitLabel && fromRule
+                                  ? `your rule: ${explicitLabel} · ${hintLabel}`
+                                  : explicitLabel
+                                    ? `user label: ${explicitLabel} · ${hintLabel}`
+                                    : 'unlabeled'
                             }`}
                           </Text>
                         </View>
@@ -306,6 +323,48 @@ export function SessionsTab(): React.ReactElement {
                               Not sure
                             </Pill>
                           </View>
+                          <Divider theme={theme} />
+                          {appRule ? (
+                            <View style={{ gap: theme.space(1.5) }}>
+                              <Text role="micro" tone="muted" theme={theme}>
+                                {`Your rule for ${appName}: always ${appRule.label}. ${describeRuleCoverage(s.app, appRuleCoverage?.[s.app])}`}
+                              </Text>
+                              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1.5) }}>
+                                <Pill
+                                  theme={theme}
+                                  variant="secondary"
+                                  accessibilityLabel={`Remove the rule for ${appName}`}
+                                  onPress={() => removeAppRule?.(s.app)}
+                                >
+                                  Remove rule
+                                </Pill>
+                              </View>
+                            </View>
+                          ) : (
+                            <View style={{ gap: theme.space(1.5) }}>
+                              <Text role="micro" tone="muted" theme={theme}>
+                                {`Set a rule for ${appName} once: its unlabeled sittings, including earlier days, count as your choice. Labels you set on a sitting always win. Remove the rule with one tap.`}
+                              </Text>
+                              <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
+                                <Pill
+                                  theme={theme}
+                                  variant="secondary"
+                                  accessibilityLabel={`Always intentional for ${appName}`}
+                                  onPress={() => saveAppRule?.(s.app, 'intentional')}
+                                >
+                                  Always intentional
+                                </Pill>
+                                <Pill
+                                  theme={theme}
+                                  variant="secondary"
+                                  accessibilityLabel={`Always mindless for ${appName}`}
+                                  onPress={() => saveAppRule?.(s.app, 'mindless')}
+                                >
+                                  Always mindless
+                                </Pill>
+                              </View>
+                            </View>
+                          )}
                         </View>
                       ) : null}
                     </View>

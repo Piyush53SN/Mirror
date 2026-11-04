@@ -111,6 +111,12 @@ export type MirrorRuntime = {
   budgetSuggestionDismissals(): Promise<Record<string, number>>;
   /** Record a dismissal for one app's budget suggestion (never creates a budget). */
   dismissBudgetSuggestion(app: string): Promise<Record<string, number>>;
+  /** User app rules (P4.4b): package -> the explicit label the user chose. Never guessed. */
+  appRules(): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>>;
+  /** Set the user's rule for one app ("always intentional" / "always mindless"). */
+  setAppRule(app: string, label: 'intentional' | 'mindless'): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>>;
+  /** Remove the user's rule for one app. Past per-sitting labels are unchanged. */
+  clearAppRule(app: string): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>>;
   /** Load all user-created calm Weekly Goals (decrypted from `goals`). */
   listGoals(): Promise<GoalDefinition[]>;
   /** Insert or update a Weekly Goal (sealed with XChaCha20-Poly1305). */
@@ -521,6 +527,15 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       },
       dismissBudgetSuggestion: async (app: string) => {
         return store.dismissBudgetSuggestion(app);
+      },
+      appRules: async () => {
+        return store.appRules();
+      },
+      setAppRule: async (app: string, label: 'intentional' | 'mindless') => {
+        return store.setAppRule(app, label);
+      },
+      clearAppRule: async (app: string) => {
+        return store.clearAppRule(app);
       },
       saveBudget: async (budget: BudgetDefinition) => {
         await store.putBudget(budget);

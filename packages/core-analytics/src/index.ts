@@ -1,4 +1,5 @@
 export * from './budgets';
+export * from './appRules';
 export * from './budgetSuggestions';
 export * from './discovery';
 export * from './evolution';

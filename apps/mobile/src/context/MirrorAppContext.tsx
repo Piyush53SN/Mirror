@@ -32,6 +32,7 @@ import {
   type WhatIfResult,
   type WhatIfScenarioId,
   type BudgetSuggestion,
+  type AppRuleCoverage,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
@@ -303,6 +304,14 @@ export type MirrorAppContextValue = {
   budgetSuggestions?: readonly BudgetSuggestion[];
   acceptBudgetSuggestion?: (suggestion: BudgetSuggestion) => Promise<SaveBudgetResult>;
   dismissBudgetSuggestion?: (app: string) => Promise<void>;
+
+  /** P4.4b user app rules. `intentLabels` already includes them; sources are below. */
+  appRules?: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>;
+  appRuleCoverage?: Record<string, AppRuleCoverage>;
+  /** Sitting ids whose effective label comes from a user app rule, not the sitting itself. */
+  ruleSourceIds?: ReadonlySet<string>;
+  saveAppRule?: (app: string, label: 'intentional' | 'mindless') => Promise<void>;
+  removeAppRule?: (app: string) => Promise<void>;
 
   /** User-created Tier D calm Weekly Goals & 7-day Weekly Report (P4.3). */
   goals?: GoalDefinition[];

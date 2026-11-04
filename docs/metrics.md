@@ -46,6 +46,20 @@ Journey's per-app direction (`growing` / `steady` / `fading`) compares recent an
 
 The Home card shows the 7-day total, top app (day-clipped foreground), and a prior-week change only when the weekly engine's `hasPriorWeekComparison` gate passes (both weeks have 7 recorded days and at least 14 distinct days). Otherwise the engine's reason is shown. No new metric is defined here; the card reads the weekly-report numbers.
 
+## 1e. App rules (P4.4b, Tier D)
+
+A user can mark an app once as **always intentional** or **always mindless**. The rule is the user's own explicit statement, and it is labelled as such (`your rules (Tier D feedback)`, `your rule: <label>` on a sitting). Mirror never infers intent from duration, timing, or app category.
+
+Resolution is one pure function, `resolveIntentLabels` (`packages/core-analytics/src/appRules.ts`), used by every consumer (Sessions, Insights, Journey, Why sheet, IQS, What-if, weekly report):
+
+1. A sitting's own label wins, including `unsure`.
+2. Otherwise, if the sitting's app has a rule, the sitting counts as the rule's label.
+3. Otherwise, the sitting is unlabeled.
+
+Rules fill in only unlabeled sittings of their own app, **including earlier days**. They never write `intent_label` events, so past per-sitting labels never change. Each rule shows a one-line coverage note (how many unlabeled sittings it counts, and how many keep their own label). Rules never apply to labeling-excluded apps (launchers, gallery, installers, system UI). Removing a rule is one tap.
+
+Storage: sealed `app_rules_v1` (`XChaCha20-Poly1305`), capped at 200 apps, included in the JSON export, and wiped by typed `DELETE`. Clearing per-sitting labels does **not** remove app rules; rules stay until you remove them.
+
 ## 2. The brief's formula, and the deviation
 
 ### 2.1 What the brief specifies

@@ -255,6 +255,8 @@ export type MirrorExportBundle = {
   weeklyReportPrefs: WeeklyReportPrefs;
   /** Dismissed budget suggestions (package -> dismissed-at ms), kept 7 days. */
   budgetSuggestionDismissals: Record<string, number>;
+  /** User app rules (P4.4b): package -> explicit label the user chose. */
+  appRules: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>;
   lastReset: StoreResetAudit | null;
 };
 

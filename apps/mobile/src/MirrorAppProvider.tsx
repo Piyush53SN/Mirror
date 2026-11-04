@@ -62,6 +62,7 @@ import {
   validateGoalDefinition,
   suggestBudgets,
   type BudgetSuggestion,
+  resolveIntentLabels,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
 import { osRandom } from './storage/keys';
@@ -154,7 +155,18 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [latestSyncOrphans, setLatestSyncOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
   const [raw24hOrphans, setRaw24hOrphans] = React.useState<OrphanDiagnosticSummary | null>(null);
   const [showWhy, setShowWhy] = React.useState(false);
-  const [intentLabels, setIntentLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
+  /** Raw per-sitting labels the user chose (the only thing written to storage). */
+  const [sittingLabels, setSittingLabels] = React.useState<Record<string, 'intentional' | 'mindless' | 'unsure'>>({});
+  /** P4.4b user app rules; they fill in unlabeled sittings only, never past labels. */
+  const [appRules, setAppRules] = React.useState<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>>({});
+  const appRulesRef = React.useRef(appRules);
+  appRulesRef.current = appRules;
+  /** Resolve effective labels: a sitting's own label wins, else the app rule. Pure; never reads duration. */
+  const applyAppRules = (
+    sessionRows: readonly { id: string; app: string }[],
+    raw: Record<string, 'intentional' | 'mindless' | 'unsure'>,
+  ): Record<string, 'intentional' | 'mindless' | 'unsure'> =>
+    resolveIntentLabels({ sessions: sessionRows, sittingLabels: raw, rules: appRulesRef.current }).labels;
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = React.useState<string | null>(null);
   const [labelOptIn, setLabelOptIn] = React.useState(false);
@@ -169,6 +181,18 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [histScoredSessions, setHistScoredSessions] = React.useState<ScoredSession[]>([]);
+  /** Effective labels for every consumer (Sessions, Insights, Journey, Why, IQS, What-if). */
+  const labelResolution = React.useMemo(() => {
+    const byId = new Map<string, { id: string; app: string }>();
+    for (const x of histScoredSessions) byId.set(x.id, { id: x.id, app: x.app });
+    for (const x of dayScoredSessions) byId.set(x.id, { id: x.id, app: x.app });
+    return resolveIntentLabels({
+      sessions: [...byId.values()],
+      sittingLabels,
+      rules: appRules,
+    });
+  }, [histScoredSessions, dayScoredSessions, sittingLabels, appRules]);
+  const intentLabels = labelResolution.labels;
   const [histStoredEvents, setHistStoredEvents] = React.useState<StoredForegroundEventInput[]>([]);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
@@ -421,6 +445,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         try {
           loadedLabels = await runtime.loadIntentLabels();
         } catch {}
+        try {
+          const loadedRules = await runtime.appRules();
+          appRulesRef.current = loadedRules;
+          setAppRules(loadedRules);
+        } catch {}
 
         const gapsRaw = await runtime.store.gaps({ fromMs: dayFrom, toMs: dayTo }).catch(() => []);
         const scoreGaps: ScoreGap[] = gapsRaw.map((g) => ({
@@ -437,7 +466,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setDailyTotalsSource(resolvedOs.source);
         setSessions(canonicalSessionRows);
         setScaledSessions(openOnly);
-        setIntentLabels(loadedLabels);
+        setSittingLabels(loadedLabels);
         setDayWindow({ day: targetDay, fromMs: dayFrom, toMs: dayTo });
         setDayScoredSessions(canonicalSittings);
         setDayScoreGaps(scoreGaps);
@@ -577,7 +606,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               events: histEvents,
               nowMs: evalNowMs,
               osTotals: totals,
-              intentLabels: loadedLabels,
+              intentLabels: applyAppRules(histScored, loadedLabels),
               labelWindow: { fromMs: dayFrom, toMs: dayTo },
               labels: mergedLabels,
               ignorePackages: sharedIgnore,
@@ -589,7 +618,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
               events: histEvents,
               sessions: histScored,
               nowMs: evalNowMs,
-              intentLabels: loadedLabels,
+              intentLabels: applyAppRules(histScored, loadedLabels),
               labels: mergedLabels,
               ignorePackages: sharedIgnore,
               utcOffsetMinutes,
@@ -598,7 +627,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setFocusWindows(
             computeFocusWindows({
               sessions: focusScored,
-              intentLabels: loadedLabels,
+              intentLabels: applyAppRules(focusScored, loadedLabels),
               labels: mergedLabels,
               ignorePackages: sharedIgnore,
               utcOffsetMinutes,
@@ -949,7 +978,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             events: histEvents,
             nowMs: evalNowMs,
             osTotals: dailyTotals,
-            intentLabels: updatedLabels,
+            intentLabels: applyAppRules(histScored, updatedLabels),
             labelWindow: { fromMs: dayFrom, toMs: dayTo },
             labels,
             ignorePackages: sharedIgnore,
@@ -961,7 +990,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
             events: histEvents,
             sessions: histScored,
             nowMs: evalNowMs,
-            intentLabels: updatedLabels,
+            intentLabels: applyAppRules(histScored, updatedLabels),
             labels,
             ignorePackages: sharedIgnore,
             utcOffsetMinutes,
@@ -970,7 +999,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         setFocusWindows(
           computeFocusWindows({
             sessions: focusScored,
-            intentLabels: updatedLabels,
+            intentLabels: applyAppRules(focusScored, updatedLabels),
             labels,
             ignorePackages: sharedIgnore,
             utcOffsetMinutes,
@@ -988,22 +1017,22 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         const runtime = runtimeRef.current;
         if (runtime) {
           await runtime.saveIntentLabel(sessionId, lbl);
-          const updatedLabels = { ...intentLabels, [sessionId]: lbl };
-          setIntentLabels(updatedLabels);
+          const updatedLabels = { ...sittingLabels, [sessionId]: lbl };
+          setSittingLabels(updatedLabels);
           await recomputeFromLabels(updatedLabels);
         }
       } finally {
         setLabelSaving(null);
       }
     },
-    [intentLabels, recomputeFromLabels],
+    [sittingLabels, recomputeFromLabels],
   );
 
   const clearStoredLabels = React.useCallback(async () => {
     const rt = runtimeRef.current;
     if (!rt) return;
     await rt.clearAllIntentLabels();
-    setIntentLabels({});
+    setSittingLabels({});
     await recomputeFromLabels({});
   }, [recomputeFromLabels]);
 
@@ -1072,7 +1101,9 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setDayScoredSessions([]);
           setDayScoreGaps([]);
           setDayReady(false);
-          setIntentLabels({});
+          setSittingLabels({});
+          appRulesRef.current = {};
+          setAppRules({});
           setExpandedSessionId(null);
           setQuality(null);
           setValidation(null);
@@ -1251,6 +1282,26 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     const next = await rt.dismissBudgetSuggestion(app);
     setSuggestionDismissals(next);
   }, []);
+
+  /** P4.4b: the user marks an app once as always intentional / always mindless. Only the user's tap writes. */
+  const saveAppRule = React.useCallback(async (app: string, label: 'intentional' | 'mindless'): Promise<void> => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    const next = await rt.setAppRule(app, label);
+    appRulesRef.current = next;
+    setAppRules(next);
+    await recomputeFromLabels(sittingLabels);
+  }, [recomputeFromLabels, sittingLabels]);
+
+  /** P4.4b: one tap removes a rule. Per-sitting labels are never changed. */
+  const removeAppRule = React.useCallback(async (app: string): Promise<void> => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    const next = await rt.clearAppRule(app);
+    appRulesRef.current = next;
+    setAppRules(next);
+    await recomputeFromLabels(sittingLabels);
+  }, [recomputeFromLabels, sittingLabels]);
 
   const deleteBudget = React.useCallback(async (id: string): Promise<boolean> => {
     const rt = runtimeRef.current ?? (await createRuntime());
@@ -1702,6 +1753,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgetSuggestions,
       acceptBudgetSuggestion,
       dismissBudgetSuggestion,
+      appRules,
+      appRuleCoverage: labelResolution.coverage,
+      ruleSourceIds: labelResolution.ruleSourceIds,
+      saveAppRule,
+      removeAppRule,
       goals,
       goalsSummary,
       saveGoal,
@@ -1794,6 +1850,10 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       budgetSuggestions,
       acceptBudgetSuggestion,
       dismissBudgetSuggestion,
+      appRules,
+      labelResolution,
+      saveAppRule,
+      removeAppRule,
       goals,
       goalsSummary,
       saveGoal,

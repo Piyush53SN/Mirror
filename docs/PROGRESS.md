@@ -1850,6 +1850,16 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
 - Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
 
+### P4.4b App rules (not in 0.4.0; awaiting user review before P4.4c)
+
+- Users mark an app once as "always intentional" or "always mindless" from a sitting. Rules fill in only unlabeled sittings of that app, including earlier days. A sitting's own label always wins (including `unsure`). Rules never write `intent_label` events, so past labels never change.
+- One pure resolver, `resolveIntentLabels` (core-analytics `appRules.ts`), feeds every consumer. The provider exposes `intentLabels` as the resolved map and keeps raw sitting labels separately.
+- Rule-labeled sittings show `your rule: <label>` and count as explicit labels everywhere, from one source.
+- Storage: sealed `app_rules_v1`, capped at 200, in the JSON export, and wiped by typed `DELETE`. Removing a rule is one tap.
+- Tests: `packages/core-analytics/tests/app-rules.test.mjs` (7), `packages/store/tests/app-rules.test.mjs` (4), `packages/ui/tests/app-rules-ui.test.mjs` (5, in `test:ui`).
+- Docs: `docs/metrics.md` section 1e; export list in `docs/INSTALL.md`.
+- Version: no bump in this step. `0.4.0` / `versionCode 6` is still the version. Adding app rules to a new build needs a new untagged build or the next version, decided at release time.
+
 ### Version 0.4.0 / versionCode 6 (P4.4a + P4.4-UX, not yet tagged)
 
 - Bumped with `scripts/release/bump-version.mjs 0.4.0 --version-code 6` across the six manifests, `build.gradle`, and `package-lock.json`.

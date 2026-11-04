@@ -55,6 +55,10 @@ const DAY_MS = 86_400_000;
 const WEEKLY_REPORT_PREFS_KEY = 'weekly_report';
 const REMINDER_DELIVERY_KEY = 'reminder_delivery_v1';
 const BUDGET_SUGGESTION_KEY = 'budget_suggestions_v1';
+/** Sealed user app rules (P4.4b): package -> explicit label. Never written by Mirror itself. */
+const APP_RULES_KEY = 'app_rules_v1';
+/** Mirrors `APP_RULES_MAX` in core-analytics. Asserted equal in store tests. */
+export const APP_RULES_STORE_MAX = 200;
 /** Mirrors `BUDGET_SUGGESTION_DISMISS_MS` in core-analytics (7 days). Asserted equal in store tests. */
 export const BUDGET_SUGGESTION_DISMISS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const BUDGET_SUGGESTION_MAX_DISMISSALS = 200;
@@ -1689,6 +1693,65 @@ export class MirrorStore {
     return next;
   }
 
+  /** User app rules (package -> { label, setAtMs }). Only the user writes these. */
+  async appRules(): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>> {
+    const rows = await this.driver.all<{ payload: Uint8Array }>(
+      `SELECT payload FROM sealed_preferences WHERE key = ?`,
+      [APP_RULES_KEY],
+    );
+    if (rows.length === 0) return {};
+    const payload = open<{ rules?: Record<string, unknown> }>(rows[0]!.payload, this.derived(), this.keyId);
+    const out: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }> = {};
+    for (const [app, rec] of Object.entries(payload.rules ?? {})) {
+      const r = rec as { label?: unknown; setAtMs?: unknown } | null;
+      if ((r?.label === 'intentional' || r?.label === 'mindless') && typeof r.setAtMs === 'number' && Number.isFinite(r.setAtMs)) {
+        out[app] = { label: r.label, setAtMs: r.setAtMs };
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Set (or replace) the user's rule for one app. Rules never touch stored
+   * `intent_label` events. Throws if the store is at the rule cap and `app` is new.
+   */
+  async setAppRule(
+    app: string,
+    label: 'intentional' | 'mindless',
+    nowMs = this.clock(),
+  ): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>> {
+    const trimmed = app.trim();
+    if (!trimmed || trimmed.length > 200) throw new Error('setAppRule: app is required');
+    if (label !== 'intentional' && label !== 'mindless') throw new Error('setAppRule: label must be intentional or mindless');
+    const current = await this.appRules();
+    if (!(trimmed in current) && Object.keys(current).length >= APP_RULES_STORE_MAX) {
+      throw new Error('setAppRule: rule limit reached');
+    }
+    current[trimmed] = { label, setAtMs: Math.max(0, Math.round(nowMs)) };
+    await this.writeAppRules(current, Math.max(0, Math.round(nowMs)));
+    return current;
+  }
+
+  /** Remove the user's rule for one app (one tap in the UI). Past labels are unchanged. */
+  async clearAppRule(app: string, nowMs = this.clock()): Promise<Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>> {
+    const trimmed = app.trim();
+    if (!trimmed) throw new Error('clearAppRule: app is required');
+    const current = await this.appRules();
+    delete current[trimmed];
+    await this.writeAppRules(current, Math.max(0, Math.round(nowMs)));
+    return current;
+  }
+
+  private async writeAppRules(
+    rules: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>,
+    updatedAt: number,
+  ): Promise<void> {
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [APP_RULES_KEY, updatedAt, seal({ rules }, this.derived(), this.keyId, this.random)],
+    );
+  }
+
   async reminderDeliveryState(): Promise<ReminderDeliveryState> {
     const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
       `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
@@ -1745,7 +1808,7 @@ export class MirrorStore {
    * budgets, goals, weekly report prefs, and reset audit).
    */
   async exportBundle(exportedAt = new Date(this.clock()).toISOString()): Promise<MirrorExportBundle> {
-    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset, budgetSuggestionDismissals] =
+    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset, budgetSuggestionDismissals, appRules] =
       await Promise.all([
         this.events(),
         this.sessions(),
@@ -1755,6 +1818,7 @@ export class MirrorStore {
         this.weeklyReportPrefs(),
         this.lastResetAudit(),
         this.budgetSuggestionDismissals(),
+        this.appRules(),
       ]);
     return {
       exportedAt,
@@ -1767,6 +1831,7 @@ export class MirrorStore {
       goals,
       weeklyReportPrefs,
       budgetSuggestionDismissals,
+      appRules,
       lastReset,
     };
   }

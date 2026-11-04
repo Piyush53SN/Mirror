@@ -83,6 +83,7 @@ Once you are on `mirror-v0.1.0-rc1-release.apk` (or `mirror-v0.1.0-release.apk`)
 - **On-device controls (`You` → `Local Data & Privacy`):**
   - **`Export all local data (JSON)`** — archive-only JSON export (plaintext warning + optional `XChaCha20-Poly1305` passphrase encryption; no import in v0.1).
   - **`Clear manual labels`** — removes manual `Intentional` / `Mindless` / `Not sure` tags while keeping screen-time history.
+  - The export also includes your budgets, Weekly Goals, Weekly Report preferences, budget suggestion dismissals, and app rules (your "always intentional" / "always mindless" choices). Typed `DELETE` wipes all of them.
   - **`Delete all local data`** — requires typing `DELETE` to wipe `mirror.db` and derived summaries, recording `History reset on <date>` on `You`.
 
 ---
