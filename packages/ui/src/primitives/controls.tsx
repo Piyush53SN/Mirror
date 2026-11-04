@@ -47,6 +47,8 @@ export type PillProps = ControlBase & {
   size?: number;
   /** Optional spoken override for TalkBack (e.g. spoken dates instead of MM-DD). */
   accessibilityLabel?: string;
+  /** Marks an on/off or chosen option. Exposed to TalkBack as selected. */
+  selected?: boolean;
 };
 
 /**
@@ -65,6 +67,7 @@ export function Pill({
   size,
   accessibilityLabel,
   testID,
+  selected,
 }: PillProps) {
   const t = withTheme(theme);
   const height = size ?? 44;
@@ -81,6 +84,7 @@ export function Pill({
       testID={testID}
       {...press}
       {...a11yTarget(labelForA11y, undefined, disabled)}
+      accessibilityState={selected !== undefined || disabled ? { selected: Boolean(selected), disabled: Boolean(disabled) } : undefined}
       style={[
         {
           minHeight: t.size.touchTarget,
@@ -94,7 +98,8 @@ export function Pill({
     >
       <View
         style={{
-          height,
+          // minHeight, not height: a wrapped label must grow the pill instead of being clipped (P4.4-UX "App time /").
+          minHeight: height,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',

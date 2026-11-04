@@ -367,6 +367,7 @@ export function InsightsTab(): React.ReactElement {
                         key={item.id}
                         theme={theme}
                         variant={isOn ? 'primary' : 'secondary'}
+                        selected={isOn}
                         accessibilityLabel={`${item.title}, ${isOn ? 'On' : 'Off'}. Activate to toggle scenario`}
                         onPress={() => handleToggleScenario(item.id)}
                       >

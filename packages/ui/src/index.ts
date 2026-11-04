@@ -17,6 +17,7 @@ export { ThemeProvider, useTheme, useThemeControls, useLiveBlur, ThemeContext } 
 export * from './flags';
 export * from './tiers';
 export * from './a11y';
+export * from './tabBarMetrics';
 export * from './format';
 
 export * from './primitives/text';

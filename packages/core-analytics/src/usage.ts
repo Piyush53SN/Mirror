@@ -474,6 +474,13 @@ export const LABELING_EXCLUDED_PACKAGES = [
   'com.google.android.calculator',
   'com.sec.android.app.popupcalculator',
   'com.miui.calculator',
+  // Gallery / media viewers are utility surfaces, not intent-bearing apps (P4.4-UX).
+  'com.android.gallery3d',
+  'com.sec.android.gallery3d',
+  'com.miui.gallery',
+  'com.oneplus.gallery',
+  'com.coloros.gallery3d',
+  'com.vivo.gallery',
   'com.android.documentsui',
   'com.google.android.documentsui',
   'com.android.providers.downloads',

@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { ScrollView, StatusBar, View } from 'react-native';
-import { Backdrop, Callout, Pill, TabBar, Text, Toolbar, rgba, useLiveBlur, useTheme } from '@mirror/ui';
+import { Backdrop, Callout, Pill, TabBar, Text, Toolbar, rgba, tabBarMetrics, useLiveBlur, useTheme } from '@mirror/ui';
 import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
 import { useSafeInsets } from './useSafeInsets';
@@ -42,7 +42,8 @@ export function AppShell({
   const horizontalInset = Math.max(theme.space(4), Math.max(insets.left, insets.right) + theme.space(4));
   // Reserve space above Android's edge-to-edge gesture / 3-button navigation bar
   // and guarantee generous non-collapsing bottom clearance below the last card on every tab.
-  const navBarReserve = Math.max(insets.bottom, theme.space(5));
+  const bar = tabBarMetrics({ insetsBottom: insets.bottom, tabBarHeight: theme.size.tabBar, space: (n) => theme.space(n) });
+  const navBarReserve = bar.navBarReserve;
   const bottomSpacerHeight = theme.size.tabBar + navBarReserve + theme.space(9);
 
   return (
@@ -97,15 +98,15 @@ export function AppShell({
             left: 0,
             right: 0,
             bottom: 0,
-            height: theme.size.tabBar + navBarReserve + theme.space(6),
+            height: bar.scrimHeight,
             justifyContent: 'flex-end',
           }}
         >
-          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.45) }} />
-          <View style={{ height: theme.space(2), backgroundColor: rgba(theme.color.canvas, 0.82) }} />
+          <View style={{ height: bar.fadeBandHeight, backgroundColor: rgba(theme.color.canvas, 0.45) }} />
+          <View style={{ height: bar.fadeBandHeight, backgroundColor: rgba(theme.color.canvas, 0.82) }} />
           <View
             style={{
-              height: theme.size.tabBar + navBarReserve + theme.space(2),
+              height: bar.solidBandHeight,
               backgroundColor: theme.color.canvas,
             }}
           />
@@ -128,7 +129,7 @@ export function AppShell({
               position: 'absolute',
               left: theme.space(4),
               right: theme.space(4),
-              bottom: theme.space(4),
+              bottom: bar.barBottom,
               height: theme.size.tabBar,
               borderRadius: theme.radius.pill,
               backgroundColor: theme.color.card,
@@ -140,6 +141,7 @@ export function AppShell({
             onChange={(id) => setActiveTab(id as TabKey)}
             liveBlur={tabBarBlur}
             opaque
+            bottomOffset={bar.barBottom}
             theme={theme}
           />
         </View>
