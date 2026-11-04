@@ -34,9 +34,17 @@ The only user-changeable quiet hours are the **reminder** quiet hours (`WeeklyRe
 
 ## 1b. Budget suggestion (P4.4a, Weekly Report)
 
-`Set a <limit> budget?` is a question, not a budget. Source: per-app **day-clipped foreground** over the 7 local days ending on the selected day. Only **recorded** days count, and the average divides by recorded days in the window (never by 7 when history is partial). Fewer than 3 recorded days means no suggestion. The suggested limit is the average rounded to the nearest 15 minutes, and must be at least 30 minutes. Apps that already have an enabled budget, shared excluded/launcher packages, and apps dismissed in the last 7 days are skipped. At most one suggestion is shown.
+`Set a <limit> budget?` is a question, not a budget. Source: per-app **day-clipped foreground** over the 7 local days ending on the selected day. Only **recorded** days count, and the average divides by recorded days in the window (never by 7 when history is partial). Fewer than 3 recorded days means no suggestion. The suggested limit is the average rounded to the nearest 15 minutes, and must be at least 30 minutes. Apps that already have an enabled budget, shared excluded/launcher packages, and apps dismissed in the last 7 days are skipped. Up to three suggestions are shown, strongest first (P4.4-UX), each with its own **Accept** and **Dismiss**; **Accept all** appears when there are two or more. Nothing is written on render.
 
 Mirror never guesses intent here. A suggestion only reads time. **Accept** is the only path that writes a budget, and it runs on a tap. **Dismiss** stores a timestamp (encrypted, included in the JSON export, wiped by typed `DELETE`) that hides that app's suggestion for 7 days.
+
+## 1c. Trend labels need 14 recorded days (P4.4-UX)
+
+Journey's per-app direction (`growing` / `steady` / `fading`) compares recent and earlier recorded days. It is shown only when the window has **14 or more recorded days** (`FULL_EVOLUTION_DAYS`). Below that, each row reads **"Not enough history yet"**, the direction is not computed for display, and the summary line does not count growing or fading apps. Multi-day views still require 3 local days.
+
+## 1d. Weekly summary on Home (P4.4-UX)
+
+The Home card shows the 7-day total, top app (day-clipped foreground), and a prior-week change only when the weekly engine's `hasPriorWeekComparison` gate passes (both weeks have 7 recorded days and at least 14 distinct days). Otherwise the engine's reason is shown. No new metric is defined here; the card reads the weekly-report numbers.
 
 ## 2. The brief's formula, and the deviation
 

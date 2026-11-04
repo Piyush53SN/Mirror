@@ -1850,6 +1850,18 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
 - Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
 
+### P4.4-UX small pass (not tagged; review stop; still `0.3.0` / `versionCode: 5`)
+
+Scope: between P4.4a and P4.4b. P4.4b and P4.4c are not started. Design notes: `docs/design/P4.4-ux-notes.md`.
+
+1. **Home weekly summary + one-time reminder offer** (`WeeklySummaryCard.tsx`, store `reminderOfferSeen`). The card reuses the weekly engine and its 14-day comparison gate. The offer is shown once, is off by default, and asks for `POST_NOTIFICATIONS` only after the user taps **Turn on**. **Not now** records the answer. Tests: `home-weekly-summary-ui.test.mjs` (8), store `reminderOfferSeen` test.
+2. **Budget suggestions: up to three** (`BUDGET_SUGGESTION_MAX_ITEMS = 3`). Per-item **Accept** / **Dismiss**, and **Accept all** when there are two or more. Nothing is written on render. Tests: `budgetSuggestions.test.mjs` (6), `budget-suggestions-ui.test.mjs` (7).
+3. **Layout consolidation.** Reminders (with the single reminder quiet-hours control), export, and typed `DELETE` move into one **Settings** sheet opened from `You`. Insights collapses What-if, goals, score parts, curiosity, and depth under **Advanced** (collapsed by default). Tests: `settings-consolidation-ui.test.mjs` (2); the a11y and weekly-goals UI harnesses now open Advanced and Settings explicitly.
+4. **Trend labels need 14 recorded days.** Below 14, rows read **"Not enough history yet"** and the summary drops growing/fading counts. Tests: `evolution.test.mjs` (8).
+5. **Small fixes.** Goal chip no longer clips a wrapped `App time / day` (`Pill` uses `minHeight`). Bottom nav uses one geometry source (`tabBarMetrics`) and the solid band covers the bar top and the system nav inset (**needs a device check**). What-if chips expose `selected` to TalkBack. Gallery and media viewers get no Label button. Tests: `p44-polish-ui.test.mjs`, `labeling-exclusions.test.mjs`.
+
+Version: no bump in this pass. `0.3.0` / `versionCode 5` is still untagged. If P4.4-UX ships on the next tag, use `0.4.0` / `versionCode 6` (P4.4a plus this pass). Device check needed (not run in this sandbox): the `POST_NOTIFICATIONS` consent flow and the bottom bar clearance on the 3-button and gesture bars.
+
 ### P4.3 pre-release fixes (2026-11-04, still `0.3.0` / `versionCode: 5`, not tagged)
 
 - **Night window:** single definition in `@mirror/shared-types` (`NIGHT_WINDOW`, `23:00–05:00`), used by score, goals, weekly, rabbit hole, what-if, and as the reminder default.
