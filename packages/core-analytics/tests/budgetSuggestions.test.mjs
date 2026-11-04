@@ -86,16 +86,25 @@ test('already-budgeted, excluded, and recently dismissed apps are skipped; dismi
   assert.equal(core.BUDGET_SUGGESTION_DISMISS_MS, 7 * DAY);
 });
 
-test('suggestions are capped at one, nothing is created by the engine', () => {
-  const dayTotals = [
-    { day: '2026-11-02', source: 'stored_events', totals: [{ app: 'x.big', totalMs: 3 * 60 * MIN }, { app: 'x.small', totalMs: 40 * MIN }] },
-    { day: '2026-11-01', source: 'stored_events', totals: [{ app: 'x.big', totalMs: 3 * 60 * MIN }, { app: 'x.small', totalMs: 40 * MIN }] },
-    { day: '2026-11-03', source: 'stored_events', totals: [{ app: 'x.big', totalMs: 3 * 60 * MIN }, { app: 'x.small', totalMs: 40 * MIN }] },
-  ];
-  const out = core.suggestBudgets({ endDay: END, dayTotals, recordedDays: ['2026-11-01', '2026-11-02', '2026-11-03'], nowMs: 0 });
-  assert.equal(out.length, 1);
-  assert.equal(out[0].app, 'x.big');
+test('suggestions are capped at three (strongest first), maxSuggestions can lower it, and the engine creates nothing', () => {
+  const window3 = ['2026-11-01', '2026-11-02', '2026-11-03'];
+  const dayTotals = window3.map((day) => ({
+    day,
+    source: 'stored_events',
+    totals: [
+      { app: 'x.big', totalMs: 180 * MIN },
+      { app: 'x.mid', totalMs: 90 * MIN },
+      { app: 'x.small', totalMs: 40 * MIN },
+      { app: 'x.tiny', totalMs: 20 * MIN }, // below 30m: never suggested
+    ],
+  }));
+  const base = { endDay: END, dayTotals, recordedDays: window3, nowMs: 0 };
+  const out = core.suggestBudgets(base);
+  assert.deepEqual(out.map((s) => s.app), ['x.big', 'x.mid', 'x.small']);
   assert.equal(out[0].title, 'Set a 3h budget?');
+  assert.equal(core.suggestBudgets({ ...base, maxSuggestions: 1 }).length, 1);
+  assert.equal(core.suggestBudgets({ ...base, maxSuggestions: 2 }).length, 2);
+  assert.equal(core.BUDGET_SUGGESTION_MAX_ITEMS, 3);
 });
 
 test('the 7-day window is the local day range ending on endDay (no days outside the window count)', () => {

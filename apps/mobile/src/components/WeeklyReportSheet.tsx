@@ -117,15 +117,56 @@ function WeeklyBudgetSuggestions({
   onDismiss: (app: string) => Promise<void>;
 }): React.ReactElement | null {
   const theme = useTheme();
-  const [busyApp, setBusyApp] = React.useState<string | null>(null);
+  const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   if (suggestions.length === 0) return null;
+
+  // Accept is the only write. Each tap creates one soft budget; nothing runs on render.
+  const acceptMany = async (list: readonly BudgetSuggestion[]) => {
+    setBusy(true);
+    setNotice(null);
+    let added = 0;
+    let failed = 0;
+    try {
+      for (const s of list) {
+        const res = await onAccept(s);
+        if (res.ok) added += 1;
+        else failed += 1;
+      }
+    } finally {
+      setBusy(false);
+    }
+    if (failed === 0) {
+      setNotice(
+        added === 1
+          ? 'Soft budget added. You can change or remove it on Insights.'
+          : `${added} soft budgets added. You can change or remove them on Insights.`,
+      );
+    } else {
+      setNotice(`${added} added. ${failed} could not be saved. Please try again.`);
+    }
+  };
+
   return (
     <Surface theme={theme}>
       <View testID="weekly-budget-suggestions" style={{ gap: theme.space(2) }}>
         <Text role="micro" tone="muted" theme={theme}>
-          BUDGET SUGGESTION · 7 DAYS · YOU DECIDE
+          BUDGET SUGGESTIONS · LAST 7 DAYS · YOU DECIDE
         </Text>
+        {suggestions.length > 1 ? (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+            <Pill
+              testID="budget-suggestions-accept-all"
+              theme={theme}
+              variant="primary"
+              disabled={busy}
+              onPress={() => acceptMany(suggestions)}
+              accessibilityLabel={`Accept all ${suggestions.length} budget suggestions`}
+            >
+              {`Accept all (${suggestions.length})`}
+            </Pill>
+          </View>
+        ) : null}
         {suggestions.map((s) => (
           <View key={s.app} testID={`budget-suggestion-${s.app}`} style={{ gap: theme.space(1) }}>
             <Text role="label" theme={theme}>
@@ -136,39 +177,26 @@ function WeeklyBudgetSuggestions({
             </Text>
             <View style={{ flexDirection: 'row', gap: theme.space(1), flexWrap: 'wrap' }}>
               <Pill
-                testID="budget-suggestion-accept"
+                testID={`budget-suggestion-accept-${s.app}`}
                 theme={theme}
                 variant="primary"
-                disabled={busyApp !== null}
-                onPress={async () => {
-                  setBusyApp(s.app);
-                  setNotice(null);
-                  try {
-                    const res = await onAccept(s);
-                    setNotice(
-                      res.ok
-                        ? `Soft budget added for ${s.label}. You can change or remove it on Insights.`
-                        : 'That budget could not be saved. Please check the amount and try again.',
-                    );
-                  } finally {
-                    setBusyApp(null);
-                  }
-                }}
+                disabled={busy}
+                onPress={() => acceptMany([s])}
                 accessibilityLabel={`Accept budget suggestion for ${s.label}`}
               >
                 Accept
               </Pill>
               <Pill
-                testID="budget-suggestion-dismiss"
+                testID={`budget-suggestion-dismiss-${s.app}`}
                 theme={theme}
                 variant="secondary"
-                disabled={busyApp !== null}
+                disabled={busy}
                 onPress={async () => {
-                  setBusyApp(s.app);
+                  setBusy(true);
                   try {
                     await onDismiss(s.app);
                   } finally {
-                    setBusyApp(null);
+                    setBusy(false);
                   }
                 }}
                 accessibilityLabel={`Dismiss budget suggestion for ${s.label} for 7 days`}

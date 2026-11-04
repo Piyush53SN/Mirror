@@ -158,7 +158,7 @@ test('P4.4a: Accept creates only on tap (calls acceptBudgetSuggestion once, neve
   const ctx = buildContext();
   const renderer = mountSheet(ctx.value);
   await TestRenderer.act(async () => {
-    renderer.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-accept').props.onPress();
+    renderer.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-accept-com.google.android.youtube').props.onPress();
   });
   assert.deepEqual(ctx.calls.accept, ['com.google.android.youtube']);
   assert.deepEqual(ctx.calls.dismiss, []);
@@ -168,7 +168,7 @@ test('P4.4a: Dismiss records a 7-day dismissal only (never creates a budget)', a
   const ctx = buildContext();
   const renderer = mountSheet(ctx.value);
   await TestRenderer.act(async () => {
-    renderer.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-dismiss').props.onPress();
+    renderer.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-dismiss-com.google.android.youtube').props.onPress();
   });
   assert.deepEqual(ctx.calls.dismiss, ['com.google.android.youtube']);
   assert.deepEqual(ctx.calls.accept, []);
@@ -182,4 +182,76 @@ test('P4.4a: no suggestions -> no card', () => {
     renderer.root.findAll((el) => el.props?.['data-testid'] === 'weekly-budget-suggestions').length,
     0,
   );
+});
+
+function buildMulti() {
+  const days = ['2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02', '2026-11-03'];
+  const dayTotals = days.map((day) => ({
+    day,
+    source: 'stored_events',
+    totals: [
+      { app: 'x.big', totalMs: 180 * MIN },
+      { app: 'x.mid', totalMs: 90 * MIN },
+      { app: 'x.small', totalMs: 40 * MIN },
+    ],
+  }));
+  const suggestions = mod.suggestBudgets({ endDay: '2026-11-03', dayTotals, recordedDays: days, nowMs: 0 });
+  const calls = { accept: [], dismiss: [], save: 0 };
+  const value = {
+    insets: { top: 0, bottom: 0, left: 0, right: 0 },
+    goals: [],
+    goalsSummary: null,
+    selectedDay: '2026-11-03',
+    budgetWeekTotals: dayTotals,
+    budgetRecordedDays: days,
+    dayScoredSessions: [],
+    labels: {},
+    weeklyReport: mod.computeWeeklyReport({ endDay: '2026-11-03', dayTotals, sessions: [], recordedDays: days, historyStartDay: days[0], utcOffsetMinutes: 0, ignorePackages: [] }),
+    budgetSuggestions: suggestions,
+    acceptBudgetSuggestion: async (s) => {
+      calls.accept.push(s.app);
+      return { ok: true, value: {} };
+    },
+    dismissBudgetSuggestion: async (app) => {
+      calls.dismiss.push(app);
+    },
+  };
+  return { value, calls, suggestions };
+}
+
+test('P4.4-UX: up to three suggestions render; nothing is written on render', () => {
+  const m = buildMulti();
+  assert.equal(m.suggestions.length, 3);
+  const r = mountSheet(m.value);
+  assert.equal(m.calls.accept.length, 0, 'no accept on render');
+  assert.equal(m.calls.dismiss.length, 0, 'no dismiss on render');
+  assert.equal(r.root.findAll((el) => el.props?.['data-testid'] === 'budget-suggestions-accept-all').length, 1);
+  for (const s of m.suggestions) {
+    assert.equal(r.root.findAll((el) => el.props?.['data-testid'] === `budget-suggestion-accept-${s.app}`).length, 1);
+    assert.equal(r.root.findAll((el) => el.props?.['data-testid'] === `budget-suggestion-dismiss-${s.app}`).length, 1);
+  }
+});
+
+test('P4.4-UX: Accept all accepts each suggestion once, in order, only on tap', async () => {
+  const m = buildMulti();
+  const r = mountSheet(m.value);
+  await TestRenderer.act(async () => {
+    r.root.find((el) => el.props?.['data-testid'] === 'budget-suggestions-accept-all').props.onPress();
+  });
+  assert.deepEqual(m.calls.accept, ['x.big', 'x.mid', 'x.small']);
+  assert.deepEqual(m.calls.dismiss, []);
+});
+
+test('P4.4-UX: per-item Dismiss dismisses only that app; per-item Accept accepts only that app', async () => {
+  const m = buildMulti();
+  const r = mountSheet(m.value);
+  await TestRenderer.act(async () => {
+    r.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-dismiss-x.mid').props.onPress();
+  });
+  assert.deepEqual(m.calls.dismiss, ['x.mid']);
+  assert.deepEqual(m.calls.accept, []);
+  await TestRenderer.act(async () => {
+    r.root.find((el) => el.props?.['data-testid'] === 'budget-suggestion-accept-x.small').props.onPress();
+  });
+  assert.deepEqual(m.calls.accept, ['x.small']);
 });

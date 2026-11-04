@@ -15,7 +15,8 @@
  *      it must be at least 30 minutes.
  *   4. Skipped: apps that already have an enabled budget, shared excluded/launcher
  *      packages, and apps dismissed less than 7 days ago.
- *   5. At most one suggestion is returned, to keep the report calm.
+ *   5. Up to `BUDGET_SUGGESTION_MAX_ITEMS` (3) suggestions are returned, strongest
+ *      average first. Each one is accepted or dismissed separately.
  *   6. Neutral copy only. No streaks, no red, no guilt, no "exceeded" framing.
  */
 
@@ -31,6 +32,7 @@ export const BUDGET_SUGGESTION_MIN_LIMIT_MS = 30 * MINUTE_MS;
 export const BUDGET_SUGGESTION_ROUND_MS = 15 * MINUTE_MS;
 /** A dismissed suggestion does not return for this long. */
 export const BUDGET_SUGGESTION_DISMISS_MS = 7 * DAY_MS;
+export const BUDGET_SUGGESTION_MAX_ITEMS = 3;
 
 export type BudgetSuggestion = {
   /** Package the suggested budget would cover (one app). */
@@ -57,7 +59,8 @@ export type BudgetSuggestionInput = {
   dismissals?: Readonly<Record<string, number>>;
   nowMs: number;
   appLabels?: Readonly<Record<string, string>>;
-  maxSuggestions?: 1;
+  /** 1..3, default 3. */
+  maxSuggestions?: 1 | 2 | 3;
 };
 
 function shiftDay(day: string, deltaDays: number): string {
@@ -122,5 +125,7 @@ export function suggestBudgets(input: BudgetSuggestionInput): BudgetSuggestion[]
   }
 
   candidates.sort((a, b) => b.averageMs - a.averageMs || a.app.localeCompare(b.app));
-  return candidates.slice(0, input.maxSuggestions ?? 1);
+  const requested = Math.floor(input.maxSuggestions ?? BUDGET_SUGGESTION_MAX_ITEMS);
+  const cap = Math.max(1, Math.min(BUDGET_SUGGESTION_MAX_ITEMS, requested));
+  return candidates.slice(0, cap);
 }
