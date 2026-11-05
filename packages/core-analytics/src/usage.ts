@@ -446,11 +446,23 @@ export function isIgnoredSystemApp(
  * repeated-return Rabbit Hole detection (clocks, calculators, dialer, camera,
  * contacts, SMS, calendar, file pickers), on top of `SHARED_EXCLUDED_PACKAGES`.
  */
-export const LABELING_EXCLUDED_PACKAGES = [
-  ...SHARED_EXCLUDED_PACKAGES,
-  'com.android.dialer',
+/**
+ * Caller-ID and phone-dialer apps. They are calls, not intent-bearing sittings, so
+ * they are excluded from Rabbit Hole detection (a long ringing or call-log session
+ * is not a repeated return), labeling, and focus windows. Covers Truecaller, Google
+ * Phone, Samsung Phone, and the MIUI / stock dialer (`com.android.dialer`).
+ * Totals are unchanged: this list is not in `SHARED_EXCLUDED_PACKAGES`.
+ */
+export const CALLER_ID_DIALER_PACKAGES = [
+  'com.truecaller',
   'com.google.android.dialer',
   'com.samsung.android.dialer',
+  'com.android.dialer',
+] as const;
+
+export const LABELING_EXCLUDED_PACKAGES = [
+  ...SHARED_EXCLUDED_PACKAGES,
+  ...CALLER_ID_DIALER_PACKAGES,
   'com.android.incallui',
   'com.samsung.android.incallui',
   'com.android.camera',

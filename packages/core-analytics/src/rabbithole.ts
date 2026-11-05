@@ -76,7 +76,7 @@ export type RabbitHoleInput = {
   /** Merged sittings (used for explicit user label lookup, or as open source in legacy unit tests that omit `events`). */
   sessions?: readonly ScoredSession[];
   nowMs?: number;
-  intentLabels?: Readonly<Record<string, IntentLabel['label']>>;
+  intentLabels?: readonly IntentLabel[] | Readonly<Record<string, IntentLabel['label']>>;
   labels?: Readonly<Record<string, string>>;
   ignorePackages?: readonly string[];
   utcOffsetMinutes?: number;
@@ -254,6 +254,7 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
   const resolveClusterLabels = (clusterRun: readonly ScoredSession[], app: string, startMs: number, endMs: number): ExplicitLabelCounts => {
     // Check explicit labels on the raw opens themselves first
     const direct = countExplicitLabels(clusterRun, input.intentLabels, {
+      utcOffsetMinutes,
       ignorePackages: input.ignorePackages,
       appLabels: labels,
     });
@@ -266,6 +267,7 @@ export function computeRabbitHoles(input: RabbitHoleInput): RabbitHoleResult {
       (s) => s.app === app && s.endMs > startMs && s.startMs < endMs,
     );
     return countExplicitLabels(overlappingMerged, input.intentLabels, {
+      utcOffsetMinutes,
       ignorePackages: input.ignorePackages,
       appLabels: labels,
     });

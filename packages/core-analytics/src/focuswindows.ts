@@ -221,6 +221,7 @@ export function computeFocusWindows(input: FocusWindowsInput): FocusWindowsResul
         ? round1(switches / (totalSittingMs / HOUR_MS))
         : null;
     const explicitLabels = countExplicitLabels(ordered, input.intentLabels, {
+      utcOffsetMinutes,
       ignorePackages: input.ignorePackages,
       appLabels: labels,
     });

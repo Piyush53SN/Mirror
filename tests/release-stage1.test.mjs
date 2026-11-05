@@ -78,12 +78,12 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   const bumpScript = join(ROOT, 'scripts', 'release', 'bump-version.mjs');
   const repoCheck = spawnSync(process.execPath, [bumpScript, '--check'], { encoding: 'utf8' });
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
-  assert.match(repoCheck.stdout, /Version check OK: v0\.4\.0 \(versionCode 6\)/);
+  assert.match(repoCheck.stdout, /Version check OK: v0\.4\.0 \(versionCode 7\)/);
 
   const shippedAppJson = JSON.parse(readFileSync(join(ROOT, 'apps', 'mobile', 'app.json'), 'utf8'));
   assert.ok(
-    shippedAppJson.expo.android.versionCode >= 6,
-    'v0.4.0 (P4.4-UX) versionCode must be >= 6 (> v0.3.0 versionCode 5) for in-place Android upgrades',
+    shippedAppJson.expo.android.versionCode >= 7,
+    'v0.4.0 (P4.4-UX) versionCode must be >= 7 (> v0.3.0 versionCode 5) for in-place Android upgrades',
   );
 
   // Matching --tag v0.4.0 passes; suffixed pre-release tags with same base version pass; mismatched or malformed --tag fails loudly

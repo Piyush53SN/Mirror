@@ -112,7 +112,8 @@ export function Pill({
         }}
       >
         {icon}
-        <Text role="label" theme={t} style={{ color: colour, fontWeight: '600' }}>
+        {/* flexShrink + centred: a long label wraps inside the pill instead of clipping at 200% font. */}
+        <Text role="label" theme={t} style={{ color: colour, fontWeight: '600', flexShrink: 1, textAlign: 'center' }}>
           {children}
         </Text>
       </View>

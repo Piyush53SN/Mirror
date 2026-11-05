@@ -13,6 +13,7 @@
  *     installers, system UI), even if a stored rule names one.
  */
 import { isLabelingExcludedApp } from './usage';
+import type { IntentLabel } from './scoring';
 
 export type AppRuleLabel = 'intentional' | 'mindless';
 export type IntentLabelValue = 'intentional' | 'mindless' | 'unsure';
@@ -91,6 +92,18 @@ export function resolveIntentLabels(input: {
   }
 
   return { labels, ruleSourceIds, coverage };
+}
+
+/**
+ * The label list every engine receives. Rule-derived entries carry `source: 'rule'`
+ * so `countExplicitLabels` can apply the rule gate. Sitting labels stay `sitting`.
+ */
+export function toIntentLabelList(resolution: AppRuleResolution): IntentLabel[] {
+  return Object.entries(resolution.labels).map(([sessionId, label]) => ({
+    sessionId,
+    label,
+    source: resolution.ruleSourceIds.has(sessionId) ? 'rule' : 'sitting',
+  }));
 }
 
 /** One-sentence note for the UI about what a rule currently covers. Never reports a guess. */

@@ -1850,6 +1850,17 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
 - Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
 
+### Pre-release device fixes after P4.4b (version 0.4.0 / versionCode 7)
+
+- Goal-type chips: shorter labels (`App time/day`, `Total time/day`, `Late-night max`, `Max sittings/day`) and Pill text that can shrink and wrap. Real-device width and 200% font were not measured in the sandbox.
+- Weekly report and weekly goals cards, and the budget suggestion card, use the padded `Card` (titles and the D badge no longer touch the card edge).
+- Weekly report sheet: the scroll area is bounded (`flexShrink`, `nestedScrollEnabled`), so three budget suggestions scroll and Accept / Dismiss stay reachable. Not verified on a device.
+- Rabbit Hole and labeling: caller-ID and dialer apps (Truecaller, Google Phone, Samsung Phone, MIUI / stock dialer) are excluded via `CALLER_ID_DIALER_PACKAGES`. Totals are unchanged.
+- App rules and Deliberate share: rule labels are gated (one per app per day, at least 3 apps per window), labelled "based on your rules" wherever Deliberate share appears. See `docs/metrics.md` 1e.
+- Weekly stat "Quiet hours" renamed "Late-night time" (the goal type is now "Late-night max", so it no longer shares the reminder quiet-hours name).
+- Version: `0.4.0` / `versionCode 7`.
+- Tests: `packages/core-analytics/tests/p44b-fixes.test.mjs` (13), `packages/ui/tests/p44b-fixes-ui.test.mjs` (8, in `test:ui`).
+
 ### P4.4b App rules (not in 0.4.0; awaiting user review before P4.4c)
 
 - Users mark an app once as "always intentional" or "always mindless" from a sitting. Rules fill in only unlabeled sittings of that app, including earlier days. A sitting's own label always wins (including `unsure`). Rules never write `intent_label` events, so past labels never change.

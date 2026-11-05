@@ -63,6 +63,10 @@ import {
   suggestBudgets,
   type BudgetSuggestion,
   resolveIntentLabels,
+  toIntentLabelList,
+  countExplicitLabels,
+  type ExplicitLabelCounts,
+  type IntentLabel,
 } from '@mirror/core-analytics';
 import { createRuntime, type DataQuality } from './runtime';
 import { osRandom } from './storage/keys';
@@ -165,8 +169,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const applyAppRules = (
     sessionRows: readonly { id: string; app: string }[],
     raw: Record<string, 'intentional' | 'mindless' | 'unsure'>,
-  ): Record<string, 'intentional' | 'mindless' | 'unsure'> =>
-    resolveIntentLabels({ sessions: sessionRows, sittingLabels: raw, rules: appRulesRef.current }).labels;
+  ): IntentLabel[] =>
+    toIntentLabelList(resolveIntentLabels({ sessions: sessionRows, sittingLabels: raw, rules: appRulesRef.current }));
   const [labelSaving, setLabelSaving] = React.useState<string | null>(null);
   const [expandedSessionId, setExpandedSessionId] = React.useState<string | null>(null);
   const [labelOptIn, setLabelOptIn] = React.useState(false);
@@ -193,6 +197,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     });
   }, [histScoredSessions, dayScoredSessions, sittingLabels, appRules]);
   const intentLabels = labelResolution.labels;
+  /** The list every engine receives. Rule-derived entries carry source 'rule' (rule gate in countExplicitLabels). */
+  const intentLabelList = React.useMemo(() => toIntentLabelList(labelResolution), [labelResolution]);
   const [histStoredEvents, setHistStoredEvents] = React.useState<StoredForegroundEventInput[]>([]);
 
   const runtimeRef = React.useRef<Awaited<ReturnType<typeof createRuntime>> | null>(null);
@@ -1141,10 +1147,31 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   // Derive IQS, What-if, Curiosity, and Sitting-Length Bands synchronously from the
   // exact same canonical `dayScoredSessions` + `dayWindow` snapshot so Home, Insights,
   // IQS, and Sessions always report identical sitting counts and band sums.
+  /** Shared explicit-label counts (P4.4b). Same counter as IQS, Why, Weekly and Journey. */
+  const labelCountUtcOffset = -new Date().getTimezoneOffset();
+  const dayLabelCounts: ExplicitLabelCounts = React.useMemo(
+    () =>
+      countExplicitLabels(dayScoredSessions, intentLabelList, {
+        window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
+        utcOffsetMinutes: labelCountUtcOffset,
+        ignorePackages: SHARED_EXCLUDED_PACKAGES,
+      }),
+    [dayScoredSessions, intentLabelList, dayWindow, labelCountUtcOffset],
+  );
+  const allLabelCounts: ExplicitLabelCounts = React.useMemo(() => {
+    const byId = new Map<string, ScoredSession>();
+    for (const x of histScoredSessions) byId.set(x.id, x);
+    for (const x of dayScoredSessions) byId.set(x.id, x);
+    return countExplicitLabels([...byId.values()], intentLabelList, {
+      utcOffsetMinutes: labelCountUtcOffset,
+      ignorePackages: SHARED_EXCLUDED_PACKAGES,
+    });
+  }, [histScoredSessions, dayScoredSessions, intentLabelList, labelCountUtcOffset]);
+
   const iqs: Score | null = React.useMemo(() => {
     if (!dayReady) return null;
     try {
-      const labelArray = Object.entries(intentLabels).map(([sessionId, label]) => ({ sessionId, label }));
+      const labelArray = intentLabelList;
       const isProvisionalToday = dayWindow.day === todayStr;
       return scoreIqs({
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
@@ -1160,7 +1187,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       console.log('IQS compute failed', e);
       return null;
     }
-  }, [dayReady, dayWindow, todayStr, dayScoredSessions, intentLabels, dayScoreGaps]);
+  }, [dayReady, dayWindow, todayStr, dayScoredSessions, intentLabelList, dayScoreGaps]);
 
   const whatIf: WhatIfResult | null = React.useMemo(() => {
     if (!dayReady) return null;
@@ -1175,7 +1202,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         sessions: dayScoredSessions,
         osTotals: dailyTotals,
         totalsSource: dailyTotalsSource,
-        labels: intentLabels,
+        labels: intentLabelList,
         appLabels: labels,
         ignorePackages: launcherPackages,
         gaps: dayScoreGaps,
@@ -1197,7 +1224,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     dayScoredSessions,
     dailyTotals,
     dailyTotalsSource,
-    intentLabels,
+    intentLabelList,
     labels,
     launcherPackages,
     dayScoreGaps,
@@ -1209,7 +1236,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const curiosity: CuriositySplit | null = React.useMemo(() => {
     if (!dayReady) return null;
     try {
-      const labelArray = Object.entries(intentLabels).map(([sessionId, label]) => ({ sessionId, label }));
+      const labelArray = intentLabelList;
       return curiositySplit({
         window: { fromMs: dayWindow.fromMs, toMs: dayWindow.toMs },
         sessions: dayScoredSessions,
@@ -1221,7 +1248,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     } catch {
       return null;
     }
-  }, [dayReady, dayWindow, dayScoredSessions, intentLabels, dayScoreGaps]);
+  }, [dayReady, dayWindow, dayScoredSessions, intentLabelList, dayScoreGaps]);
 
   const depthBands: DepthBand[] = React.useMemo(
     () => sessionBands(dayScoredSessions),
@@ -1485,7 +1512,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       dayTotals: fortnightDayTotals,
       events: histStoredEvents,
       sessions: mergedReportSessions,
-      intentLabels,
+      intentLabels: intentLabelList,
       recordedDays: allDistinctRecordedDays,
       historyStartDay: effectiveBudgetHistoryStart,
       utcOffsetMinutes: -new Date().getTimezoneOffset(),
@@ -1498,7 +1525,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     fortnightDayTotals,
     histStoredEvents,
     mergedReportSessions,
-    intentLabels,
+    intentLabelList,
     allDistinctRecordedDays,
     effectiveBudgetHistoryStart,
     todayStr,
@@ -1755,6 +1782,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       dismissBudgetSuggestion,
       appRules,
       appRuleCoverage: labelResolution.coverage,
+      dayLabelCounts,
+      allLabelCounts,
       ruleSourceIds: labelResolution.ruleSourceIds,
       saveAppRule,
       removeAppRule,
@@ -1852,6 +1881,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       dismissBudgetSuggestion,
       appRules,
       labelResolution,
+      dayLabelCounts,
+      allLabelCounts,
       saveAppRule,
       removeAppRule,
       goals,

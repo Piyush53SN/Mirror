@@ -2,6 +2,7 @@ import * as React from 'react';
 import { View } from 'react-native';
 import {
   Callout,
+  Card,
   Chip,
   Divider,
   Meter,
@@ -9,7 +10,6 @@ import {
   SectionHeader,
   Sheet,
   Stat,
-  Surface,
   Text,
   TierBadge,
   useTheme,
@@ -148,7 +148,7 @@ function WeeklyBudgetSuggestions({
   };
 
   return (
-    <Surface theme={theme}>
+    <Card theme={theme} style={{ marginBottom: 0 }}>
       <View testID="weekly-budget-suggestions" style={{ gap: theme.space(2) }}>
         <Text role="micro" tone="muted" theme={theme}>
           BUDGET SUGGESTIONS · LAST 7 DAYS · YOU DECIDE
@@ -212,7 +212,7 @@ function WeeklyBudgetSuggestions({
           </Callout>
         ) : null}
       </View>
-    </Surface>
+    </Card>
   );
 }
 
@@ -354,7 +354,7 @@ export function WeeklyReportSheet({
             />
             <Stat
               value={formatDuration(report.lateNightForegroundMs)}
-              label="Quiet hours"
+              label="Late-night time"
               hint="23:00 to 05:00 local"
               theme={theme}
             />
@@ -422,6 +422,11 @@ export function WeeklyReportSheet({
             title="Your labels (Tier D feedback)"
             caption={report.yourLabels.attribution}
           />
+          {report.yourLabels.ruleNote ? (
+            <Text role="micro" tone="muted" theme={theme}>
+              {report.yourLabels.ruleNote}
+            </Text>
+          ) : null}
           {report.yourLabels.measurable && report.yourLabels.intentionalShare !== null ? (
             <View style={{ gap: theme.space(1.5) }}>
               <Meter

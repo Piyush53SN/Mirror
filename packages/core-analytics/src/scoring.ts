@@ -63,7 +63,24 @@ export const SMALL_SAMPLE_ACTIVE_MS = 30 * MINUTE_MS;
 export const SWITCH_GAP_MS = 5 * MINUTE_MS;
 
 export type ScoredSession = { id: string; app: string; startMs: number; endMs: number };
-export type IntentLabel = { sessionId: string; label: 'intentional' | 'mindless' | 'unsure' };
+/**
+ * `source` says where a label came from. `sitting` (default) is the user's own tap on
+ * that sitting. `rule` is an app rule the user set once (P4.4b); it is never stored
+ * as a sitting label and is counted under the rule gate below.
+ */
+export type IntentLabel = {
+  sessionId: string;
+  label: 'intentional' | 'mindless' | 'unsure';
+  source?: 'sitting' | 'rule';
+};
+
+/**
+ * App-rule gate (P4.4b). A rule contributes at most one decisive label per app per
+ * local day, and rule-based labels count toward Deliberate share and the unlock
+ * threshold only when they come from at least this many different apps in the same
+ * window. Below that they are shown as "based on your rules" and never counted.
+ */
+export const RULE_MIN_APPS = 3;
 export type ScoreGap = { reason: string; count: number; fromMs?: number; toMs?: number };
 export type TopicVector = { model: string; vector: readonly number[] };
 
@@ -374,6 +391,18 @@ export type ExplicitLabelCounts = {
   decisive: number;
   /** intentional + mindless + unsure. */
   total: number;
+  /**
+   * Rule-based labels (P4.4b). `groups` = distinct (app, local day) pairs with a rule
+   * label in the window; `apps` = distinct apps among them. `counted` is true only when
+   * `apps >= RULE_MIN_APPS`; only then do the rule groups enter the counts above.
+   */
+  ruleBased?: {
+    groups: number;
+    apps: number;
+    intentional: number;
+    mindless: number;
+    counted: boolean;
+  };
 };
 
 /**
@@ -391,15 +420,20 @@ export function countExplicitLabels(
     window?: { fromMs: number; toMs: number };
     ignorePackages?: readonly string[];
     appLabels?: Readonly<Record<string, string>>;
+    /** Minutes east of UTC. Needed to group rule labels by local day. Default 0. */
+    utcOffsetMinutes?: number;
   } = {},
 ): ExplicitLabelCounts {
   if (!labels) return { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 };
 
+  // sessionId -> label, and whether that label came from an app rule.
   const labelMap = new Map<string, IntentLabel['label']>();
+  const ruleIds = new Set<string>();
   if (Array.isArray(labels)) {
     for (const entry of labels as readonly IntentLabel[]) {
       if (entry && typeof entry.sessionId === 'string') {
         labelMap.set(entry.sessionId, entry.label);
+        if (entry.source === 'rule') ruleIds.add(entry.sessionId);
       }
     }
   } else {
@@ -414,30 +448,74 @@ export function countExplicitLabels(
   const scoped = options.window ? sessionsInWindow(sessions, options.window) : sessions.filter((s) => ms(s) > 0);
   const launcherSet = new Set<string>(options.ignorePackages ?? []);
   const appLabels = options.appLabels ?? {};
+  const offset = options.utcOffsetMinutes ?? 0;
   const seenIds = new Set<string>();
 
   let intentional = 0;
   let mindless = 0;
   let unsure = 0;
+  // One rule label per (app, local day): key -> label.
+  const ruleGroups = new Map<string, { app: string; label: 'intentional' | 'mindless' }>();
   for (const session of scoped) {
     if (seenIds.has(session.id)) continue;
     seenIds.add(session.id);
     if (launcherSet.has(session.app)) continue;
     if (isLabelingExcludedApp(session.app, appLabels[session.app])) continue;
     const lbl = labelMap.get(session.id);
+    if (lbl === undefined) continue;
+    if (ruleIds.has(session.id)) {
+      if (lbl === 'unsure') continue;
+      const localDay = Math.floor((session.startMs + offset * 60_000) / 86_400_000);
+      const key = `${session.app}\u0000${localDay}`;
+      if (!ruleGroups.has(key)) ruleGroups.set(key, { app: session.app, label: lbl });
+      continue;
+    }
     if (lbl === 'intentional') intentional += 1;
     else if (lbl === 'mindless') mindless += 1;
     else if (lbl === 'unsure') unsure += 1;
   }
 
+  const ruleApps = new Set<string>();
+  let ruleIntentional = 0;
+  let ruleMindless = 0;
+  for (const g of ruleGroups.values()) {
+    ruleApps.add(g.app);
+    if (g.label === 'intentional') ruleIntentional += 1;
+    else ruleMindless += 1;
+  }
+  const counted = ruleApps.size >= RULE_MIN_APPS;
+  if (counted) {
+    intentional += ruleIntentional;
+    mindless += ruleMindless;
+  }
+
   const decisive = intentional + mindless;
-  return {
-    intentional,
-    mindless,
-    unsure,
-    decisive,
-    total: decisive + unsure,
-  };
+  const result: ExplicitLabelCounts = { intentional, mindless, unsure, decisive, total: decisive + unsure };
+  // Only attached when rule labels exist, so sitting-only results are unchanged.
+  if (ruleGroups.size > 0) {
+    result.ruleBased = {
+      groups: ruleGroups.size,
+      apps: ruleApps.size,
+      intentional: ruleIntentional,
+      mindless: ruleMindless,
+      counted,
+    };
+  }
+  return result;
+}
+
+/**
+ * One plain sentence for any surface that shows Deliberate share (P4.4b). Returns null
+ * when no rule labels exist in the window, so nothing is added to other copy.
+ */
+export function ruleBasedNote(counts: ExplicitLabelCounts | undefined): string | null {
+  const r = counts?.ruleBased;
+  if (!r || r.groups === 0) return null;
+  const appsWord = r.apps === 1 ? 'app' : 'apps';
+  if (r.counted) {
+    return `${r.groups} ${r.groups === 1 ? 'label is' : 'labels are'} based on your rules (one per app per day, from ${r.apps} ${appsWord}).`;
+  }
+  return `Based on your rules: ${r.apps} ${appsWord} so far. Rule labels count once ${RULE_MIN_APPS} different apps have them in this window.`;
 }
 
 export function curiositySplit(input: ScoreInput): CuriositySplit | null {
@@ -520,19 +598,20 @@ export function scoreIqs(input: ScoreInput): Score {
     measurable: lengthMeasurable,
   };
 
-  const labelCounts = countExplicitLabels(sessions, input.labels);
+  const labelCounts = countExplicitLabels(sessions, input.labels, { utcOffsetMinutes: offset });
   const { intentional, decisive } = labelCounts;
   const labelled = decisive >= MIN_LABELS;
   const deliberateShare = decisive > 0 ? intentional / decisive : 0;
+  const ruleNote = ruleBasedNote(labelCounts);
   const deliberateFactor: Factor = {
     id: 'deliberate_share',
     label: 'Deliberate share',
     points: labelled ? round1(20 * deliberateShare) : 0,
     max: 20,
     tier: 'D',
-    detail: labelled
+    detail: (labelled
       ? `${intentional} of ${decisive} labelled sittings were marked intentional (${Math.round(deliberateShare * 100)}%) — your labels (Tier D feedback).`
-      : `Not measured: ${decisive} decisive label${decisive === 1 ? '' : 's'} (${MIN_LABELS} needed) — your labels (Tier D feedback).`,
+      : `Not measured: ${decisive} decisive label${decisive === 1 ? '' : 's'} (${MIN_LABELS} needed) — your labels (Tier D feedback).`) + (ruleNote ? ` ${ruleNote}` : ''),
     measurable: labelled,
   };
 

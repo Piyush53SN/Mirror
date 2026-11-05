@@ -63,7 +63,7 @@ export function InsightsTab(): React.ReactElement {
     setWhatIfQuietPreset,
     whatIfActiveScenarios,
     toggleWhatIfScenario,
-    intentLabels,
+    allLabelCounts,
     p3Reliable,
     orphanCount,
     totalGaps,
@@ -90,13 +90,8 @@ export function InsightsTab(): React.ReactElement {
   const isToday = selectedDay === toDayStr(Date.now());
   const quietLabel = whatIfQuietPreset === '22-07' ? '22:00–07:00' : '23:00–05:00';
 
-  const explicitLabelCount = React.useMemo(
-    () =>
-      Object.values(intentLabels).filter(
-        (lbl) => lbl === 'intentional' || lbl === 'mindless',
-      ).length,
-    [intentLabels],
-  );
+  // Explicit labels across loaded history, through the shared counter (rule gate applied).
+  const explicitLabelCount = allLabelCounts?.decisive ?? 0;
 
   const sittingCount = dayScoredSessions.length;
   const bandTotalCount = React.useMemo(

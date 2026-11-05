@@ -2,13 +2,13 @@ import * as React from 'react';
 import { View } from 'react-native';
 import {
   Callout,
+  Card,
   Chip,
   EmptyState,
   LinkButton,
   Meter,
   Pill,
   SectionHeader,
-  Surface,
   Text,
   TextField,
   TierBadge,
@@ -39,22 +39,22 @@ const PACKAGE_ID_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/;
 const GOAL_KIND_OPTIONS: readonly { id: GoalKind; label: string; description: string }[] = [
   {
     id: 'daily_app_foreground',
-    label: 'App time / day',
+    label: 'App time/day',
     description: 'Day-clipped foreground time for selected app(s) on each recorded day.',
   },
   {
     id: 'daily_total_foreground',
-    label: 'Total time / day',
+    label: 'Total time/day',
     description: 'Total day-clipped foreground time across non-excluded apps on each recorded day.',
   },
   {
     id: 'daily_late_night_max',
-    label: 'Quiet hours max',
+    label: 'Late-night max',
     description: 'Foreground time during 23:00 to 05:00 local time on each recorded day (0m allowed).',
   },
   {
     id: 'daily_sitting_count_max',
-    label: 'Max sittings / day',
+    label: 'Max sittings/day',
     description: 'Merged sitting count per recorded day (optionally scoped to selected apps).',
   },
 ];
@@ -289,7 +289,7 @@ export function WeeklyGoalsSection({
         : kind === 'daily_total_foreground'
           ? 'Daily foreground total'
           : kind === 'daily_late_night_max'
-            ? 'Quiet hours (23:00 to 05:00)'
+            ? 'Late-night time (23:00 to 05:00)'
             : 'Daily sittings';
     const resolvedTitle = trimmedTitle || defaultTitle;
 
@@ -386,7 +386,7 @@ export function WeeklyGoalsSection({
       {part !== 'goals' ? (
       <>
       {/* 1. Weekly Report Summary & Sheet Trigger */}
-      <Surface theme={theme}>
+      <Card theme={theme} style={{ marginBottom: 0 }}>
         <View testID="insights-weekly-report-card" style={{ gap: theme.space(2) }}>
           <View
             style={{
@@ -436,14 +436,14 @@ export function WeeklyGoalsSection({
                 'Per-app totals come from day-clipped foreground events. Prior-week comparison unlocks at 14 recorded days.')}
           </Text>
         </View>
-      </Surface>
+      </Card>
 
       </>
       ) : null}
       {part !== 'report' ? (
       <>
       {/* 2. Calm User-Created Weekly Goals */}
-      <Surface theme={theme}>
+      <Card theme={theme} style={{ marginBottom: 0 }}>
         <View testID="insights-goals-section" style={{ gap: theme.space(2.5) }}>
           <View
             style={{
@@ -828,7 +828,7 @@ export function WeeklyGoalsSection({
             </View>
           ) : null}
         </View>
-      </Surface>
+      </Card>
 
       </>
       ) : null}

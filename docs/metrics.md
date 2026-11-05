@@ -56,7 +56,16 @@ Resolution is one pure function, `resolveIntentLabels` (`packages/core-analytics
 2. Otherwise, if the sitting's app has a rule, the sitting counts as the rule's label.
 3. Otherwise, the sitting is unlabeled.
 
-Rules fill in only unlabeled sittings of their own app, **including earlier days**. They never write `intent_label` events, so past per-sitting labels never change. Each rule shows a one-line coverage note (how many unlabeled sittings it counts, and how many keep their own label). Rules never apply to labeling-excluded apps (launchers, gallery, installers, system UI). Removing a rule is one tap.
+Rules fill in only unlabeled sittings of their own app, **including earlier days**. They never write `intent_label` events, so past per-sitting labels never change.
+
+**Rule gate (applies to Deliberate share everywhere).** Rule labels count toward Deliberate share and the 5-label unlock only under this gate, implemented in `countExplicitLabels` (`scoring.ts`, `RULE_MIN_APPS = 3`):
+
+- A rule contributes **at most one decisive label per app per local day** (a group is an app plus a local day).
+- Rule labels count only when they come from **at least 3 different apps** in the same window. With fewer apps they are shown as "Based on your rules: N apps so far" but are not counted.
+- The user's own per-sitting labels are never gated and always count.
+- Where Deliberate share is shown (Why sheet, Sessions, Weekly report, Journey), a one-sentence note says when labels are based on the user's rules.
+
+Storage keeps the two apart: per-sitting labels are `intent_label` events, rules are the sealed `app_rules_v1` preference, and the resolved label map exists only in memory. Each rule shows a one-line coverage note (how many unlabeled sittings it counts, and how many keep their own label). Rules never apply to labeling-excluded apps (launchers, gallery, installers, system UI). Removing a rule is one tap.
 
 Storage: sealed `app_rules_v1` (`XChaCha20-Poly1305`), capped at 200 apps, included in the JSON export, and wiped by typed `DELETE`. Clearing per-sitting labels does **not** remove app rules; rules stay until you remove them.
 

@@ -35,6 +35,7 @@ import {
   formatDurationShort,
   lateNightMs,
   MIN_LABELS,
+  ruleBasedNote,
   type IntentLabel,
   type ScoredSession,
 } from './scoring';
@@ -96,6 +97,8 @@ export type WeeklyIntentLabelsSummary = {
   /** Ratio `intentional / decisive` in `[0, 1]` when `decisive >= 5`, else `null` (never counted as 0). */
   intentionalShare: number | null;
   summaryText: string;
+  /** One sentence when labels come from app rules (P4.4b); null otherwise. */
+  ruleNote: string | null;
 };
 
 export type PriorWeekComparison = {
@@ -480,7 +483,7 @@ export function computeWeeklyReport(input: WeeklyReportInput): WeeklyReportResul
   );
 
   // Explicit user labels ("your labels (Tier D feedback)", never Tier A)
-  const labelCounts = countExplicitLabels(weekSessions, input.intentLabels);
+  const labelCounts = countExplicitLabels(weekSessions, input.intentLabels, { utcOffsetMinutes });
   const labelsMeasurable = labelCounts.decisive >= MIN_WEEKLY_INTENT_LABELS;
   const intentionalShare = labelsMeasurable
     ? labelCounts.intentional / labelCounts.decisive
@@ -498,6 +501,7 @@ export function computeWeeklyReport(input: WeeklyReportInput): WeeklyReportResul
     summaryText: labelsMeasurable
       ? `${Math.round(intentionalShare! * 100)}% intentional (${labelCounts.intentional} intentional, ${labelCounts.mindless} mindless across ${WEEKLY_LABELS_ATTRIBUTION}${labelCounts.unsure > 0 ? `; ${labelCounts.unsure} not sure excluded` : ''}).`
       : `Not measured yet: ${labelCounts.decisive} of ${MIN_WEEKLY_INTENT_LABELS} needed from ${WEEKLY_LABELS_ATTRIBUTION} (Intentional or Mindless; Not sure and duration hints never count).`,
+    ruleNote: ruleBasedNote(labelCounts),
   };
 
   // Prior-week comparison: strictly requires >= 14 distinct recorded local days AND

@@ -77,7 +77,7 @@ export type DiscoveryJourneyInput = {
   events?: readonly StoredForegroundEventInput[];
   nowMs?: number;
   osTotals?: readonly DiscoveryOsTotalInput[];
-  intentLabels?: Readonly<Record<string, IntentLabel['label']>>;
+  intentLabels?: readonly IntentLabel[] | Readonly<Record<string, IntentLabel['label']>>;
   /**
    * Optional window (e.g. `selectedDay` `[fromMs, toMs)`) to scope `explicitLabels`
    * so it reconciles 1-for-1 with the IQS Why sheet for the viewed day.
@@ -246,6 +246,7 @@ export function computeDiscoveryJourney(input: DiscoveryJourneyInput): Discovery
   const orderedDays = [...daySet].sort();
 
   const explicitLabels = countExplicitLabels(valid, input.intentLabels, {
+    utcOffsetMinutes,
     window: input.labelWindow,
     ignorePackages: input.ignorePackages,
     appLabels: labels,

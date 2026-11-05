@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { describeRuleCoverage, isLabelingExcludedApp } from '@mirror/core-analytics';
+import { describeRuleCoverage, isLabelingExcludedApp, ruleBasedNote } from '@mirror/core-analytics';
 import {
   Card,
   Chip,
@@ -38,25 +38,23 @@ export function SessionsTab(): React.ReactElement {
     appRules,
     appRuleCoverage,
     ruleSourceIds,
+    dayLabelCounts,
     saveAppRule,
     removeAppRule,
     checkPermissionAndCollect,
   } = useMirrorApp();
 
+  // Same counter as IQS, Why, Weekly and Journey (P4.4b). Rule labels count only under the rule gate.
   const explicitLabelStats = React.useMemo(() => {
-    let intentional = 0;
-    let mindless = 0;
-    let unsure = 0;
-    for (const row of scaledSessions) {
-      if (isLabelingExcludedApp(row.app)) continue;
-      const lbl = intentLabels[row.id];
-      if (lbl === 'intentional') intentional += 1;
-      else if (lbl === 'mindless') mindless += 1;
-      else if (lbl === 'unsure') unsure += 1;
-    }
-    const totalExplicit = intentional + mindless;
-    return { intentional, mindless, unsure, totalExplicit };
-  }, [scaledSessions, intentLabels]);
+    const c = dayLabelCounts ?? { intentional: 0, mindless: 0, unsure: 0, decisive: 0, total: 0 };
+    return {
+      intentional: c.intentional,
+      mindless: c.mindless,
+      unsure: c.unsure,
+      totalExplicit: c.decisive,
+      ruleNote: ruleBasedNote(c),
+    };
+  }, [dayLabelCounts]);
 
   const labelTargetRatio = Math.min(1, explicitLabelStats.totalExplicit / 5);
   const isEmptyDay =
@@ -157,6 +155,11 @@ export function SessionsTab(): React.ReactElement {
                   />
                 </View>
               </View>
+              {explicitLabelStats.ruleNote ? (
+                <Text role="micro" tone="muted" theme={theme}>
+                  {explicitLabelStats.ruleNote}
+                </Text>
+              ) : null}
               <Divider theme={theme} />
               <Meter
                 theme={theme}

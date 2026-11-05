@@ -18,6 +18,7 @@ import {
   TierBadge,
   useTheme,
 } from '@mirror/ui';
+import { ruleBasedNote } from '@mirror/core-analytics';
 import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
@@ -353,7 +354,7 @@ export function JourneyTab(): React.ReactElement {
 
               <Divider theme={theme} />
               <Text role="micro" tone="muted" theme={theme}>
-                {`Explicit intent labels on ${selectedDay}: ${discovery.explicitLabels.decisive} of 5 needed (${discovery.explicitLabels.decisive >= 5 ? 'ready for deliberate vs drift tagging' : 'label opens in Sessions to tag routes'})`}
+                {`Explicit intent labels on ${selectedDay}: ${discovery.explicitLabels.decisive} of 5 needed (${discovery.explicitLabels.decisive >= 5 ? 'ready for deliberate vs drift tagging' : 'label opens in Sessions to tag routes'})${ruleBasedNote(discovery.explicitLabels) ? ` · ${ruleBasedNote(discovery.explicitLabels)}` : ''}`}
               </Text>
             </View>
           )}

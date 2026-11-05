@@ -343,7 +343,10 @@ export function Sheet({
           borderTopRightRadius: t.radius.sheet,
           borderWidth: 1,
           borderColor: t.color.borderCard,
+          // A bounded column: the scroll area below takes what is left after the handle and
+          // header, so long content (e.g. three budget suggestions) scrolls instead of clipping.
           maxHeight: (height * parseInt(maxHeight, 10)) / 100,
+          flexShrink: 1,
           paddingBottom: t.space(6) + Math.max(0, bottomInset),
         }}
       >
@@ -372,7 +375,12 @@ export function Sheet({
             </Text>
           ) : null}
         </View>
-        <ScrollView contentContainerStyle={{ paddingHorizontal: t.space(4) }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={{ flexGrow: 0, flexShrink: 1 }}
+          contentContainerStyle={{ paddingHorizontal: t.space(4), paddingBottom: t.space(2) }}
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+        >
           {children}
         </ScrollView>
       </View>

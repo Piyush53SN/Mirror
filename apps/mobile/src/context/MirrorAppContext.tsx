@@ -33,6 +33,7 @@ import {
   type WhatIfScenarioId,
   type BudgetSuggestion,
   type AppRuleCoverage,
+  type ExplicitLabelCounts,
 } from '@mirror/core-analytics';
 import type { DataQuality } from '../runtime';
 import type { SafeInsets } from '../components/useSafeInsets';
@@ -308,6 +309,10 @@ export type MirrorAppContextValue = {
   /** P4.4b user app rules. `intentLabels` already includes them; sources are below. */
   appRules?: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>;
   appRuleCoverage?: Record<string, AppRuleCoverage>;
+  /** Explicit-label counts for the selected day (rule gate applied). Sessions reads this. */
+  dayLabelCounts?: ExplicitLabelCounts;
+  /** Explicit-label counts across loaded history (rule gate applied). Insights reads this. */
+  allLabelCounts?: ExplicitLabelCounts;
   /** Sitting ids whose effective label comes from a user app rule, not the sitting itself. */
   ruleSourceIds?: ReadonlySet<string>;
   saveAppRule?: (app: string, label: 'intentional' | 'mindless') => Promise<void>;
