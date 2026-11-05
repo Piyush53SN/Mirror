@@ -16,7 +16,8 @@ test('reminders: off by default, quiet-hours suppressed (23:00-05:00), deduped p
   const IST = 330; // +05:30
   const MIN = 60_000;
   const report = core.computeWeeklyReport({
-    referenceDay: '2026-11-01', // Sunday
+    // The engine reads `endDay`. A misspelled key falls back to the wall clock, so pin it here.
+    endDay: '2026-11-01', // Sunday
     recordedDays: ['2026-10-30', '2026-10-31', '2026-11-01'],
     dayTotals: [
       { day: '2026-10-30', source: 'stored_events', totals: [{ app: 'org.wikipedia', totalMs: 30 * MIN }] },
@@ -28,6 +29,11 @@ test('reminders: off by default, quiet-hours suppressed (23:00-05:00), deduped p
     ],
     utcOffsetMinutes: IST,
   });
+
+  // The window is anchored by endDay, so the fixture days are the window under any clock.
+  assert.equal(report.endDay, '2026-11-01');
+  assert.equal(report.startDay, '2026-10-26');
+  assert.equal(report.recordedDays, 3);
 
   // 1. Off by default -> never posts
   const sundayEveningIst = Date.parse('2026-11-01T14:00:00.000Z'); // 19:30 IST on Sunday

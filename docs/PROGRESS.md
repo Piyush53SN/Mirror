@@ -1850,6 +1850,16 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Tests: `budgetSuggestions.test.mjs` (6), `store.test.mjs` dismissal persistence/prune/export/wipe, `budget-suggestions-ui.test.mjs` (4).
 - Version: no bump yet. `0.3.0` / `versionCode 5` has not been tagged. Once `v0.3.0-alpha.1` ships, further builds need `versionCode 6` (and a new minor, e.g. `0.4.0`, if P4.4 features ship together).
 
+### Release fix: clock-dependent test (v0.4.0-alpha.2 release run failed)
+
+- Symptom: release run on `bb2cafb` failed `reminders.test.mjs` ("Partial week (3 of 7 days)" expected, "2 of 7 days, 1h 10m" got). CI on the same commit had passed earlier the same day.
+- Cause: the test passed `referenceDay`, but `computeWeeklyReport` reads `endDay`. With no `endDay`, the 7-day window ended on the wall clock's local day. The window moved from 2026-10-30 to 2026-10-31 once IST reached 2026-11-06 (from 18:30Z on 05 Nov). CI ran at 14:12Z (passed) and release at 19:11Z (failed).
+- Fix: the test passes `endDay` and asserts the window. The budget and import UI tests use fixed days, not the wall clock.
+- Guard: `npm run test:clock` (in `npm run verify`) runs every suite file under fixed instants and timezones (`scripts/test/clock-matrix.mjs`, `scripts/test/fake-clock.mjs`). It fails if a file that passes on the real clock fails under a fixed one.
+- Harness race fixed: `bundleTs` wrote every test bundle to a shared `.build/core.mjs`. Under parallel `node --test`, one file could import another's bundle (`sessionize is not a function`). Each call now writes a unique file and deletes it after import.
+- CI and release now run the same `npm run verify` on Node 22.22.0 with `TZ=Asia/Kolkata`. The release workflow had used Node 22.13.0.
+- Checked: 19 full `npm run verify && make release-stage1` runs (real clock, plus 6 instants x 3 timezones) all exit 0.
+
 ### Pre-release device fixes after P4.4b (version 0.4.0 / versionCode 7)
 
 - Goal-type chips: shorter labels (`App time/day`, `Total time/day`, `Late-night max`, `Max sittings/day`) and Pill text that can shrink and wrap. Real-device width and 200% font were not measured in the sandbox.

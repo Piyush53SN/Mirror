@@ -5,14 +5,20 @@
  * bundler. esbuild is already a dev dependency for the design-system mockups, so
  * there is no second toolchain: one helper, used by every package test.
  */
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import * as esbuild from 'esbuild';
 
+// Several test files share an `outfile` name (for example `.build/core.mjs`). `node --test`
+// runs files in parallel, so a shared path let one file import another file's bundle
+// ("sessionize is not a function"). Each call now writes its own file, imports it, and
+// deletes it. The module is already evaluated by then, so the delete is safe.
 export async function bundleTs(entry, { outfile, external = [] } = {}) {
-  const out = outfile ?? join(dirname(entry), '.build', 'bundle.mjs');
-  mkdirSync(dirname(out), { recursive: true });
+  const requested = outfile ?? join(dirname(entry), '.build', 'bundle.mjs');
+  mkdirSync(dirname(requested), { recursive: true });
+  const out = requested.replace(/\.mjs$/, `.${process.pid}-${randomUUID().slice(0, 8)}.mjs`);
   await esbuild.build({
     entryPoints: [entry],
     outfile: out,
@@ -24,5 +30,13 @@ export async function bundleTs(entry, { outfile, external = [] } = {}) {
     external,
     logLevel: 'warning',
   });
-  return import(`${pathToFileURL(out).href}?v=${Date.now()}`);
+  try {
+    return await import(`${pathToFileURL(out).href}?v=${randomUUID()}`);
+  } finally {
+    try {
+      unlinkSync(out);
+    } catch {
+      // already gone; nothing to clean up
+    }
+  }
 }

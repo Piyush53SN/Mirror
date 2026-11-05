@@ -370,7 +370,8 @@ test('Attention Budget UI: empty states, validation errors, create/edit/delete, 
     rootKey: async () => new Uint8Array(rootKeyBytes),
   };
 
-  const todayDay = mod.toDayStr(Date.now());
+  // Fixed local day: the fixtures never read the wall clock, so results do not change with the date or TZ.
+  const todayDay = '2026-11-03';
   const recentDays = mod.lastNDays(3, todayDay); // Only 3 recorded days -> partial week!
   const priorDaysTotals = [
     {
@@ -727,7 +728,8 @@ test('P4.2 polish: single non-duplicated status line on Insights budget card, an
     rootKey: async () => new Uint8Array(rootKeyBytes),
   };
 
-  const todayDay = mod.toDayStr(Date.now());
+  // Fixed local day: the fixtures never read the wall clock, so results do not change with the date or TZ.
+  const todayDay = '2026-11-03';
   const recentDays = mod.lastNDays(3, todayDay);
   // YouTube 3-day day-clipped foreground sum: 57m + 18m + 15m = 90m across 3 recorded days -> 30m/day average!
   // (Whereas today's merged sitting span in harness is 74m — proving "Start from my average" uses day-clipped foreground!)

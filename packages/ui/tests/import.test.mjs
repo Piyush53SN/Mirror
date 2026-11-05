@@ -59,7 +59,7 @@ test('importing writes the fresh items once, then refuses as nothing-new', async
 test('importing without a live grant is refused before anything is read', async () => {
   const store = demoStore();
   store.liveGrants = async () => new Map();
-  const result = await commit(redditExport, demoBundle(), store, { now: Date.now() });
+  const result = await commit(redditExport, demoBundle(), store, { now: Date.parse('2026-11-03T06:00:00Z') });
   assert.equal(result.status, 'refused');
   assert.equal(result.reason, 'no-consent');
   assert.equal(store.appended, 0);
