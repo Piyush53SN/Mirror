@@ -1,7 +1,7 @@
 /**
  * packages/core-analytics/tests/intent-check.test.mjs
  *
- * P4.4c Intent Check policy (spec feature 17). Covers:
+ * J25 Intent Check policy (P4.4c). Covers:
  *   - off by default, nothing asked when disabled
  *   - eligibility: >5 min (strict), today's local day, settled, unlabeled, not ruled, not repeated
  *   - one prompt per local day; quiet hours respected

@@ -342,6 +342,8 @@ export type MirrorAppContextValue = {
   openNotificationSettings?: () => void;
   intentCheckPrefs?: IntentCheckPrefs;
   intentCheckCard?: IntentCheckCardState;
+  /** Android notification permission for Mirror (false = Intent Check is in-app only). */
+  notificationsAllowed?: boolean;
   /** Turns Intent Check on/off. Asks for notification permission only when turning on. */
   updateIntentCheck?: (enabled: boolean) => Promise<{ ok: true; notificationsOn: boolean }>;
   answerIntentCheck?: (

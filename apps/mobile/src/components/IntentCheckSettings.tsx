@@ -11,23 +11,20 @@ import { useMirrorApp } from '../context/MirrorAppContext';
 
 export function IntentCheckSettings(): React.ReactElement {
   const theme = useTheme();
-  const { intentCheckPrefs, updateIntentCheck } = useMirrorApp();
+  const { intentCheckPrefs, updateIntentCheck, notificationsAllowed } = useMirrorApp();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const enabled = intentCheckPrefs?.enabled === true;
   const paused = intentCheckPrefs?.pausedAfterIgnored === true;
+  // Shown only while Intent Check is on and Android notifications are denied (card-only mode).
+  const notificationsOff = enabled && notificationsAllowed === false;
 
   const toggle = async () => {
     if (!updateIntentCheck) return;
     setBusy(true);
     setNotice(null);
     try {
-      const res = await updateIntentCheck(!enabled);
-      if (!enabled && !res.notificationsOn) {
-        setNotice(
-          'Notifications are off for Mirror, so the question will appear only as a card on Home when you open Mirror.',
-        );
-      }
+      await updateIntentCheck(!enabled);
     } catch {
       setNotice('Could not update Intent Check right now.');
     } finally {
@@ -78,6 +75,14 @@ export function IntentCheckSettings(): React.ReactElement {
             {enabled ? 'On' : 'Off'}
           </Pill>
         </View>
+
+        {notificationsOff ? (
+          <View testID="intent-check-notifications-off">
+            <Text role="micro" tone="muted" theme={theme}>
+              Notifications are off, so the question appears in the app only.
+            </Text>
+          </View>
+        ) : null}
 
         {enabled && paused ? (
           <View testID="intent-check-paused-status">

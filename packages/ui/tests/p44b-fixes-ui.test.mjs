@@ -69,8 +69,8 @@ test('chips: the Pill label text can shrink and wrap inside its row (no fixed te
 });
 
 test('chips: goal-type labels are short enough to fit one or two lines at normal width', () => {
-  const src = read('apps/mobile/src/components/WeeklyGoalsSection.tsx');
-  const block = src.slice(src.indexOf('const GOAL_KIND_OPTIONS'), src.indexOf('];', src.indexOf('const GOAL_KIND_OPTIONS')));
+  const src = read('apps/mobile/src/components/GoalTypeOptions.tsx');
+  const block = src.slice(src.indexOf('export const GOAL_KIND_OPTIONS'), src.indexOf('];', src.indexOf('export const GOAL_KIND_OPTIONS')));
   const labels = [...block.matchAll(/label: '([^']+)'/g)].map((m) => m[1]);
   assert.deepEqual(labels, ['App time/day', 'Total time/day', 'Late-night max', 'Max sittings/day']);
   for (const label of labels) {

@@ -1,10 +1,12 @@
 /**
- * P4.4c Intent Check (spec feature 17): a single, optional, one-tap question about
+ * J25 Intent Check (P4.4c): a single, optional, one-tap question about
  * one recent sitting. Pure policy only; no I/O. The runtime loads inputs, calls
  * `decideIntentCheck`, persists `nextState`, and posts the notification.
  *
  * Rules (all Tier D, no guilt copy, no overlays):
  *   - Off by default (the caller passes `enabled`).
+ *   - Quiet hours: J25 names no window of its own, so this uses the shared reminder
+ *     quiet hours (default 23:00-05:00, configurable in Settings).
  *   - Eligible sitting: ended on today's local day, longer than 5 minutes, already
  *     settled (the 15 min merge window has passed, so the sitting id will not change
  *     after the prompt), not labeled yet, not covered by a user app rule, not an

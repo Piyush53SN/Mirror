@@ -30,34 +30,12 @@ import {
 } from '../context/MirrorAppContext';
 import { useResolvedBudgets } from './AttentionBudgetSection';
 import { useResolvedWeeklyReport } from './WeeklyReportSheet';
+import { GOAL_KIND_OPTIONS, GoalTypeOptions } from './GoalTypeOptions';
 
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const PACKAGE_ID_RE = /^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$/;
-
-const GOAL_KIND_OPTIONS: readonly { id: GoalKind; label: string; description: string }[] = [
-  {
-    id: 'daily_app_foreground',
-    label: 'App time/day',
-    description: 'Day-clipped foreground time for selected app(s) on each recorded day.',
-  },
-  {
-    id: 'daily_total_foreground',
-    label: 'Total time/day',
-    description: 'Total day-clipped foreground time across non-excluded apps on each recorded day.',
-  },
-  {
-    id: 'daily_late_night_max',
-    label: 'Late-night max',
-    description: 'Foreground time during 23:00 to 05:00 local time on each recorded day (0m allowed).',
-  },
-  {
-    id: 'daily_sitting_count_max',
-    label: 'Max sittings/day',
-    description: 'Merged sitting count per recorded day (optionally scoped to selected apps).',
-  },
-];
 
 function splitMsToHoursMinutes(ms: number): { hours: string; minutes: string } {
   const totalMinutes = Math.max(0, Math.round(ms / MIN_MS));
@@ -500,23 +478,13 @@ export function WeeklyGoalsSection({
                 <Text role="micro" tone="muted" theme={theme}>
                   GOAL TYPE
                 </Text>
-                <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-                  {GOAL_KIND_OPTIONS.map((opt) => (
-                    <Pill
-                      key={opt.id}
-                      testID={`goal-kind-${opt.id}`}
-                      theme={theme}
-                      variant={kind === opt.id ? 'primary' : 'secondary'}
-                      onPress={() => {
-                        setKind(opt.id);
-                        setFormErrors([]);
-                      }}
-                      accessibilityLabel={`Goal type ${opt.label}${kind === opt.id ? ', selected' : ''}`}
-                    >
-                      {opt.label}
-                    </Pill>
-                  ))}
-                </View>
+                <GoalTypeOptions
+                  value={kind}
+                  onSelect={(next) => {
+                    setKind(next);
+                    setFormErrors([]);
+                  }}
+                />
                 <Text role="micro" tone="muted" theme={theme}>
                   {GOAL_KIND_OPTIONS.find((o) => o.id === kind)?.description ?? ''}
                 </Text>

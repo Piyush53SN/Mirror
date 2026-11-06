@@ -94,3 +94,19 @@ test('the merged-manifest gate still refuses to pass without a build', () => {
   assert.equal(result.status, 2, 'no merged manifest means exit 2, never 0');
   assert.match(`${result.stdout}${result.stderr}`, /not been built|no merged manifest|exit 2/i);
 });
+
+test('the reminder channel keeps its ID and importance; only the display name changed', () => {
+  const here = dirname(new URL(import.meta.url).pathname);
+  const kt = readFileSync(
+    join(here, '..', 'apps/mobile/modules/mirror-usage-stats/android/src/main/java/dev/mirror/usagestats/UsageStatsModule.kt'),
+    'utf8',
+  );
+  // Same channel ID as before (re-creating an existing ID keeps user settings).
+  assert.match(kt, /LOCAL_REMINDER_CHANNEL_ID = "mirror_local_reminders"/);
+  // The new name, and the old one is gone.
+  assert.match(kt, /NotificationChannel\(\s*LOCAL_REMINDER_CHANNEL_ID,\s*"Mirror reminders",\s*NotificationManager\.IMPORTANCE_DEFAULT\s*\)/);
+  assert.equal(kt.includes('Local summaries and soft budget notes'), false);
+  // Importance is never changed by the app after creation: one channel construction only.
+  assert.equal((kt.match(/(?<![A-Za-z])NotificationChannel\(/g) ?? []).length, 1);
+  assert.equal((kt.match(/IMPORTANCE_/g) ?? []).length, 1);
+});

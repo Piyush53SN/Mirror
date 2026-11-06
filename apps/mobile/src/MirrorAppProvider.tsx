@@ -186,6 +186,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   );
   const [intentCheckPrefs, setIntentCheckPrefs] = React.useState<IntentCheckPrefs | undefined>(undefined);
   const [intentCheckCard, setIntentCheckCard] = React.useState<IntentCheckCardState | undefined>(undefined);
+  const [notificationsAllowed, setNotificationsAllowed] = React.useState<boolean | undefined>(undefined);
   const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [histScoredSessions, setHistScoredSessions] = React.useState<ScoredSession[]>([]);
@@ -360,6 +361,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         if (isCurrent()) {
           setIntentCheckPrefs(p);
           setIntentCheckCard(c);
+          setNotificationsAllowed(runtime.usage().areNotificationsEnabled());
         }
       } catch {}
 
@@ -1397,6 +1399,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     }
     const prefs = await rt.setIntentCheckEnabled(enabled);
     setIntentCheckPrefs(prefs);
+    setNotificationsAllowed(rt.usage().areNotificationsEnabled());
     setIntentCheckCard(await rt.intentCheckCard().catch(() => ({ pending: null, pauseNotice: false })));
     if (enabled) rt.syncLocalReminders().catch(() => {});
     return { ok: true as const, notificationsOn };
@@ -1853,6 +1856,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       openNotificationSettings,
       intentCheckPrefs,
       intentCheckCard,
+      notificationsAllowed,
       updateIntentCheck,
       answerIntentCheck,
       acknowledgeIntentCheckPauseNotice,
@@ -1954,6 +1958,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       openNotificationSettings,
       intentCheckPrefs,
       intentCheckCard,
+      notificationsAllowed,
       updateIntentCheck,
       answerIntentCheck,
       acknowledgeIntentCheckPauseNotice,

@@ -87,3 +87,12 @@ test('intent check: the answer path writes through the single label writer', () 
 test('intent check: default off in the core policy', () => {
   assert.match(CORE_SRC, /enabled: false,/);
 });
+
+test('intent check: one line when notifications are denied (exact wording, gated)', () => {
+  assert.ok(
+    SETTINGS.includes('Notifications are off, so the question appears in the app only.'),
+    'exact denial line',
+  );
+  assert.match(SETTINGS, /const notificationsOff = enabled && notificationsAllowed === false;/);
+  assert.match(SETTINGS, /\{notificationsOff \? \(/);
+});

@@ -363,12 +363,15 @@ class UsageStatsModule : Module() {
       try {
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          // Same channel ID and the same importance as before. Re-creating a channel with an
+          // existing ID only updates its name and description; importance and any change the
+          // user made in Android settings are kept.
           val channel = NotificationChannel(
             LOCAL_REMINDER_CHANNEL_ID,
-            "Local summaries and soft budget notes",
+            "Mirror reminders",
             NotificationManager.IMPORTANCE_DEFAULT
           ).apply {
-            description = "Opt-in local weekly summaries and gentle soft budget notes (no network or push)"
+            description = "Opt-in local reminders: weekly summary, gentle budget note, and optional Intent Check question (no network or push)"
             enableVibration(false)
             setSound(null, null)
           }

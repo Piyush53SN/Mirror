@@ -1862,7 +1862,7 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Workflow source: `infra/workflows/ci.yml` and `release.yml` hold the aligned versions. They are copied to `.github/workflows/` through a token with the `workflows` permission, or through the web editor.
 - Checked: 19 full `npm run verify && make release-stage1` runs (real clock, plus 6 instants x 3 timezones) all exit 0.
 
-### P4.4c Intent Check (spec feature 17; not tagged; review stop before alpha.4)
+### P4.4c Intent Check (J25; not tagged; review stop before alpha.4)
 
 - Off by default. One optional single-tap question per local day, about one sitting longer than 5 minutes that ended today, once its 15 min merge window has passed. Quiet hours respected. Three ignored prompts in a row pause prompting, with one calm in-app note. Answers are ordinary `intent_label` events (`origin: user`); the card has three buttons: Intentional, Mindless, Not sure.
 - Pure policy `decideIntentCheck` (core-analytics `intentCheck.ts`). Store: sealed `intent_check_v1` (settings, exported) and `intent_check_state_v1` (bookkeeping, not exported). Both are wiped by typed `DELETE`.
@@ -1870,7 +1870,8 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - UI: toggle in Settings → Reminders (`IntentCheckSettings`); card on Home (`IntentCheckCard`).
 - Tests: core (14), store (4), UI guard (7). `npm run verify` green, clock matrix 56/56.
 - Version: `0.4.0` / `versionCode 8`. A new versionCode is needed for an in-place upgrade. The planned tag is `v0.4.0-alpha.4`, proposed only. No tag has been created.
-- Open item: the spec numbering conflict (SPEC lists "17. Why drawer" and "25. Intent Check settings"; PROGRESS maps Intent Check to P3). Not changed here.
+- Naming: Intent Check is **J25** (spec list item 25, "Intent Check settings"). An earlier entry called it "feature 17", which was wrong: 17 is "Why drawer". PROGRESS also maps Intent Check to P3 in an older note; the spec itself is unchanged.
+- Quiet hours: J25 has no window of its own in the spec. Intent Check uses the shared reminder quiet hours (default 23:00–05:00, configurable).
 
 ### Pre-release device fixes after P4.4b (version 0.4.0 / versionCode 7)
 
