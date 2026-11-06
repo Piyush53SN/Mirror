@@ -7,6 +7,10 @@ on:
 permissions:
   contents: write
 
+# Same timezone as ci.yml (see the comment there).
+env:
+  TZ: Asia/Kolkata
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -27,7 +31,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22.13.0'
+          node-version: '22.22.0'
           cache: npm
 
       - name: Verify manifest versions match git tag & classify pre-release suffix

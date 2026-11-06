@@ -1858,6 +1858,8 @@ So 4 files changed for release/canary: `.github/workflows/release.yml`, `infra/w
 - Guard: `npm run test:clock` (in `npm run verify`) runs every suite file under fixed instants and timezones (`scripts/test/clock-matrix.mjs`, `scripts/test/fake-clock.mjs`). It fails if a file that passes on the real clock fails under a fixed one.
 - Harness race fixed: `bundleTs` wrote every test bundle to a shared `.build/core.mjs`. Under parallel `node --test`, one file could import another's bundle (`sessionize is not a function`). Each call now writes a unique file and deletes it after import.
 - CI and release now run the same `npm run verify` on Node 22.22.0 with `TZ=Asia/Kolkata`. The release workflow had used Node 22.13.0.
+- Stale test fixed: `tests/android-build.test.mjs` expected `INTERNET` in the main manifest and 15 removals. INTERNET is debug-only (release removes it), and there are 16 removals. The test now checks that policy and runs in `test:android`, so `verify` includes it.
+- Workflow source: `infra/workflows/ci.yml` and `release.yml` hold the aligned versions. They are copied to `.github/workflows/` through a token with the `workflows` permission, or through the web editor.
 - Checked: 19 full `npm run verify && make release-stage1` runs (real clock, plus 6 instants x 3 timezones) all exit 0.
 
 ### Pre-release device fixes after P4.4b (version 0.4.0 / versionCode 7)

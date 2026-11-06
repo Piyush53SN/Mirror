@@ -24,11 +24,7 @@ export const COMBOS = [
 
 // Excluded on purpose, with the reason:
 //  - packages/ui/tests/mockups.test.mjs: regenerates the gallery; covered by test:mockups.
-//  - tests/android-build.test.mjs: not run by any npm script or workflow (stale, expects INTERNET).
-const EXCLUDED = new Set([
-  'packages/ui/tests/mockups.test.mjs',
-  'tests/android-build.test.mjs',
-]);
+const EXCLUDED = new Set(['packages/ui/tests/mockups.test.mjs']);
 
 export function listSuiteFiles() {
   const out = [];

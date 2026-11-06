@@ -69,19 +69,24 @@ test('the local UsageStats module is declared for Expo autolinking', () => {
   assert.match(moduleGradle, /expo-module|ExpoModule|namespace/);
 });
 
-test('the generated manifest declares three permissions and fifteen removals', () => {
+test('the main manifest declares three permissions and sixteen removals; INTERNET is debug-only', () => {
+  // The main manifest is what the source declares. INTERNET is added only by the debug
+  // manifests (React Native dev server) and removed again in release; the merged-manifest
+  // gate (check-merged-manifest.mjs) enforces that on a real build.
   const manifest = read('app/src/main/AndroidManifest.xml');
   const tags = manifest.match(/<uses-permission\b[^>]*>/g) ?? [];
   const real = tags.filter((tag) => !tag.includes('tools:node="remove"'));
   const removed = tags.filter((tag) => tag.includes('tools:node="remove"'));
   assert.deepEqual(
     real.map((tag) => /android:name="([^"]+)"/.exec(tag)?.[1]).sort(),
-    ['android.permission.INTERNET', 'android.permission.PACKAGE_USAGE_STATS', 'android.permission.VIBRATE'],
+    ['android.permission.PACKAGE_USAGE_STATS', 'android.permission.POST_NOTIFICATIONS', 'android.permission.VIBRATE'],
   );
-  assert.equal(removed.length, 15, 'blockedPermissions must appear as removals, not requests');
+  assert.equal(removed.length, 16, 'blockedPermissions must appear as removals, not requests');
   for (const forbidden of ['CAMERA', 'RECORD_AUDIO', 'READ_CONTACTS', 'QUERY_ALL_PACKAGES', 'AD_ID']) {
     assert.ok(removed.some((tag) => tag.includes(forbidden)), `${forbidden} must be explicitly removed`);
   }
+  assert.match(read('app/src/debug/AndroidManifest.xml'), /android\.permission\.INTERNET/);
+  assert.match(read('app/src/release/AndroidManifest.xml'), /INTERNET"?\s+tools:node="remove"/);
 });
 
 test('the merged-manifest gate still refuses to pass without a build', () => {
