@@ -12,6 +12,11 @@ concurrency:
 permissions:
   contents: read
 
+# Same timezone as release.yml. The clock matrix in `npm run verify` also varies the
+# timezone; this sets the default for every other step.
+env:
+  TZ: Asia/Kolkata
+
 jobs:
   verify:
     name: tokens, types, tests
@@ -25,12 +30,10 @@ jobs:
           cache: npm
       - name: Install
         run: npm ci
-      - name: Lint (ESLint)
-        run: npm run lint
-      - name: Secret scan (patterns + entropy, tracked files)
-        run: npm run security:secrets
-      - name: Typecheck and tests (tokens, types, 200+ checks)
-        run: npm run tokens && npm run typecheck && npm test
+      # Same command as release.yml, so a green CI run on a commit means the release
+      # verify step passes on that commit too (same Node, same TZ, same checks).
+      - name: Verify (tokens, lockfile, typecheck, lint, tests, clock matrix, secret scan, bundle)
+        run: npm run verify
 
       # Deliberately not part of `verify`: measuring the prototype needs a real
       # browser, which is not available on every runner. A skipped measurement is
