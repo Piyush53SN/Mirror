@@ -5,6 +5,7 @@ import { DEFAULT_WEEKLY_REPORT_PREFS, type WeeklyReportPrefs } from '@mirror/sto
 import { NIGHT_WINDOW, formatWindowLabel } from '@mirror/shared-types';
 import { MIUI_BEST_EFFORT_REMINDER_NOTE } from '@mirror/core-analytics';
 import { useMirrorApp } from '../context/MirrorAppContext';
+import { IntentCheckSettings } from './IntentCheckSettings';
 
 const WEEKDAY_OPTIONS: readonly { day: 0 | 1 | 2 | 3 | 4 | 5 | 6; short: string; spoken: string }[] = [
   { day: 0, short: 'Sun', spoken: 'Sunday' },
@@ -88,6 +89,9 @@ export function ReminderSettings(): React.ReactElement {
 
   return (
     <View testID="settings-reminders" style={{ gap: theme.space(3) }}>
+      {/* P4.4c: Intent Check (off by default; its own opt-in) */}
+      <IntentCheckSettings />
+
       {/* 3. Opt-in Local Reminder & Optional Gentle Budget Note */}
       <Surface theme={theme}>
         <View testID="insights-reminders-card" style={{ gap: theme.space(2.5) }}>

@@ -69,6 +69,19 @@ Storage keeps the two apart: per-sitting labels are `intent_label` events, rules
 
 Storage: sealed `app_rules_v1` (`XChaCha20-Poly1305`), capped at 200 apps, included in the JSON export, and wiped by typed `DELETE`. Clearing per-sitting labels does **not** remove app rules; rules stay until you remove them.
 
+
+## 1f. Intent Check (P4.4c, Tier D)
+
+Off by default. When on, Mirror may ask about **one** recent sitting per local day, with a single tap: `Intentional`, `Mindless`, or `Not sure`. A tap writes one ordinary per-sitting label (`origin: user`). Nothing is labeled without a tap, and skipping is fine.
+
+- **Eligible sitting:** ended on today's local day, longer than 5 minutes, settled (the 15 min merge window has passed, so the sitting id is final), not already labeled (including `unsure`), not covered by one of your app rules, not an excluded app, and not asked about before. The most recent eligible sitting is chosen.
+- **Frequency:** at most one prompt per local day. Never inside your quiet hours (the shared reminder window, default 23:00–05:00).
+- **Ignored prompts:** a prompt whose day ends unanswered counts as ignored. After three in a row, prompting pauses and one calm in-app note says so. Turning Intent Check off and on again resumes it.
+- **Delivery:** a neutral notification (no app name, no sound, no vibration) plus a card on Home. There are no overlays and no native action buttons.
+- **Counting:** an answer is a normal explicit label. It counts in Insights, Journey, Sessions and the Why sheet, under the same rules as any other label. Prompting does not change how any score is calculated.
+- **Storage:** settings in sealed `intent_check_v1`. Prompt bookkeeping in sealed `intent_check_state_v1` holds only the pending sitting and counters, and is not exported. Export includes the settings only. Typed `DELETE` wipes both.
+- **Tests:** `packages/core-analytics/tests/intent-check.test.mjs` (14), `packages/store/tests/intent-check.test.mjs` (4), `packages/ui/tests/intent-check-ui.test.mjs` (7, in `test:ui`).
+
 ## 2. The brief's formula, and the deviation
 
 ### 2.1 What the brief specifies

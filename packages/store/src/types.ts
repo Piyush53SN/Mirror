@@ -243,6 +243,34 @@ export type ReminderDeliveryState = {
   updatedAtMs: number;
 };
 
+/** P4.4c Intent Check settings (sealed `intent_check_v1`). Off by default; in export. */
+export type IntentCheckPrefs = {
+  enabled: boolean;
+  /** True after three ignored prompts in a row. Cleared when turned on again. */
+  pausedAfterIgnored: boolean;
+  updatedAtMs: number;
+};
+
+/**
+ * P4.4c bookkeeping (sealed `intent_check_state_v1`). Not exported: it only tracks
+ * which prompt is pending and how many went unanswered. Never a label.
+ */
+export type IntentCheckStateRecord = {
+  pending: {
+    sessionId: string;
+    app: string;
+    durationMs: number;
+    endMs: number;
+    day: string;
+    issuedAtMs: number;
+  } | null;
+  lastPromptDay: string | null;
+  consecutiveIgnored: number;
+  promptedSessionIds: string[];
+  pauseNoticePending: boolean;
+  updatedAtMs: number;
+};
+
 export type MirrorExportBundle = {
   exportedAt: string;
   schemaVersion: number;
@@ -257,6 +285,8 @@ export type MirrorExportBundle = {
   budgetSuggestionDismissals: Record<string, number>;
   /** User app rules (P4.4b): package -> explicit label the user chose. */
   appRules: Record<string, { label: 'intentional' | 'mindless'; setAtMs: number }>;
+  /** Intent Check settings only (enabled / paused). Prompt bookkeeping is not exported. */
+  intentCheck: IntentCheckPrefs;
   lastReset: StoreResetAudit | null;
 };
 

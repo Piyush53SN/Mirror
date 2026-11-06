@@ -48,6 +48,8 @@ import type {
   StoreResetAudit,
   StoreResetReason,
   WeeklyReportPrefs,
+  IntentCheckPrefs,
+  IntentCheckStateRecord,
 } from './types';
 
 const DEFAULT_RETENTION_DAYS = 180;
@@ -57,6 +59,10 @@ const REMINDER_DELIVERY_KEY = 'reminder_delivery_v1';
 const BUDGET_SUGGESTION_KEY = 'budget_suggestions_v1';
 /** Sealed user app rules (P4.4b): package -> explicit label. Never written by Mirror itself. */
 const APP_RULES_KEY = 'app_rules_v1';
+/** Sealed Intent Check settings (P4.4c) and its prompt bookkeeping. */
+const INTENT_CHECK_PREFS_KEY = 'intent_check_v1';
+const INTENT_CHECK_STATE_KEY = 'intent_check_state_v1';
+const DEFAULT_INTENT_CHECK_PREFS_STORE = { enabled: false, pausedAfterIgnored: false, updatedAtMs: 0 } as const;
 /** Mirrors `APP_RULES_MAX` in core-analytics. Asserted equal in store tests. */
 export const APP_RULES_STORE_MAX = 200;
 /** Mirrors `BUDGET_SUGGESTION_DISMISS_MS` in core-analytics (7 days). Asserted equal in store tests. */
@@ -1752,6 +1758,55 @@ export class MirrorStore {
     );
   }
 
+  /** Intent Check settings. Off by default. Never writes `intent_label` events. */
+  async intentCheckPrefs(): Promise<IntentCheckPrefs> {
+    const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
+      `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
+      [INTENT_CHECK_PREFS_KEY],
+    );
+    if (rows.length === 0) return { ...DEFAULT_INTENT_CHECK_PREFS_STORE };
+    const payload = open<Partial<IntentCheckPrefs>>(rows[0]!.payload, this.derived(), this.keyId);
+    return {
+      enabled: payload.enabled === true,
+      pausedAfterIgnored: payload.pausedAfterIgnored === true,
+      updatedAtMs: typeof payload.updatedAtMs === 'number' ? payload.updatedAtMs : rows[0]!.updated_at,
+    };
+  }
+
+  async setIntentCheckPrefs(
+    patch: Partial<Pick<IntentCheckPrefs, 'enabled' | 'pausedAfterIgnored'>>,
+    nowMs = this.clock(),
+  ): Promise<IntentCheckPrefs> {
+    const current = await this.intentCheckPrefs();
+    const next: IntentCheckPrefs = {
+      enabled: patch.enabled ?? current.enabled,
+      pausedAfterIgnored: patch.pausedAfterIgnored ?? current.pausedAfterIgnored,
+      updatedAtMs: Math.max(0, Math.round(nowMs)),
+    };
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [INTENT_CHECK_PREFS_KEY, next.updatedAtMs, seal({ ...next }, this.derived(), this.keyId, this.random)],
+    );
+    return next;
+  }
+
+  /** Prompt bookkeeping for Intent Check. Carries no labels; wiped by typed DELETE. */
+  async intentCheckState(): Promise<IntentCheckStateRecord | null> {
+    const rows = await this.driver.all<{ payload: Uint8Array }>(
+      `SELECT payload FROM sealed_preferences WHERE key = ?`,
+      [INTENT_CHECK_STATE_KEY],
+    );
+    if (rows.length === 0) return null;
+    return open<IntentCheckStateRecord>(rows[0]!.payload, this.derived(), this.keyId);
+  }
+
+  async setIntentCheckState(state: IntentCheckStateRecord): Promise<void> {
+    await this.driver.run(
+      `INSERT OR REPLACE INTO sealed_preferences (key, updated_at, payload) VALUES (?, ?, ?)`,
+      [INTENT_CHECK_STATE_KEY, Math.max(0, Math.round(state.updatedAtMs)), seal({ ...state }, this.derived(), this.keyId, this.random)],
+    );
+  }
+
   async reminderDeliveryState(): Promise<ReminderDeliveryState> {
     const rows = await this.driver.all<{ updated_at: number; payload: Uint8Array }>(
       `SELECT updated_at, payload FROM sealed_preferences WHERE key = ?`,
@@ -1808,7 +1863,7 @@ export class MirrorStore {
    * budgets, goals, weekly report prefs, and reset audit).
    */
   async exportBundle(exportedAt = new Date(this.clock()).toISOString()): Promise<MirrorExportBundle> {
-    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset, budgetSuggestionDismissals, appRules] =
+    const [events, sessions, gaps, budgets, goals, weeklyReportPrefs, lastReset, budgetSuggestionDismissals, appRules, intentCheck] =
       await Promise.all([
         this.events(),
         this.sessions(),
@@ -1819,6 +1874,7 @@ export class MirrorStore {
         this.lastResetAudit(),
         this.budgetSuggestionDismissals(),
         this.appRules(),
+        this.intentCheckPrefs(),
       ]);
     return {
       exportedAt,
@@ -1832,6 +1888,7 @@ export class MirrorStore {
       weeklyReportPrefs,
       budgetSuggestionDismissals,
       appRules,
+      intentCheck,
       lastReset,
     };
   }

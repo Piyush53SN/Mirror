@@ -5,6 +5,7 @@ import type {
   SessionRow,
   StoreResetAudit,
   StoreResetReason,
+  IntentCheckPrefs,
   WeeklyReportPrefs,
 } from '@mirror/store';
 import {
@@ -82,6 +83,12 @@ export type SaveBudgetResult =
 export type SaveGoalResult =
   | { ok: true; value: GoalDefinition }
   | { ok: false; errors: string[] };
+
+/** P4.4c: the one pending Intent Check question for today, plus the one-time pause notice. */
+export type IntentCheckCardState = {
+  pending: { sessionId: string; app: string; durationMs: number; endMs: number } | null;
+  pauseNotice: boolean;
+};
 
 export type UpdateReminderPrefsResult =
   | { ok: true; prefs: WeeklyReportPrefs }
@@ -333,6 +340,15 @@ export type MirrorAppContextValue = {
     patch: Partial<Omit<WeeklyReportPrefs, 'updatedAtMs'>>,
   ) => Promise<UpdateReminderPrefsResult>;
   openNotificationSettings?: () => void;
+  intentCheckPrefs?: IntentCheckPrefs;
+  intentCheckCard?: IntentCheckCardState;
+  /** Turns Intent Check on/off. Asks for notification permission only when turning on. */
+  updateIntentCheck?: (enabled: boolean) => Promise<{ ok: true; notificationsOn: boolean }>;
+  answerIntentCheck?: (
+    sessionId: string,
+    label: 'intentional' | 'mindless' | 'unsure',
+  ) => Promise<void>;
+  acknowledgeIntentCheckPauseNotice?: () => Promise<void>;
 };
 
 export const MirrorAppContext = React.createContext<MirrorAppContextValue | null>(null);

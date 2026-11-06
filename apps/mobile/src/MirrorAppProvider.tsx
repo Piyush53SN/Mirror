@@ -10,6 +10,7 @@ import {
   type StoreResetAudit,
   type StoreResetReason,
   type WeeklyReportPrefs,
+  type IntentCheckPrefs,
 } from '@mirror/store';
 import type {
   BudgetDayForegroundInput,
@@ -100,6 +101,7 @@ import {
   type SingleDayRow,
   type TabKey,
   type UpdateReminderPrefsResult,
+  type IntentCheckCardState,
 } from './context/MirrorAppContext';
 
 export function MirrorAppProvider({ children }: { children: React.ReactNode }): React.ReactElement {
@@ -182,6 +184,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
   const [weeklyReportPrefs, setWeeklyReportPrefs] = React.useState<WeeklyReportPrefs>(
     () => ({ ...DEFAULT_WEEKLY_REPORT_PREFS }),
   );
+  const [intentCheckPrefs, setIntentCheckPrefs] = React.useState<IntentCheckPrefs | undefined>(undefined);
+  const [intentCheckCard, setIntentCheckCard] = React.useState<IntentCheckCardState | undefined>(undefined);
   const [showWeeklyReport, setShowWeeklyReport] = React.useState(false);
   const [showSettings, setShowSettings] = React.useState(false);
   const [histScoredSessions, setHistScoredSessions] = React.useState<ScoredSession[]>([]);
@@ -349,6 +353,13 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setBudgets(refreshedBudgets);
           setGoals(refreshedGoals);
           setWeeklyReportPrefs(refreshedPrefs);
+        }
+      } catch {}
+      try {
+        const [p, c] = await Promise.all([runtime.getIntentCheckPrefs(), runtime.intentCheckCard()]);
+        if (isCurrent()) {
+          setIntentCheckPrefs(p);
+          setIntentCheckCard(c);
         }
       } catch {}
 
@@ -1127,6 +1138,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
           setBudgetHistoryStartDay(null);
           setGoals([]);
           setWeeklyReportPrefs({ ...DEFAULT_WEEKLY_REPORT_PREFS });
+          setIntentCheckPrefs(undefined);
+          setIntentCheckCard(undefined);
           setShowWeeklyReport(false);
           setHistScoredSessions([]);
           setHistStoredEvents([]);
@@ -1370,6 +1383,45 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     const fresh = await rt.listGoals();
     setGoals(fresh);
     return removed;
+  }, []);
+
+  const updateIntentCheck = React.useCallback(async (enabled: boolean) => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    let notificationsOn = true;
+    if (enabled) {
+      // Permission is requested only on this explicit turn-on tap. Denial still leaves
+      // the in-app card working, so Intent Check stays on in card-only mode.
+      const perm = await requestOptInNotificationPermission(rt.usage());
+      notificationsOn = perm === 'granted';
+    }
+    const prefs = await rt.setIntentCheckEnabled(enabled);
+    setIntentCheckPrefs(prefs);
+    setIntentCheckCard(await rt.intentCheckCard().catch(() => ({ pending: null, pauseNotice: false })));
+    if (enabled) rt.syncLocalReminders().catch(() => {});
+    return { ok: true as const, notificationsOn };
+  }, []);
+
+  const answerIntentCheck = React.useCallback(
+    async (sessionId: string, lbl: 'intentional' | 'mindless' | 'unsure') => {
+      const rt = runtimeRef.current ?? (await createRuntime());
+      runtimeRef.current = rt;
+      // One label write through the runtime (ordinary per-sitting label), then the same
+      // label state path Sessions uses, so Insights, Journey and the Why sheet agree.
+      await rt.answerIntentCheck(sessionId, lbl);
+      const updatedLabels = { ...sittingLabels, [sessionId]: lbl };
+      setSittingLabels(updatedLabels);
+      await recomputeFromLabels(updatedLabels);
+      setIntentCheckCard(await rt.intentCheckCard().catch(() => ({ pending: null, pauseNotice: false })));
+    },
+    [sittingLabels, recomputeFromLabels],
+  );
+
+  const acknowledgeIntentCheckPauseNotice = React.useCallback(async () => {
+    const rt = runtimeRef.current ?? (await createRuntime());
+    runtimeRef.current = rt;
+    await rt.acknowledgeIntentCheckPauseNotice();
+    setIntentCheckCard((prev) => (prev ? { ...prev, pauseNotice: false } : prev));
   }, []);
 
   const updateWeeklyReportPrefs = React.useCallback(
@@ -1799,6 +1851,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       weeklyReportPrefs,
       updateWeeklyReportPrefs,
       openNotificationSettings,
+      intentCheckPrefs,
+      intentCheckCard,
+      updateIntentCheck,
+      answerIntentCheck,
+      acknowledgeIntentCheckPauseNotice,
     }),
     [
       activeTab,
@@ -1895,6 +1952,11 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       weeklyReportPrefs,
       updateWeeklyReportPrefs,
       openNotificationSettings,
+      intentCheckPrefs,
+      intentCheckCard,
+      updateIntentCheck,
+      answerIntentCheck,
+      acknowledgeIntentCheckPauseNotice,
     ],
   );
 

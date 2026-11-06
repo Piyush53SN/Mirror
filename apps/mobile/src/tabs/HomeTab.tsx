@@ -25,6 +25,7 @@ import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import { HomeBudgetStrip } from '../components/HomeBudgetStrip';
 import { WeeklySummaryCard } from '../components/WeeklySummaryCard';
+import { IntentCheckCard } from '../components/IntentCheckCard';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 
 const GAUGE_TICKS = 18;
@@ -527,6 +528,9 @@ export function HomeTab(): React.ReactElement {
 
       {/* P4.4-UX: weekly summary (same engine as the full report) and one-time reminder offer */}
       <WeeklySummaryCard />
+
+      {/* P4.4c: optional one-tap Intent Check question (off by default) */}
+      <IntentCheckCard />
 
       {/* Per-app foreground totals with explicit source badge */}
       <Card theme={theme} style={{ marginBottom: 0 }}>

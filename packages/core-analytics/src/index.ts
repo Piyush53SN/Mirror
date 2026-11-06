@@ -6,6 +6,7 @@ export * from './evolution';
 export * from './focuswindows';
 export * from './nightWindow';
 export * from './goals';
+export * from './intentCheck';
 export * from './ingest';
 export * from './rabbithole';
 export * from './reminders';

@@ -17,6 +17,7 @@ import {
   type SessionRepairSnapshot,
   type StoreResetAudit,
   type StoreResetReason,
+  type IntentCheckPrefs,
   type WeeklyReportPrefs,
 } from '@mirror/store';
 import {
@@ -33,6 +34,14 @@ import {
   evaluateBudgetExceededNotes,
   evaluateBudgets,
   evaluateWeeklyReminder,
+  INTENT_CHECK_NOTIFICATION_BODY,
+  INTENT_CHECK_NOTIFICATION_ID,
+  INTENT_CHECK_NOTIFICATION_TITLE,
+  DEFAULT_INTENT_CHECK_STATE,
+  answerIntentCheckState,
+  decideIntentCheck,
+  isLabelingExcludedApp,
+  resetIntentCheckOnEnable,
   isInQuietHoursLocal,
   pruneBudgetNoteKeys,
   resolveDayForegroundTotals,
@@ -41,6 +50,8 @@ import {
   validateDailyTotals,
 } from '@mirror/core-analytics';
 import type {
+  IntentCheckSitting,
+  IntentCheckState,
   BudgetDayForegroundInput,
   BudgetDefinition,
   GoalDefinition,
@@ -131,6 +142,19 @@ export type MirrorRuntime = {
   ): Promise<WeeklyReportPrefs>;
   /** Evaluate & post any due opt-in local reminders outside quiet hours (never requests permission). */
   syncLocalReminders(now?: number): Promise<void>;
+  /** P4.4c Intent Check settings. Off by default. */
+  getIntentCheckPrefs(): Promise<IntentCheckPrefs>;
+  /** Turn Intent Check on or off. Turning on resumes after a pause. No permission is requested here. */
+  setIntentCheckEnabled(enabled: boolean, nowMs?: number): Promise<IntentCheckPrefs>;
+  /** Today's pending question (if still unanswered) and the one-time pause notice. */
+  intentCheckCard(now?: number): Promise<{
+    pending: { sessionId: string; app: string; durationMs: number; endMs: number } | null;
+    pauseNotice: boolean;
+  }>;
+  /** Answer the pending question. Writes one ordinary per-sitting label (origin: user). */
+  answerIntentCheck(sessionId: string, label: 'intentional' | 'mindless' | 'unsure'): Promise<void>;
+  /** Dismiss the one-time pause notice. */
+  acknowledgeIntentCheckPauseNotice(): Promise<void>;
   /** Wipe all stored data, log when and why, and record a plaintext reset marker */
   resetStore(options: {
     reason: StoreResetReason;
@@ -214,6 +238,93 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       const launchers =
         cachedLauncherPkgs.length > 0 ? cachedLauncherPkgs : [...SHARED_HOME_LAUNCHER_PACKAGES];
       return [...new Set([...SHARED_EXCLUDED_PACKAGES, ...launchers])];
+    };
+
+    /** Session ids that already have any per-sitting label (including `unsure`). */
+    const loadLabeledSessionIds = async (): Promise<Set<string>> => {
+      const out = new Set<string>();
+      try {
+        const events = await store.events({ kind: 'intent_label' });
+        for (const ev of events) {
+          const payload = ev.payload as any;
+          const sid = payload.session_id ?? ev.session_id;
+          if (typeof sid === 'string') out.add(sid);
+        }
+      } catch {}
+      return out;
+    };
+
+    /** The only label writer for user answers. Ordinary `intent_label` event, origin user. */
+    const appendUserIntentLabel = async (
+      sessionId: string,
+      label: 'intentional' | 'mindless' | 'unsure',
+    ): Promise<void> => {
+      const id = `label_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const now = new Date().toISOString();
+      const event = {
+        schema_version: 1,
+        id,
+        kind: 'intent_label',
+        at: now,
+        tier: 'D',
+        origin: 'user',
+        content: 'metadata',
+        session_id: sessionId,
+        label,
+      };
+      await store.appendEvents([event]);
+    };
+
+    /**
+     * P4.4c: decide whether to ask about one recent sitting, persist the bookkeeping,
+     * and post the neutral notification. Never writes a label.
+     */
+    const runIntentCheck = async (now: number, weekly: WeeklyReportPrefs): Promise<void> => {
+      try {
+        const utcOffsetMinutes = offsetNow();
+        const prefs = await store.intentCheckPrefs();
+        const base = ((await store.intentCheckState()) as IntentCheckState | null) ?? DEFAULT_INTENT_CHECK_STATE;
+        const todayDay = localDayKey(now, utcOffsetMinutes);
+        const todayStart = coreDayStartMs(todayDay, utcOffsetMinutes);
+        const ignorePackages = await resolveIgnoredPackages();
+        const sessions = await store.sessions({ fromMs: todayStart, toMs: now }).catch(() => []);
+        const sittings: IntentCheckSitting[] = sessions
+          .filter((s) => !isLabelingExcludedApp(s.app, undefined, ignorePackages))
+          .map((s) => ({
+            sessionId: s.id,
+            app: s.app,
+            startMs: s.start_ms,
+            endMs: s.end_ms,
+            durationMs: s.duration_ms,
+          }));
+        const labeledSessionIds = await loadLabeledSessionIds();
+        const ruledApps = new Set(Object.keys(await store.appRules().catch(() => ({}))));
+        const decision = decideIntentCheck({
+          nowMs: now,
+          utcOffsetMinutes,
+          prefs,
+          state: base,
+          sittings,
+          labeledSessionIds,
+          ruledApps,
+          quietHours: { startHour: weekly.quietHoursStartHour, endHour: weekly.quietHoursEndHour },
+        });
+        if (decision.nextState !== base) {
+          await store.setIntentCheckState({ ...decision.nextState });
+        }
+        if (decision.pausedNow) {
+          await store.setIntentCheckPrefs({ pausedAfterIgnored: true }, now);
+        }
+        if (decision.prompt && usage.areNotificationsEnabled()) {
+          usage.postLocalNotification(
+            INTENT_CHECK_NOTIFICATION_ID,
+            INTENT_CHECK_NOTIFICATION_TITLE,
+            INTENT_CHECK_NOTIFICATION_BODY,
+          );
+        }
+      } catch (err) {
+        console.info('[MirrorIntentCheck]', err instanceof Error ? err.message : String(err));
+      }
     };
 
     // Single-flight guards so AppState 'active', initial mount, Refresh, and
@@ -480,20 +591,7 @@ export async function createRuntime(options: { allowContent?: boolean; retention
         }
       },
       saveIntentLabel: async (sessionId: string, label: 'intentional' | 'mindless' | 'unsure') => {
-        const id = `label_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-        const now = new Date().toISOString();
-        const event = {
-          schema_version: 1,
-          id,
-          kind: 'intent_label',
-          at: now,
-          tier: 'D',
-          origin: 'user',
-          content: 'metadata',
-          session_id: sessionId,
-          label,
-        };
-        await store.appendEvents([event]);
+        await appendUserIntentLabel(sessionId, label);
       },
       loadIntentLabels: async () => {
         try {
@@ -561,6 +659,10 @@ export async function createRuntime(options: { allowContent?: boolean; retention
       syncLocalReminders: async (now = Date.now()) => {
         try {
           const prefs = await store.weeklyReportPrefs();
+          const intentOn = (await store.intentCheckPrefs().catch(() => null))?.enabled === true;
+          if (!prefs.reminderEnabled && !prefs.budgetNoteEnabled && !intentOn) return;
+          // Intent Check runs before the notification-permission gate: the in-app card still works.
+          if (intentOn) await runIntentCheck(now, prefs);
           if (!prefs.reminderEnabled && !prefs.budgetNoteEnabled) return;
           if (!usage.areNotificationsEnabled()) return;
           const utcOffsetMinutes = offsetNow();
@@ -693,6 +795,51 @@ export async function createRuntime(options: { allowContent?: boolean; retention
           }
         } catch (err) {
           console.info('[MirrorReminders]', err instanceof Error ? err.message : String(err));
+        }
+      },
+      getIntentCheckPrefs: async () => store.intentCheckPrefs(),
+      setIntentCheckEnabled: async (enabled: boolean, nowMs = Date.now()) => {
+        const current = await store.intentCheckPrefs();
+        const next = await store.setIntentCheckPrefs(
+          enabled ? { enabled: true, pausedAfterIgnored: false } : { enabled: false },
+          nowMs,
+        );
+        const state = ((await store.intentCheckState()) as IntentCheckState | null) ?? DEFAULT_INTENT_CHECK_STATE;
+        if (enabled && !current.enabled) {
+          await store.setIntentCheckState({ ...resetIntentCheckOnEnable(state, nowMs) });
+        } else if (!enabled && state.pending) {
+          await store.setIntentCheckState({ ...state, pending: null, updatedAtMs: nowMs });
+        }
+        return next;
+      },
+      intentCheckCard: async (now = Date.now()) => {
+        const prefs = await store.intentCheckPrefs();
+        const state = (await store.intentCheckState()) as IntentCheckState | null;
+        if (!state) return { pending: null, pauseNotice: false };
+        const today = localDayKey(now, offsetNow());
+        const labeled = await loadLabeledSessionIds();
+        const p = state.pending;
+        const live =
+          prefs.enabled && p && p.day === today && !labeled.has(p.sessionId) ? p : null;
+        return {
+          pending: live
+            ? { sessionId: live.sessionId, app: live.app, durationMs: live.durationMs, endMs: live.endMs }
+            : null,
+          pauseNotice: state.pauseNoticePending,
+        };
+      },
+      answerIntentCheck: async (sessionId: string, label: 'intentional' | 'mindless' | 'unsure') => {
+        const state = (await store.intentCheckState()) as IntentCheckState | null;
+        if (!state?.pending || state.pending.sessionId !== sessionId) {
+          throw new Error('answerIntentCheck: no matching pending prompt');
+        }
+        await appendUserIntentLabel(sessionId, label);
+        await store.setIntentCheckState({ ...answerIntentCheckState(state, Date.now()) });
+      },
+      acknowledgeIntentCheckPauseNotice: async () => {
+        const state = ((await store.intentCheckState()) as IntentCheckState | null) ?? DEFAULT_INTENT_CHECK_STATE;
+        if (state.pauseNoticePending) {
+          await store.setIntentCheckState({ ...state, pauseNoticePending: false, updatedAtMs: Date.now() });
         }
       },
       resetStore: async ({ reason, previousHistoryStartDay, detail, now = Date.now() }) => {

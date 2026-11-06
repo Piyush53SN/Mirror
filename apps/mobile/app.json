@@ -17,11 +17,11 @@
         "ITSAppUsesNonExemptEncryption": false,
         "UIUserInterfaceStyle": "Dark"
       },
-      "buildNumber": "7"
+      "buildNumber": "8"
     },
     "android": {
       "package": "dev.mirror.app",
-      "versionCode": 7,
+      "versionCode": 8,
       "permissions": [
         "android.permission.PACKAGE_USAGE_STATS",
         "android.permission.POST_NOTIFICATIONS"
