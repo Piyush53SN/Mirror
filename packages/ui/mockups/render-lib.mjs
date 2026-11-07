@@ -40,7 +40,12 @@ export async function buildRenderer({ force = false } = {}) {
     format: 'esm',
     target: 'node20',
     jsx: 'automatic',
-    alias: { 'react-native': paths.rnShim },
+    alias: {
+      'react-native': paths.rnShim,
+      'react-native-svg': join(dirname(paths.rnShim), 'shims/react-native-svg.tsx'),
+      'expo-linear-gradient': join(dirname(paths.rnShim), 'shims/expo-linear-gradient.tsx'),
+      'expo-haptics': join(dirname(paths.rnShim), 'shims/expo-haptics.ts'),
+    },
     external: ['react', 'react-dom', 'react-dom/server'],
     logLevel: force ? 'info' : 'warning',
   });

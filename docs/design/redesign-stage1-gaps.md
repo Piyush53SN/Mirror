@@ -29,7 +29,7 @@ dark and light), the iDraft reference images (`/tmp/arena-coding-uploads/`), and
 
 ## Known differences after Stage 1
 
-- Charts are drawn with plain Views (no SVG dependency). Curves are straight segments, not smoothed.
+- Charts: donut and line use react-native-svg (Stage 2). Line is straight segments, not smoothed. Gauge and rings are tick marks built from Views.
 - Glass is pre-composited (no live blur beyond the existing budget of three layers).
 
 ## Status after Stage 1 (v0.4.0, versionCode 9)
@@ -49,3 +49,37 @@ dark and light), the iDraft reference images (`/tmp/arena-coding-uploads/`), and
 | 11 | Done | Adaptive icon, monochrome icon, and notification small icon wired through app.json and a config plugin. Needs `expo prebuild` to take effect. |
 
 Deferred to Stage 2/3 review: header restyle, weekly summary and Intent Check restyle, press feedback.
+
+## Stage 2 (v0.4.0, versionCode 10): new visual language on Home
+
+Presentation only. No change to analytics, scoring, storage, permissions, or displayed numbers.
+
+Home order is now: hero (Attention signal), 7-day chart, "Where time went" donut, 24-hour sitting
+strip, budgets, weekly summary, Intent Check. Detail moved into the "Why this score" sheet:
+how screen time and sittings are counted, the source notes, the full per-app list, and the session
+boundary status. The donut card keeps a source label (Stored / Approximate / Day-clipped) and a
+"Why these numbers" link.
+
+| Area | Before (Stage 1) | After (Stage 2) |
+|------|------------------|-----------------|
+| Palette | Greyscale tokens | `palette.ts` hue layer: indigo-teal gradient, glass fills, hairline, shadow, chart categories |
+| Backdrop | Flat canvas | Gradient with two glows and a grain tile (`grain.ts`) |
+| Hero | Anchor-coloured tile | Solid palette hero tile (`heroTheme` in tokens.ts); no blur |
+| Gauge | Ticks in greys | Same 18 ticks, filled teal to indigo, never red or green |
+| Donut | Ticks, greys | SVG arcs in palette categories, each at least 3:1 on its tile |
+| Line | Views | SVG path with points; partial days hollow |
+| 24 hours | none | Sitting time per clock hour (new card, no new metric; derived from sittings) |
+| Intent Check | Primary answer pre-styled | All three answers equal; quiet-hours window shown; one tap |
+| Haptics | none | One selection tick on an Intent Check answer (expo-haptics) |
+
+Accessibility checks (automated):
+- `packages/ui/tests/wcag-rendered-ui.test.mjs` renders Home, the Why sheet, Insights, and You +
+  Settings in both appearances and checks each text node against the rendered backdrop (4.5:1, or
+  3:1 for large text). Donut strokes must reach 3:1 on their tile.
+
+Dependencies added in Stage 2: `react-native-svg` ~15.16.0, `expo-linear-gradient` ~58.0.3,
+`expo-haptics` ~58.0.7. None adds a permission (expo-haptics' VIBRATE is already in the manifest).
+
+Not verified on device: 200% font scale, TalkBack reading of the charts, reduce-motion and
+reduce-transparency on a phone, the glass look on real hardware, and `expo prebuild` with the
+notification icon plugin.

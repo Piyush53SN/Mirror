@@ -15,6 +15,7 @@ import { dirname, join, relative } from 'node:path';
 import TestRenderer from 'react-test-renderer';
 import React from 'react';
 import * as esbuild from 'esbuild';
+import { nativeAliases } from './support/native-aliases.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI = join(HERE, '..');
@@ -57,7 +58,7 @@ before(async () => {
     format: 'esm',
     target: 'node20',
     jsx: 'automatic',
-    alias: { 'react-native': join(UI, 'mockups/rn-dom.tsx') },
+    alias: nativeAliases(UI),
     external: ['react', 'react-test-renderer'],
     logLevel: 'warning',
   });
@@ -74,7 +75,9 @@ test('dark is the default theme and resolves to the generated values', () => {
   assert.equal(theme.color.shell, TOKENS.themes.dark.surface.shell);
   assert.equal(theme.color.card, TOKENS.themes.dark.surface.card);
   assert.equal(theme.color.ink, TOKENS.themes.dark.ink.core);
-  assert.equal(theme.color.inkMuted, TOKENS.themes.dark.ink.muted);
+  // Stage 2: dark muted ink is lifted from the palette so muted text on glass reaches 4.5:1 (see palette.ts).
+  assert.equal(theme.color.inkMuted, '#CBD2EC');
+  assert.notEqual(theme.color.inkMuted, TOKENS.themes.dark.ink.muted);
 });
 
 test('glass fills are per-theme, never one alpha reused', () => {
@@ -129,11 +132,13 @@ test('text scale multiplies type tokens and clamps at the system maximum', () =>
   assert.equal(below.type('body').fontSize, TOKENS.type.scale.body.size, 'text scale must never shrink below 1.0');
 });
 
-test('the live-blur budget allows exactly the declared number of layers', () => {
+test('the live-blur budget is a ceiling, and Stage 2 glass uses no live blur at all', () => {
+  // Stage 2 spec: glass is a translucent fill with a hairline and a soft shadow, and no live blur.
+  // The budget (3 layers) stays declared as the ceiling; no surface claims a slot.
   const theme = ui.createTheme();
   assert.equal(theme.glass.blurBudget.liveBlurredLayers, 3);
-  assert.equal(theme.glass.tabbar.live, true);
-  assert.equal(theme.glass.sheet.live, true);
+  assert.equal(theme.glass.tabbar.live, false);
+  assert.equal(theme.glass.sheet.live, false);
   assert.equal(theme.glass.shell.live, false, 'the shell is pre-composited, not live-blurred');
   assert.equal(theme.glass.card.live, false);
   assert.equal(theme.glass.chip.live, false);

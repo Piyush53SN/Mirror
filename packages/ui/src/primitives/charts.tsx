@@ -1,14 +1,15 @@
 /**
- * Chart primitives for Home and the other tabs. Plain React Native Views only, so there is
- * no SVG or native dependency. Each chart has a text alternative for TalkBack (an
+ * Chart primitives for Home and the other tabs. Donut and line are drawn with react-native-svg;
+ * rings and the gauge are tick marks built from Views. Each chart has a text alternative for TalkBack (an
  * accessibilityLabel that lists the values) and the same numbers the rest of the screen shows.
  *
- * Curves are straight segments, not smoothed. Rings and donuts are drawn as tick marks
- * around a circle. Animation runs once on mount and when a value changes. It uses the
+ * Curves are straight segments, not smoothed. Rings are drawn as tick marks around a circle.
+ * Animation runs once on mount and when a value changes. It uses the
  * theme's motion durations, so it is off under reduce-motion.
  */
 import * as React from 'react';
 import { Animated, View, type LayoutChangeEvent } from 'react-native';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Text } from './text';
 import type { MirrorTheme } from '../tokens';
 
@@ -151,33 +152,62 @@ export function describeDonut(segments: readonly DonutSegment[]): string {
     .join(', ');
 }
 
-export function Donut({ segments, size = 120, thickness = 12, theme, accessibilityLabel, children, testID }: DonutProps): React.ReactElement {
+export type ArcSpec = { start: number; end: number; color: string };
+
+/**
+ * Start and end angles (radians, clockwise from 12 o'clock) for each positive segment.
+ * Pure. A segment that is the whole circle gets a full sweep, handled by the caller.
+ */
+export function donutArcs(segments: readonly DonutSegment[]): ArcSpec[] {
   const total = segments.reduce((s, x) => s + Math.max(0, x.value), 0);
-  const { shown } = useDrawIn(total > 0 ? 1 : 0, theme);
-  const geometry = React.useMemo(() => tickGeometry(size, thickness, RING_TICKS), [size, thickness]);
-  // Colour per tick: walk the segments by cumulative share.
-  const colours = React.useMemo(() => {
-    const out: string[] = [];
-    let cursor = 0;
-    for (const seg of segments) {
-      const share = total > 0 ? Math.max(0, seg.value) / total : 0;
-      const end = cursor + share * RING_TICKS;
-      while (out.length < Math.round(end)) out.push(seg.color);
-      cursor = end;
-    }
-    while (out.length < RING_TICKS) out.push(theme.color.borderHairline);
-    return out;
-  }, [segments, total, theme.color.borderHairline]);
-  const filled = Math.floor(shown * RING_TICKS + 1e-6);
-  const centreStyle = { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' } as const;
+  if (total <= 0) return [];
+  const out: ArcSpec[] = [];
+  let cursor = 0;
+  for (const seg of segments) {
+    const v = Math.max(0, seg.value);
+    if (v <= 0) continue;
+    const sweep = (v / total) * Math.PI * 2;
+    out.push({ start: cursor, end: cursor + sweep, color: seg.color });
+    cursor += sweep;
+  }
+  return out;
+}
+
+/** SVG path for one arc of a circle centred at (cx, cy). Pure. */
+export function arcPath(cx: number, cy: number, r: number, start: number, end: number): string {
+  const full = end - start >= Math.PI * 2 - 1e-9;
+  const toXY = (a: number): [number, number] => [cx + r * Math.sin(a), cy - r * Math.cos(a)];
+  if (full) {
+    const [x0, y0] = toXY(0);
+    const [x1, y1] = toXY(Math.PI);
+    return `M ${x0} ${y0} A ${r} ${r} 0 1 1 ${x1} ${y1} A ${r} ${r} 0 1 1 ${x0} ${y0}`;
+  }
+  const [x0, y0] = toXY(start);
+  const [x1, y1] = toXY(end);
+  const large = end - start > Math.PI ? 1 : 0;
+  return `M ${x0} ${y0} A ${r} ${r} 0 ${large} 1 ${x1} ${y1}`;
+}
+
+export function Donut({ segments, size = 120, thickness = 12, accessibilityLabel, children, testID }: DonutProps): React.ReactElement {
+  const center = size / 2;
+  const r = center - thickness / 2;
+  const arcs = React.useMemo(() => donutArcs(segments), [segments]);
   const label = accessibilityLabel ?? describeDonut(segments);
+  const centreStyle = { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' } as const;
   return (
     <View testID={testID} accessible accessibilityRole="image" accessibilityLabel={label} style={{ width: size, height: size }}>
-      {geometry.map((g, i) => (
-        <View key={`d${i}`} style={g.wrap}>
-          <View style={[g.tick, { backgroundColor: i < filled ? colours[i] : theme.color.borderHairline }]} />
-        </View>
-      ))}
+      <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {arcs.map((a, i) => (
+          <Path
+            key={`a${i}`}
+            d={arcPath(center, center, r, a.start, a.end)}
+            fill="none"
+            stroke={a.color}
+            strokeWidth={thickness}
+            strokeLinecap="butt"
+          />
+        ))}
+      </Svg>
       <View style={centreStyle}>{children}</View>
     </View>
   );
@@ -217,81 +247,77 @@ export function describeLine(points: readonly LinePoint[], formatValue: (v: numb
   return `${title}. ${parts.join('. ')}.`;
 }
 
-export function LineChart({ points, theme, formatValue, height = 140, title, showLabels = true, testID }: LineChartProps): React.ReactElement {
-  const [width, setWidth] = React.useState(0);
+export type LineGeometry = {
+  xs: number[];
+  ys: (number | null)[];
+  /** One SVG path string per run of consecutive non-null points. */
+  runs: string[];
+};
+
+/** Pixel geometry for a line chart of `width` x `height`. Pure. Gaps split the runs. */
+export function lineGeometry(points: readonly LinePoint[], width: number, height: number): LineGeometry {
   const max = points.reduce((m, p) => (p.value !== null && p.value > m ? p.value : m), 0);
   const scaleMax = max > 0 ? max * 1.15 : 1;
-  const segCount = Math.max(0, points.length - 1);
-  const { shown } = useDrawIn(points.some((p) => p.value !== null) ? 1 : 0, theme);
-  const drawn = shown * segCount;
   const step = points.length > 1 ? width / (points.length - 1) : 0;
   const xs = points.map((_, i) => i * step);
   const ys = points.map((p) => (p.value === null ? null : height - (p.value / scaleMax) * height));
-  const segments: React.ReactElement[] = [];
-  const dots: React.ReactElement[] = [];
-  const cardColour = theme.color.card;
-  const inkColour = theme.color.ink;
-  const handleLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width);
-
-  for (let i = 0; i < segCount; i += 1) {
-    const y1 = ys[i];
-    const y2 = ys[i + 1];
-    if (y1 === null || y2 === null || y1 === undefined || y2 === undefined) continue;
-    const dx = xs[i + 1] - xs[i];
-    const dy = y2 - y1;
-    const len = Math.hypot(dx, dy);
-    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
-    const mx = (xs[i] + xs[i + 1]) / 2;
-    const my = (y1 + y2) / 2;
-    const drawing = Math.min(1, Math.max(0, drawn - i));
-    const segStyle = {
-      position: 'absolute',
-      left: mx - len / 2,
-      top: my - 1.5,
-      width: len * drawing,
-      height: 3,
-      borderRadius: 1.5,
-      backgroundColor: inkColour,
-      transform: [{ rotate: `${angle}deg` }],
-    } as const;
-    segments.push(<View key={`s${i}`} style={segStyle} />);
-  }
-
-  points.forEach((p, i) => {
-    if (ys[i] === null || ys[i] === undefined) return;
-    const big = p.selected === true;
-    const size = big ? 14 : 8;
-    const dotStyle = {
-      position: 'absolute',
-      left: xs[i] - size / 2,
-      top: (ys[i] as number) - size / 2,
-      width: size,
-      height: size,
-      borderRadius: size / 2,
-      borderWidth: p.partial ? 2 : 0,
-      borderColor: inkColour,
-      backgroundColor: p.partial ? cardColour : inkColour,
-    } as const;
-    dots.push(<View key={`p${i}`} style={dotStyle} />);
+  const runs: string[] = [];
+  let current = '';
+  points.forEach((_, i) => {
+    const y = ys[i];
+    if (y === null) {
+      if (current) runs.push(current);
+      current = '';
+      return;
+    }
+    current += `${current ? ' L' : 'M'} ${xs[i]} ${y}`;
   });
+  if (current) runs.push(current);
+  return { xs, ys, runs };
+}
 
-  const guides = points
-    .map((p, i) => (p.selected ? i : -1))
-    .filter((i) => i >= 0)
-    .map((i) => {
-      const guideStyle = { position: 'absolute', left: xs[i] - 0.5, top: 0, width: 1, height, backgroundColor: theme.color.borderHairline } as const;
-      return <View key={`g${i}`} style={guideStyle} />;
-    });
+export function LineChart({ points, theme, formatValue, height = 140, title, showLabels = true, testID }: LineChartProps): React.ReactElement {
+  const [width, setWidth] = React.useState(0);
+  const geo = React.useMemo(() => (width > 0 ? lineGeometry(points, width, height) : null), [points, width, height]);
+  const handleLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width);
+  const inkColour = theme.color.ink;
+  const cardColour = theme.color.card;
+  const accent = theme.palette.chart[0];
 
-  const baselineStyle = { position: 'absolute', left: 0, right: 0, bottom: 0, height: 1, backgroundColor: theme.color.borderHairline } as const;
-  const plotStyle = { height, width: '100%' } as const;
   return (
     <View testID={testID} accessible accessibilityRole="image" accessibilityLabel={describeLine(points, formatValue, title)} onLayout={handleLayout}>
-      <View style={plotStyle}>
-        {guides}
-        <View style={baselineStyle} />
-        {segments}
-        {dots}
+      <View style={{ height, width: '100%' }}>
+        {geo ? (
+          <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+            {geo.xs.length > 0 ? (
+              <Line x1={0} x2={width} y1={height - 0.5} y2={height - 0.5} stroke={theme.color.borderHairline} strokeWidth={1} />
+            ) : null}
+            {points.map((p, i) =>
+              p.selected && geo.ys[i] !== null ? (
+                <Line key={`g${i}`} x1={geo.xs[i]} x2={geo.xs[i]} y1={0} y2={height} stroke={theme.color.borderHairline} strokeWidth={1} />
+              ) : null,
+            )}
+            {geo.runs.map((d, i) => (
+              <Path key={`r${i}`} d={d} fill="none" stroke={accent} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
+            ))}
+            {points.map((p, i) => {
+              const y = geo.ys[i];
+              if (y === null || y === undefined) return null;
+              const r = p.selected ? 7 : 4;
+              return (
+                <Circle
+                  key={`p${i}`}
+                  cx={geo.xs[i]}
+                  cy={y}
+                  r={r}
+                  fill={p.partial ? cardColour : inkColour}
+                  stroke={p.partial ? inkColour : 'none'}
+                  strokeWidth={p.partial ? 2 : 0}
+                />
+              );
+            })}
+          </Svg>
+        ) : null}
       </View>
       {showLabels ? (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: theme.space(1.5) }}>

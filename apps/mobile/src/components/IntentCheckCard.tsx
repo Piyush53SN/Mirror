@@ -10,6 +10,8 @@ import * as React from 'react';
 import { View } from 'react-native';
 import { Callout, Card, Pill, Text, useTheme } from '@mirror/ui';
 import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
+import { formatWindowLabel } from '@mirror/shared-types';
+import { tapFeedback } from '../haptics';
 
 export const INTENT_CHECK_ANSWERS: readonly { label: 'intentional' | 'mindless' | 'unsure'; text: string }[] = [
   { label: 'intentional', text: 'Intentional' },
@@ -19,7 +21,7 @@ export const INTENT_CHECK_ANSWERS: readonly { label: 'intentional' | 'mindless' 
 
 export function IntentCheckCard(): React.ReactElement | null {
   const theme = useTheme();
-  const { intentCheckCard, answerIntentCheck, acknowledgeIntentCheckPauseNotice, labels } = useMirrorApp();
+  const { intentCheckCard, answerIntentCheck, acknowledgeIntentCheckPauseNotice, labels, weeklyReportPrefs } = useMirrorApp();
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
 
@@ -31,6 +33,7 @@ export function IntentCheckCard(): React.ReactElement | null {
 
   const answer = async (label: 'intentional' | 'mindless' | 'unsure') => {
     if (!pending || !answerIntentCheck) return;
+    tapFeedback();
     setBusy(true);
     setNotice(null);
     try {
@@ -76,13 +79,18 @@ export function IntentCheckCard(): React.ReactElement | null {
             <Text role="micro" tone="muted" theme={theme}>
               Only this one sitting is labeled, and only when you tap. Skipping is fine.
             </Text>
+            {weeklyReportPrefs ? (
+              <View testID="intent-check-quiet-hours"><Text role="micro" tone="muted" theme={theme}>
+                {`No question inside quiet hours (${formatWindowLabel({ startHour: weeklyReportPrefs.quietHoursStartHour, endHour: weeklyReportPrefs.quietHoursEndHour })}).`}
+              </Text></View>
+            ) : null}
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(1) }}>
               {INTENT_CHECK_ANSWERS.map((a) => (
                 <Pill
                   key={a.label}
                   testID={`intent-check-answer-${a.label}`}
                   theme={theme}
-                  variant={a.label === 'intentional' ? 'primary' : 'secondary'}
+                  variant="secondary"
                   disabled={busy}
                   onPress={() => answer(a.label)}
                   accessibilityLabel={`Label this sitting as ${a.text.toLowerCase()}`}

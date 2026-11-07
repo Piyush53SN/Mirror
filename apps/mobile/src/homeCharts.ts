@@ -47,3 +47,38 @@ export function buildDonutSlices(totals: readonly DailyTotal[], topN = 5): Donut
   if (rest > 0) top.push({ label: 'Other', value: rest });
   return top;
 }
+
+export type HourBucket = { hour: number; ms: number };
+
+/**
+ * Sitting time per local clock hour for one local day. Pure. Each sitting is split across the
+ * hours it covers and clipped to the day, so the 24 values add up to the day's sitting time
+ * (no new metric: the same spans the sittings already define).
+ */
+export function buildHourBuckets(
+  sessions: readonly { startMs: number; endMs: number }[],
+  day: string,
+): HourBucket[] {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  const buckets: HourBucket[] = Array.from({ length: 24 }, (_, hour) => ({ hour, ms: 0 }));
+  if (!m) return buckets;
+  const dayStart = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  const dayEnd = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 1).getTime();
+  for (const s of sessions) {
+    const from = Math.max(s.startMs, dayStart);
+    const to = Math.min(s.endMs, dayEnd);
+    if (to <= from) continue;
+    for (let h = 0; h < 24; h += 1) {
+      const hStart = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), h).getTime();
+      const hEnd = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), h + 1).getTime();
+      const overlap = Math.min(to, hEnd) - Math.max(from, hStart);
+      if (overlap > 0) buckets[h].ms += overlap;
+    }
+  }
+  return buckets;
+}
+
+/** Hour label for a 0..23 hour, e.g. 9 -> "09:00". */
+export function hourLabel(hour: number): string {
+  return `${String(hour).padStart(2, '0')}:00`;
+}

@@ -237,7 +237,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "State the three promises before asking for anything.",
-      "bytes": 4707
+      "bytes": 6086
     },
     {
       "id": "J1",
@@ -254,7 +254,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "State the three promises before asking for anything.",
-      "bytes": 4704
+      "bytes": 6091
     },
     {
       "id": "J2",
@@ -271,7 +271,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Explain each permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
-      "bytes": 8098
+      "bytes": 9213
     },
     {
       "id": "J2",
@@ -288,7 +288,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Explain each permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
-      "bytes": 8091
+      "bytes": 9198
     },
     {
       "id": "J3",
@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 26351
+      "bytes": 27994
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 26334
+      "bytes": 27965
     },
     {
       "id": "J3",
@@ -345,7 +345,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 12260
+      "bytes": 13375
     },
     {
       "id": "J3",
@@ -364,7 +364,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 12249
+      "bytes": 13348
     },
     {
       "id": "J4",
@@ -385,7 +385,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 19878
+      "bytes": 21125
     },
     {
       "id": "J4",
@@ -406,7 +406,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 19871
+      "bytes": 21114
     },
     {
       "id": "J4",
@@ -427,7 +427,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 11533
+      "bytes": 12780
     },
     {
       "id": "J4",
@@ -448,7 +448,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 11524
+      "bytes": 12763
     },
     {
       "id": "J5",
@@ -471,7 +471,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16758
+      "bytes": 18137
     },
     {
       "id": "J5",
@@ -494,7 +494,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 16748
+      "bytes": 18121
     },
     {
       "id": "J5",
@@ -517,7 +517,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 8973
+      "bytes": 10088
     },
     {
       "id": "J5",
@@ -540,7 +540,7 @@
         "C"
       ],
       "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 8967
+      "bytes": 10076
     },
     {
       "id": "J6",
@@ -563,7 +563,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13969
+      "bytes": 15216
     },
     {
       "id": "J6",
@@ -586,7 +586,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 13961
+      "bytes": 15202
     },
     {
       "id": "J6",
@@ -609,7 +609,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 9028
+      "bytes": 10143
     },
     {
       "id": "J6",
@@ -632,7 +632,7 @@
         "C"
       ],
       "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 9022
+      "bytes": 10131
     },
     {
       "id": "J7",
@@ -651,7 +651,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 24888
+      "bytes": 26135
     },
     {
       "id": "J7",
@@ -670,7 +670,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 24869
+      "bytes": 26088
     },
     {
       "id": "J7",
@@ -689,7 +689,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 13411
+      "bytes": 14658
     },
     {
       "id": "J7",
@@ -708,7 +708,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 13399
+      "bytes": 14632
     },
     {
       "id": "J8",
@@ -727,7 +727,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 12378
+      "bytes": 13493
     },
     {
       "id": "J8",
@@ -746,7 +746,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 12367
+      "bytes": 13466
     },
     {
       "id": "J8",
@@ -765,7 +765,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 14654
+      "bytes": 15901
     },
     {
       "id": "J8",
@@ -784,7 +784,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 14640
+      "bytes": 15869
     },
     {
       "id": "J9",
@@ -805,7 +805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 11255
+      "bytes": 12502
     },
     {
       "id": "J9",
@@ -826,7 +826,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 11247
+      "bytes": 12488
     },
     {
       "id": "J9",
@@ -847,7 +847,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 13563
+      "bytes": 14942
     },
     {
       "id": "J9",
@@ -868,7 +868,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 13552
+      "bytes": 14923
     },
     {
       "id": "J10",
@@ -887,7 +887,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 9273
+      "bytes": 10388
     },
     {
       "id": "J10",
@@ -906,7 +906,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 9268
+      "bytes": 10379
     },
     {
       "id": "J10",
@@ -925,7 +925,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 11567
+      "bytes": 12814
     },
     {
       "id": "J10",
@@ -944,7 +944,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 11559
+      "bytes": 12800
     },
     {
       "id": "J11",
@@ -967,7 +967,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 15460
+      "bytes": 16839
     },
     {
       "id": "J11",
@@ -990,7 +990,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 15447
+      "bytes": 16814
     },
     {
       "id": "J11",
@@ -1013,7 +1013,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 12330
+      "bytes": 13577
     },
     {
       "id": "J11",
@@ -1036,7 +1036,7 @@
         "C"
       ],
       "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 12320
+      "bytes": 13557
     },
     {
       "id": "J12",
@@ -1055,7 +1055,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 14656
+      "bytes": 16035
     },
     {
       "id": "J12",
@@ -1074,7 +1074,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 14646
+      "bytes": 16019
     },
     {
       "id": "J12",
@@ -1093,7 +1093,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16942
+      "bytes": 18453
     },
     {
       "id": "J12",
@@ -1112,7 +1112,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16929
+      "bytes": 18432
     },
     {
       "id": "J13",
@@ -1129,7 +1129,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Every source with its capability matrix and a one-tap revoke.",
-      "bytes": 24254
+      "bytes": 25369
     },
     {
       "id": "J13",
@@ -1146,7 +1146,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Every source with its capability matrix and a one-tap revoke.",
-      "bytes": 24235
+      "bytes": 25318
     },
     {
       "id": "J14",
@@ -1163,7 +1163,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 13092
+      "bytes": 14603
     },
     {
       "id": "J14",
@@ -1180,7 +1180,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 13081
+      "bytes": 14588
     },
     {
       "id": "J14",
@@ -1197,7 +1197,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 13092
+      "bytes": 14603
     },
     {
       "id": "J14",
@@ -1214,7 +1214,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 13081
+      "bytes": 14588
     },
     {
       "id": "J15",
@@ -1235,7 +1235,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 15650
+      "bytes": 17029
     },
     {
       "id": "J15",
@@ -1256,7 +1256,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 15636
+      "bytes": 17001
     },
     {
       "id": "J15",
@@ -1277,7 +1277,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 14554
+      "bytes": 16065
     },
     {
       "id": "J15",
@@ -1298,7 +1298,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 14541
+      "bytes": 16044
     },
     {
       "id": "J16",
@@ -1319,7 +1319,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 10556
+      "bytes": 11803
     },
     {
       "id": "J16",
@@ -1340,7 +1340,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 10547
+      "bytes": 11786
     },
     {
       "id": "J16",
@@ -1361,7 +1361,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 13333
+      "bytes": 14712
     },
     {
       "id": "J16",
@@ -1382,7 +1382,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 13321
+      "bytes": 14690
     },
     {
       "id": "J17",
@@ -1401,7 +1401,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 44441
+      "bytes": 46348
     },
     {
       "id": "J17",
@@ -1420,7 +1420,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 44411
+      "bytes": 46282
     },
     {
       "id": "J18",
@@ -1439,7 +1439,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 11611
+      "bytes": 12726
     },
     {
       "id": "J18",
@@ -1458,7 +1458,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 11606
+      "bytes": 12717
     },
     {
       "id": "J18",
@@ -1477,7 +1477,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 13905
+      "bytes": 15152
     },
     {
       "id": "J18",
@@ -1496,7 +1496,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 13897
+      "bytes": 15138
     },
     {
       "id": "J19",
@@ -1515,7 +1515,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 11384
+      "bytes": 12631
     },
     {
       "id": "J19",
@@ -1534,7 +1534,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 11379
+      "bytes": 12626
     },
     {
       "id": "J19",
@@ -1553,7 +1553,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 7205
+      "bytes": 8320
     },
     {
       "id": "J19",
@@ -1572,7 +1572,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 7199
+      "bytes": 8308
     },
     {
       "id": "J20",
@@ -1595,7 +1595,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 13584
+      "bytes": 14963
     },
     {
       "id": "J20",
@@ -1618,7 +1618,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 13573
+      "bytes": 14944
     },
     {
       "id": "J20",
@@ -1641,7 +1641,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 8492
+      "bytes": 9607
     },
     {
       "id": "J20",
@@ -1664,7 +1664,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 8487
+      "bytes": 9598
     },
     {
       "id": "J21",
@@ -1685,7 +1685,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 18083
+      "bytes": 19594
     },
     {
       "id": "J21",
@@ -1706,7 +1706,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 18071
+      "bytes": 19576
     },
     {
       "id": "J21",
@@ -1727,7 +1727,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 8959
+      "bytes": 10074
     },
     {
       "id": "J21",
@@ -1748,7 +1748,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 8953
+      "bytes": 10062
     },
     {
       "id": "J22",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 31036
+      "bytes": 32811
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 31015
+      "bytes": 32768
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29344
+      "bytes": 31119
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 29325
+      "bytes": 31082
     },
     {
       "id": "J23",
@@ -1841,7 +1841,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 17391
+      "bytes": 19166
     },
     {
       "id": "J23",
@@ -1858,7 +1858,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 17378
+      "bytes": 19147
     },
     {
       "id": "J23",
@@ -1875,7 +1875,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 17391
+      "bytes": 19166
     },
     {
       "id": "J23",
@@ -1892,7 +1892,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 17378
+      "bytes": 19147
     },
     {
       "id": "J24",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 33692
+      "bytes": 35335
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 33669
+      "bytes": 35282
     },
     {
       "id": "J25",
@@ -1945,7 +1945,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The only place Mirror may interrupt, off unless asked for, with quiet hours.",
-      "bytes": 15455
+      "bytes": 16834
     },
     {
       "id": "J25",
@@ -1964,7 +1964,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The only place Mirror may interrupt, off unless asked for, with quiet hours.",
-      "bytes": 15442
+      "bytes": 16809
     },
     {
       "id": "J26",
@@ -1983,7 +1983,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 20545
+      "bytes": 22056
     },
     {
       "id": "J26",
@@ -2002,7 +2002,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 20531
+      "bytes": 22026
     },
     {
       "id": "J27",
@@ -2040,7 +2040,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7117
+      "bytes": 7103
     },
     {
       "id": "J27",
@@ -2078,7 +2078,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7117
+      "bytes": 7103
     },
     {
       "id": "J28",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 31212
+      "bytes": 32987
     },
     {
       "id": "J28",
@@ -2112,7 +2112,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 31191
+      "bytes": 32944
     }
   ],
   "extraItems": 1,
@@ -2132,7 +2132,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 18503
+      "bytes": 20014
     },
     {
       "id": "X1",
@@ -2149,7 +2149,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 18487
+      "bytes": 19984
     },
     {
       "id": "X1",
@@ -2166,7 +2166,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 10205
+      "bytes": 11452
     },
     {
       "id": "X1",
@@ -2183,7 +2183,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 10199
+      "bytes": 11444
     }
   ]
 }

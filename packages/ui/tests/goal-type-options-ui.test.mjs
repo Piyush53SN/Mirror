@@ -21,6 +21,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import TestRenderer from 'react-test-renderer';
 import React from 'react';
 import * as esbuild from 'esbuild';
+import { nativeAliases } from './support/native-aliases.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI = join(HERE, '..');
@@ -51,7 +52,7 @@ before(async () => {
     format: 'esm',
     target: 'node22',
     jsx: 'automatic',
-    alias: { 'react-native': join(UI, 'mockups/rn-dom.tsx') },
+    alias: nativeAliases(UI),
     external: ['react', 'react-test-renderer', 'node:sqlite'],
     logLevel: 'warning',
   });

@@ -20,7 +20,10 @@
   },
   "peerDependencies": {
     "react": ">=19",
-    "react-native": ">=0.88"
+    "react-native": ">=0.88",
+    "react-native-svg": ">=15.16.0",
+    "expo-linear-gradient": ">=58.0.0",
+    "expo-haptics": ">=58.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

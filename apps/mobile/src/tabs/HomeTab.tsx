@@ -1,3 +1,10 @@
+/**
+ * Home. Order: hero (Attention signal), 7-day chart, time donut, 24-hour sitting strip,
+ * budgets, weekly summary, Intent Check. Detail that used to sit on Home (how the numbers are
+ * counted, the per-app list, the session boundary status) lives in the Why sheet.
+ *
+ * Presentation only. Every number comes from the existing context; nothing here computes a metric.
+ */
 import * as React from 'react';
 import { Animated, View } from 'react-native';
 import {
@@ -5,53 +12,50 @@ import {
   Card,
   Chip,
   ConfidenceChip,
-  Divider,
   EmptyState,
   LinkButton,
-  Meter,
   Pill,
-  SectionHeader,
-  Stat,
   Surface,
   Text,
   TierBadge,
   announceValue,
+  heroTheme,
   useTheme,
   type MirrorTheme,
-  type MirrorTheme as MirrorThemeType,
 } from '@mirror/ui';
 import type { Score } from '@mirror/core-analytics';
-import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { DayPickerStrip } from '../components/DayPickerStrip';
 import { HomeBudgetStrip } from '../components/HomeBudgetStrip';
 import { WeeklySummaryCard } from '../components/WeeklySummaryCard';
 import { IntentCheckCard } from '../components/IntentCheckCard';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
-import { TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
+import { HourStripCard, TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
 
 const GAUGE_TICKS = 18;
 const GAUGE_START_DEG = -210;
 const GAUGE_SWEEP_DEG = 240;
 
+function hexToRgb(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Colour for tick `idx` of `count` along the single-hue gauge gradient (from -> to). Pure. */
+export function gaugeTickColour(idx: number, count: number, from: string, to: string): string {
+  const t = count <= 1 ? 1 : idx / (count - 1);
+  const a = hexToRgb(from);
+  const b = hexToRgb(to);
+  const mixed = a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  return `#${mixed.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+}
+
 /**
- * Frosted Horizon segmented 240-degree arc gauge for Attention signal, filled by
- * measured points (`value / measuredMax`) with unmeasured points listed separately.
+ * Segmented 240-degree tick gauge for the Attention signal. Filled ticks run teal to indigo
+ * (one hue family, never red or green). Filled by measured points (`value / measuredMax`).
  */
-function IqsHeroGauge({
-  iqs,
-  theme,
-}: {
-  iqs: Score | null;
-  theme: MirrorTheme;
-}): React.ReactElement {
+function IqsHeroGauge({ iqs, theme, measuredMax }: { iqs: Score | null; theme: MirrorTheme; measuredMax: number }): React.ReactElement {
   const scaleMax = iqs && iqs.max > 0 ? iqs.max : 100;
-  const measuredMax =
-    iqs && typeof iqs.measuredMax === 'number'
-      ? iqs.measuredMax
-      : iqs
-        ? iqs.factors.filter((f) => f.measurable).reduce((sum, f) => sum + f.max, 0)
-        : 0;
   const unmeasuredMax = Math.max(0, scaleMax - measuredMax);
   const hasScore = iqs !== null && iqs.value !== null && measuredMax > 0;
   const ratio = hasScore ? Math.max(0, Math.min(1, (iqs.value ?? 0) / measuredMax)) : 0;
@@ -62,16 +66,12 @@ function IqsHeroGauge({
   const trackRadius = center - theme.space(2);
   const tickWidth = 4;
   const tickHeight = 12;
-  const innerSize = size - theme.space(7); // 68dp center medallion
+  const innerSize = size - theme.space(7); // 68dp centre medallion
+  const [gaugeFrom, gaugeTo] = theme.palette.gauge;
 
   const a11yLabel =
     hasScore && iqs && iqs.value !== null
-      ? announceValue(
-          'Attention signal',
-          Math.round(iqs.value),
-          `of ${measuredMax} measured`,
-          `${iqs.band}, ${unmeasuredMax} points not measured`,
-        )
+      ? announceValue('Attention signal', Math.round(iqs.value), `of ${measuredMax} measured`, `${iqs.band}, ${unmeasuredMax} points not measured`)
       : 'Attention signal not measured yet';
 
   return (
@@ -84,12 +84,7 @@ function IqsHeroGauge({
         max: Math.max(1, measuredMax),
         now: hasScore && iqs && iqs.value !== null ? Math.round(iqs.value) : 0,
       }}
-      style={{
-        width: size,
-        height: size,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
+      style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}
     >
       {Array.from({ length: GAUGE_TICKS }, (_, idx) => {
         const deg = GAUGE_START_DEG + (idx / (GAUGE_TICKS - 1)) * GAUGE_SWEEP_DEG;
@@ -107,7 +102,7 @@ function IqsHeroGauge({
               width: tickWidth,
               height: tickHeight,
               borderRadius: theme.radius.pill,
-              backgroundColor: filled ? theme.color.anchor : theme.color.borderCard,
+              backgroundColor: filled ? gaugeTickColour(idx, GAUGE_TICKS, gaugeFrom, gaugeTo) : theme.color.borderCard,
               opacity: filled ? 1 : 0.45,
               transform: [{ rotate: `${deg + 90}deg` }],
             }}
@@ -164,37 +159,16 @@ function buildPlainHomeSentence(params: {
 }
 
 /**
- * The hero is a dark tile in both appearances. Its subtree is painted with an inverted colour
- * set (anchor becomes the light ink and the card fill), so text and meters keep AA contrast
- * on the tile. Built once per theme, outside the component.
+ * The hero is a solid tile in both appearances. Kept as an alias of the shared `heroTheme`
+ * (palette hero colours), so existing imports keep working.
  */
-export function inverseHeroTheme(theme: MirrorThemeType): MirrorThemeType {
-  const c = theme.color;
-  return {
-    ...theme,
-    color: {
-      ...c,
-      ink: c.onAnchor,
-      inkMuted: c.mutedOnAnchor,
-      anchor: c.onAnchor,
-      onAnchor: c.anchor,
-      mutedOnAnchor: c.inkMuted,
-      card: c.anchor,
-      borderCard: c.mutedOnAnchor,
-      borderHairline: c.mutedOnAnchor,
-    },
-    glass: {
-      ...theme.glass,
-      card: { ...theme.glass.card, fill: c.anchor, blurPx: 0, live: false },
-    },
-  };
-}
+export const inverseHeroTheme = heroTheme;
 
 // Set once per app session: the hero number settles on first load only, not on every tab switch.
 let heroSettled = false;
 
 /** Fades and lifts the hero numeral once. Off under reduce-motion (duration 0). */
-function SettleOnce({ theme, children }: { theme: MirrorThemeType; children: React.ReactNode }): React.ReactElement {
+function SettleOnce({ theme, children }: { theme: MirrorTheme; children: React.ReactNode }): React.ReactElement {
   const anim = React.useRef(new Animated.Value(heroSettled ? 1 : 0)).current;
   React.useEffect(() => {
     if (heroSettled) return;
@@ -232,40 +206,20 @@ export function HomeTab(): React.ReactElement {
     dailyTotals,
     dailyTotalsSource,
     hasEventsWithoutSittings,
-    orphanCount,
-    totalGaps,
-    p3Reliable,
     checkPermissionAndCollect,
     setActiveTab,
     weeklyReport,
   } = useMirrorApp();
-  const heroTheme = React.useMemo(() => inverseHeroTheme(theme), [theme]);
-  const [showAllApps, setShowAllApps] = React.useState(false);
+  const hero = React.useMemo(() => heroTheme(theme), [theme]);
 
-  const visibleApps = showAllApps ? dailyTotals : dailyTotals.slice(0, 6);
-  const totalScreenMs = React.useMemo(
-    () => dailyTotals.reduce((sum, item) => sum + item.totalMs, 0),
-    [dailyTotals],
-  );
+  const totalScreenMs = React.useMemo(() => dailyTotals.reduce((sum, item) => sum + item.totalMs, 0), [dailyTotals]);
   const sittingCount = dayScoredSessions.length;
-  const maxAppMs = dailyTotals[0]?.totalMs ?? 1;
-  const measuredFactors = React.useMemo(
-    () => (iqs ? iqs.factors.filter((f) => f.measurable && f.max > 0) : []),
-    [iqs],
-  );
-  const unmeasuredFactors = React.useMemo(
-    () => (iqs ? iqs.factors.filter((f) => !f.measurable && f.max > 0) : []),
-    [iqs],
-  );
-  const scaleMax = iqs && iqs.max > 0 ? iqs.max : 100;
-  const measuredMax = React.useMemo(
-    () =>
-      iqs && typeof iqs.measuredMax === 'number'
-        ? iqs.measuredMax
-        : measuredFactors.reduce((sum, f) => sum + f.max, 0),
-    [iqs, measuredFactors],
-  );
-  const unmeasuredMax = Math.max(0, scaleMax - measuredMax);
+  const measuredMax = React.useMemo(() => {
+    if (!iqs) return 0;
+    if (typeof iqs.measuredMax === 'number') return iqs.measuredMax;
+    return iqs.factors.filter((f) => f.measurable && f.max > 0).reduce((sum, f) => sum + f.max, 0);
+  }, [iqs]);
+  const unmeasuredMax = Math.max(0, (iqs && iqs.max > 0 ? iqs.max : 100) - measuredMax);
 
   const isToday = selectedDay === toDayStr(Date.now());
   const homeSentence = React.useMemo(
@@ -290,6 +244,15 @@ export function HomeTab(): React.ReactElement {
       ? `Last sync ${collectingSince}`
       : 'Syncing...';
 
+  const sourceLabel =
+    dailyTotalsSource === 'stored_events'
+      ? 'Stored · Mirror events'
+      : dailyTotalsSource === 'os_bucket_approx'
+        ? 'Approximate · OS daily buckets'
+        : 'Day-clipped OS foreground events · matches Digital Wellbeing';
+
+  const openWhy = (): void => setShowWhy(true);
+
   return (
     <AppShell
       title={`Mirror · ${selectedDay}`}
@@ -300,14 +263,9 @@ export function HomeTab(): React.ReactElement {
         </Pill>
       }
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: theme.space(2) }}>
-        <Text role="micro" tone="muted" theme={theme}>
-          {lastCollect ?? 'collector idle'}
-        </Text>
-        <Text role="micro" tone="muted" theme={theme}>
-          On-device · encrypted
-        </Text>
-      </View>
+      <Text role="micro" tone="muted" theme={theme}>
+        {`${lastCollect ?? 'Collector idle'} · On-device · encrypted`}
+      </Text>
 
       {error ? (
         <Callout theme={theme} tone="limit">
@@ -317,11 +275,12 @@ export function HomeTab(): React.ReactElement {
 
       {keyMismatch ? (
         <Card theme={theme} style={{ marginBottom: 0 }}>
-          <SectionHeader
-            theme={theme}
-            title="Stored data can't be read"
-            caption={`sealed with ${keyMismatch.oldKey}, current ${keyMismatch.newKey}`}
-          />
+          <Text role="title" theme={theme}>
+            Stored data can&apos;t be read
+          </Text>
+          <Text role="micro" tone="muted" theme={theme}>
+            {`Sealed with key "${keyMismatch.oldKey}", current key "${keyMismatch.newKey}"`}
+          </Text>
           <Text role="body" theme={theme} style={{ marginTop: theme.space(2) }}>
             {`Mirror's encrypted database was sealed with key "${keyMismatch.oldKey}" but the current key is "${keyMismatch.newKey}". Resetting starts a fresh encrypted store on this phone.`}
           </Text>
@@ -338,169 +297,85 @@ export function HomeTab(): React.ReactElement {
 
       <DayPickerStrip />
 
-      {/* Plain-language daily summary sentence */}
-      <Card theme={theme} style={{ marginBottom: 0 }}>
-        <View testID="home-plain-sentence" style={{ gap: theme.space(1) }}>
-          <Text role="micro" tone="muted" theme={theme}>
-            DAY IN PLAIN WORDS
-          </Text>
-          <Text role="body" theme={theme}>
-            {homeSentence}
-          </Text>
-        </View>
-      </Card>
-
-      {/* Frosted Horizon Hero — fixed 0–100 IQS scale with unmeasured parts shown separately */}
+      {/* 1. Hero: Attention signal, measured points, unmeasured points listed separately */}
       <Surface
         radius="hero"
-        theme={heroTheme}
-        style={{
-          padding: theme.space(4),
-          borderWidth: 1,
-          borderColor: heroTheme.color.borderHairline,
-          gap: theme.space(3),
-        }}
+        theme={hero}
+        style={{ padding: theme.space(4), borderWidth: 1, borderColor: hero.color.borderHairline, gap: theme.space(3) }}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
           <View style={{ flex: 1, gap: theme.space(0.5) }}>
-            <Text role="micro" tone="muted" theme={heroTheme}>
-              INTERACTION QUALITY · MEASURED POINTS
+            <Text role="micro" tone="muted" theme={hero}>
+              ATTENTION SIGNAL · MEASURED POINTS
             </Text>
-            <Text role="title-lg" theme={heroTheme}>
-              Attention signal
-            </Text>
-            <Text role="label" tone="muted" theme={heroTheme}>
+            <Text role="label" tone="muted" theme={hero}>
               Unmeasured points are listed separately
             </Text>
           </View>
-          <TierBadge tier="D" theme={heroTheme} />
+          <TierBadge tier="D" theme={hero} />
         </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            gap: theme.space(2),
-            flexWrap: 'wrap',
-            alignItems: 'center',
-          }}
-        >
-          {(isToday || iqs?.provisional) ? (
-            <Chip static label="Today so far, provisional" theme={heroTheme} />
-          ) : null}
-          <Chip static label="Based on usage patterns only" theme={heroTheme} />
-          {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? (
-            <Chip static label="Small sample" theme={heroTheme} />
-          ) : null}
-          <ConfidenceChip tiers={['D']} label="OS usage · no app content" theme={heroTheme} />
+        <View style={{ flexDirection: 'row', gap: theme.space(2), flexWrap: 'wrap', alignItems: 'center' }}>
+          {isToday || iqs?.provisional ? <Chip static label="Today so far, provisional" theme={hero} /> : null}
+          <Chip static label="Based on usage patterns only" theme={hero} />
+          {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? <Chip static label="Small sample" theme={hero} /> : null}
+          <ConfidenceChip tiers={['D']} label="OS usage · no app content" theme={hero} />
         </View>
 
         {hasEventsWithoutSittings ? (
           <EmptyState
             title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
-            body={`Per-app screen time is available below (${formatDuration(totalScreenMs)} across ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}), while derived sittings for ${selectedDay} are empty. Tap Refresh to rebuild sittings from stored events.`}
+            body={`Per-app screen time is available (${formatDuration(totalScreenMs)} across ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}), while derived sittings for ${selectedDay} are empty. Tap Refresh sittings to rebuild them.`}
             action={
-              <Pill theme={heroTheme} onPress={checkPermissionAndCollect}>
+              <Pill theme={hero} onPress={checkPermissionAndCollect}>
                 Refresh sittings
               </Pill>
             }
-            theme={heroTheme}
+            theme={hero}
           />
         ) : iqs ? (
           <View style={{ gap: theme.space(3) }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: theme.space(4),
-              }}
-            >
-              <IqsHeroGauge iqs={iqs} theme={heroTheme} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(4) }}>
+              <IqsHeroGauge iqs={iqs} theme={hero} measuredMax={measuredMax} />
               <View style={{ flex: 1, gap: theme.space(1) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-                  <SettleOnce theme={heroTheme}>
-                    <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={heroTheme}>
+                  <SettleOnce theme={hero}>
+                    <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={hero}>
                       {iqs.value === null ? 'Not enough activity yet' : String(Math.round(iqs.value))}
                     </Text>
                   </SettleOnce>
                   {iqs.value !== null ? (
-                    <Text role="label" tone="muted" theme={heroTheme}>
+                    <Text role="label" tone="muted" theme={hero}>
                       {`of ${measuredMax} measured`}
                     </Text>
                   ) : null}
                 </View>
-                <Text role="label" theme={heroTheme}>
+                <Text role="label" theme={hero}>
                   {isToday || iqs.provisional ? 'Today so far, provisional' : iqs.band}
                 </Text>
-                <Text role="micro" tone="muted" theme={heroTheme}>
-                  {`${unmeasuredMax} points not measured (listed separately below)`}
+                <Text role="micro" tone="muted" theme={hero}>
+                  {`${unmeasuredMax} points not measured (listed separately)`}
                 </Text>
-                <Text role="micro" tone="muted" theme={heroTheme}>
+                <Text role="micro" tone="muted" theme={hero}>
                   {`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} · ${formatDuration(sittingSpanMs)} merged sitting spans`}
                 </Text>
               </View>
             </View>
 
-            <View
-              style={{
-                borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
-                borderWidth: 1,
-                borderColor: theme.color.borderCard,
-                padding: theme.space(3),
-                gap: theme.space(2),
-              }}
-            >
-              <Meter
-                theme={heroTheme}
-                value={iqs.confidence.score}
-                label={`Confidence · ${iqs.confidence.level}`}
-                caption={`${Math.round(iqs.confidence.score * 100)}%`}
-                tone="muted"
-              />
-              <Text role="micro" tone="muted" theme={heroTheme}>
-                Confidence details are in Why this score.
+            <View testID="home-plain-sentence" style={{ gap: theme.space(1) }}>
+              <Text role="micro" tone="muted" theme={hero}>
+                DAY IN PLAIN WORDS
               </Text>
-              {measuredFactors.length > 0 ? (
-                <>
-                  <Divider theme={heroTheme} />
-                  {measuredFactors.map((factor) => (
-                    <Meter
-                      key={factor.id}
-                      theme={heroTheme}
-                      value={factor.points / factor.max}
-                      label={factor.label}
-                      caption={`${factor.points} / ${factor.max}`}
-                      tone={factor.points > 0 ? 'anchor' : 'muted'}
-                    />
-                  ))}
-                </>
-              ) : null}
-              {unmeasuredFactors.length > 0 ? (
-                <>
-                  <Divider theme={heroTheme} />
-                  <View style={{ gap: theme.space(1) }}>
-                    <Text role="label" theme={heroTheme}>
-                      {`${unmeasuredMax} points not measured (listed separately)`}
-                    </Text>
-                    {unmeasuredFactors.map((factor) => (
-                      <Text key={factor.id} role="micro" tone="muted" theme={heroTheme}>
-                        {`· ${factor.label} (up to ${factor.max} pts): ${factor.detail}`}
-                      </Text>
-                    ))}
-                  </View>
-                </>
-              ) : null}
+              <Text role="body" theme={hero}>
+                {homeSentence}
+              </Text>
             </View>
 
-            <Callout theme={heroTheme} tone="neutral">
-              {iqs.caveat}
-            </Callout>
-
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), alignItems: 'center' }}>
-              <Pill theme={heroTheme} onPress={() => setShowWhy(true)}>
+              <Pill theme={hero} onPress={openWhy}>
                 Why this score
               </Pill>
-              <LinkButton theme={heroTheme} onPress={() => setActiveTab('insights')}>
+              <LinkButton theme={hero} onPress={() => setActiveTab('insights')}>
                 Explore Insights
               </LinkButton>
             </View>
@@ -509,186 +384,28 @@ export function HomeTab(): React.ReactElement {
           <EmptyState
             title={`No usage data for ${selectedDay}`}
             body="Your score appears once enough activity is recorded. Mirror never fills gaps with guesses."
-            theme={heroTheme}
+            theme={hero}
           />
         )}
       </Surface>
 
+      {/* 2. Seven-day chart */}
       <WeekTrendCard report={weeklyReport} selectedDay={selectedDay} />
-      <TimeSplitCard totals={dailyTotals} />
 
-      {/* Summary metrics: foreground screen time vs merged sitting spans */}
-      <View style={{ flexDirection: 'row', gap: theme.space(3) }}>
-        <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
-          <Stat
-            value={dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}
-            label={
-              dailyTotalsSource === 'stored_events'
-                ? 'Stored screen time'
-                : dailyTotalsSource === 'os_bucket_approx'
-                  ? 'Approx. screen time'
-                  : 'OS screen time'
-            }
-            hint={
-              dailyTotalsSource === 'stored_events'
-                ? `Stored · Mirror events · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
-                : dailyTotalsSource === 'os_bucket_approx'
-                  ? `Approximate · OS buckets · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
-                  : `Day-clipped OS events · ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}`
-            }
-            theme={theme}
-          />
-        </Card>
-        <Card theme={theme} style={{ flex: 1, marginBottom: 0 }}>
-          <Stat
-            value={`${sittingCount} ${sittingCount === 1 ? 'sitting' : 'sittings'}`}
-            label={`Sitting spans · ${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'}`}
-            hint={p3Reliable ? 'Merges ≤15m same-app reopens' : 'Boundary gate active'}
-            theme={theme}
-          />
-        </Card>
-      </View>
+      {/* 3. Where time went: donut with its source and a link to the numbers */}
+      <TimeSplitCard totals={dailyTotals} sourceLabel={sourceLabel} onWhy={openWhy} />
 
-      {dailyTotalsSource === 'stored_events' ? (
-        <Callout theme={theme} tone="neutral">
-          {`Stored (${selectedDay}): Android’s raw UsageEvents buffer no longer covers this older day. Totals come from Mirror’s stored day-clipped foreground events recorded on this device.`}
-        </Callout>
-      ) : dailyTotalsSource === 'os_bucket_approx' ? (
-        <Callout theme={theme} tone="limit">
-          {`Approximate (${selectedDay}): Android’s raw UsageEvents buffer no longer covers this day and Mirror has no stored events for it. Totals come from fallback OS daily buckets, which do not clip cleanly at local midnight.`}
-        </Callout>
-      ) : null}
+      {/* 4. Sitting time through the 24 hours */}
+      <HourStripCard sessions={dayScoredSessions} day={selectedDay} />
 
-      {totalScreenMs > 0 || sittingSpanMs > 0 ? (
-        <Callout theme={theme} tone="neutral">
-          {`${
-            dailyTotalsSource === 'stored_events'
-              ? 'Stored screen time'
-              : dailyTotalsSource === 'os_bucket_approx'
-                ? 'Approximate screen time'
-                : 'OS screen time'
-          } (${dailyTotals.length > 0 ? formatDuration(totalScreenMs) : '0s'}) ${
-            dailyTotalsSource === 'os_bucket_approx'
-              ? 'comes from fallback OS daily buckets because raw UsageEvents are unavailable for this older day.'
-              : dailyTotalsSource === 'stored_events'
-                ? 'sums Mirror’s stored day-clipped foreground intervals for this older day.'
-                : 'sums day-clipped OS foreground events only, matching Digital Wellbeing.'
-          } Sitting spans (${sittingCount > 0 ? formatDuration(sittingSpanMs) : '0s'} across ${sittingCount} sitting${sittingCount === 1 ? '' : 's'}) merge reopens of the same app within 15 min into one sitting, so spans include brief pauses and switches between opens.`}
-        </Callout>
-      ) : null}
-
-      {/* Compact soft Attention Budget strip (same day-clipped foreground totals as Home) */}
+      {/* 5. Attention budgets (same day-clipped foreground totals as Home) */}
       <HomeBudgetStrip />
 
-      {/* P4.4-UX: weekly summary (same engine as the full report) and one-time reminder offer */}
+      {/* 6. Weekly summary (same engine as the full report) */}
       <WeeklySummaryCard />
 
-      {/* P4.4c: optional one-tap Intent Check question (off by default) */}
+      {/* 7. Optional one-tap Intent Check question (off by default) */}
       <IntentCheckCard />
-
-      {/* Per-app foreground totals with explicit source badge */}
-      <Card theme={theme} style={{ marginBottom: 0 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: theme.space(1.5), marginBottom: dailyTotalsSource === 'os_events' ? 0 : theme.space(1) }}>
-          {dailyTotalsSource === 'stored_events' ? (
-            <Chip static theme={theme} label="Stored · Mirror events" />
-          ) : dailyTotalsSource === 'os_bucket_approx' ? (
-            <Chip static theme={theme} label="Approximate · OS daily buckets" />
-          ) : null}
-        </View>
-        <SectionHeader
-          theme={theme}
-          title={
-            dailyTotalsSource === 'stored_events'
-              ? `Per-app totals · ${selectedDay} · Stored`
-              : dailyTotalsSource === 'os_bucket_approx'
-                ? `Per-app totals · ${selectedDay} · Approximate`
-                : `Per-app totals · ${selectedDay}`
-          }
-          caption={
-            dailyTotalsSource === 'stored_events'
-              ? 'Stored day-clipped foreground events in Mirror, using the shared system/launcher exclusion list'
-              : dailyTotalsSource === 'os_bucket_approx'
-                ? 'Approximate OS daily buckets (may include adjacent-midnight bleed), using the shared exclusion list'
-                : 'Day-clipped OS foreground events (matches Digital Wellbeing), using the shared exclusion list'
-          }
-        />
-        {dailyTotals.length === 0 ? (
-          <EmptyState
-            title={`No totals for ${selectedDay}`}
-            body={
-              dailyTotalsSource === 'stored_events'
-                ? 'No stored foreground intervals were recorded in Mirror for this older day.'
-                : dailyTotalsSource === 'os_bucket_approx'
-                  ? 'Android’s UsageEvents buffer no longer covers this older day, Mirror has no stored events for it, and no approximate OS daily buckets were returned.'
-                  : 'Use apps that day, then tap Refresh. Totals sum OS foreground intervals clipped strictly to the local day, matching Digital Wellbeing.'
-            }
-            theme={theme}
-          />
-        ) : (
-          <View style={{ gap: theme.space(2) }}>
-            {visibleApps.map((t, idx) => {
-              const sharePct = totalScreenMs > 0 ? Math.round((t.totalMs / totalScreenMs) * 100) : 0;
-              return (
-                <View key={t.app} style={{ gap: theme.space(1.5) }}>
-                  {idx > 0 ? <Divider theme={theme} /> : null}
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                    <View style={{ flex: 1, paddingRight: theme.space(2) }}>
-                      <Text role="label" theme={theme}>
-                        {t.label}
-                      </Text>
-                      <Text role="micro" tone="muted" theme={theme}>
-                        {t.app}
-                      </Text>
-                    </View>
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {`${sharePct}%`}
-                    </Text>
-                  </View>
-                  <Meter
-                    theme={theme}
-                    value={maxAppMs > 0 ? t.totalMs / maxAppMs : 0}
-                    label={`${t.label} foreground share`}
-                    caption={formatDuration(t.totalMs)}
-                    tone={idx === 0 ? 'anchor' : 'muted'}
-                  />
-                </View>
-              );
-            })}
-            {dailyTotals.length > 6 ? (
-              <LinkButton theme={theme} onPress={() => setShowAllApps((prev) => !prev)}>
-                {showAllApps ? 'Show top 6 apps' : `Show all ${dailyTotals.length} apps`}
-              </LinkButton>
-            ) : null}
-          </View>
-        )}
-      </Card>
-
-      {/* Session boundary & quick navigation */}
-      <Card theme={theme} style={{ marginBottom: 0 }}>
-        <SectionHeader
-          theme={theme}
-          title="Session boundary status"
-          caption={p3Reliable ? 'Boundaries clean (unmatched ≤50, total ≤100)' : 'Boundary guard active'}
-        />
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), marginBottom: theme.space(2) }}>
-          <Chip static label={p3Reliable ? 'Boundaries clean' : 'Guard active'} theme={theme} />
-          <Chip static label={`${orphanCount} unmatched`} theme={theme} />
-          <Chip static label={`${totalGaps} total boundary events`} theme={theme} />
-        </View>
-        <Text role="micro" tone="muted" theme={theme}>
-          {p3Reliable
-            ? 'Multi-day patterns live in Journey, What-if estimates in Insights, open times in Sessions, and Focus Windows plus privacy controls in You.'
-            : BOUNDARY_GUARD_SHORT(orphanCount, totalGaps)}
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), marginTop: theme.space(2) }}>
-          <LinkButton theme={theme} onPress={() => setActiveTab('sessions')}>
-            Label opens in Sessions
-          </LinkButton>
-          <LinkButton theme={theme} onPress={() => setActiveTab('you')}>
-            Privacy & data quality in You
-          </LinkButton>
-        </View>
-      </Card>
     </AppShell>
   );
 }

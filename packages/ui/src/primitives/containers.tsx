@@ -8,6 +8,9 @@
  */
 import * as React from 'react';
 import { View, ScrollView, Pressable } from '../host';
+import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle, Defs, Pattern, Rect, RadialGradient, Image as SvgImage, Stop } from 'react-native-svg';
+import { GRAIN_DATA_URI, GRAIN_TILE_PX } from '../grain';
 import type { StyleProp, ViewStyle } from '../host';
 import { useLiveBlur, useTheme } from '../theme';
 import type { MirrorTheme } from '../tokens';
@@ -20,42 +23,55 @@ const withTheme = (theme: MirrorTheme | undefined) => theme ?? useTheme();
 /* ------------------------------------------------------------ backdrop ------ */
 
 /**
- * The backdrop: veil → canvas → glow, plus the bloom the brief measured as
- * coming from below/behind-left, and the grain overlay (a token, not a texture
- * file — the reference has no film grain, so this stays at 0.02).
+ * The backdrop: a smooth diagonal gradient (no bands or hard edges), soft radial glows, and a
+ * grain texture. The glows are radial gradients that fade to transparent, so they have no
+ * outline. Grain is a pattern of a small noise tile, painted at low alpha. Nothing here blurs.
  */
+const FILL: ViewStyle = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
+const GRADIENT_START = { x: 0, y: 0 };
+const GRADIENT_END = { x: 0.4, y: 1 };
+const GLOW_VIEWBOX = '0 0 100 100';
+
 export function Backdrop({ theme }: { theme?: MirrorTheme }) {
   const t = withTheme(theme);
+  const p = t.palette;
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: t.color.canvas }}>
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '45%', backgroundColor: t.color.veil, opacity: t.isDark ? 0.5 : 0.35 }} />
-      <View
-        style={{
-          position: 'absolute',
-          left: '-22%',
-          bottom: '-18%',
-          width: '150%',
-          height: '78%',
-          borderRadius: t.radius.pill,
-          backgroundColor: t.color.glow,
-          opacity: t.color.bloomAlpha,
-        }}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          right: '-30%',
-          top: '-12%',
-          width: '118%',
-          height: '46%',
-          borderRadius: t.radius.pill,
-          backgroundColor: t.color.veil,
-          opacity: 0.35,
-        }}
-      />
-      <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: t.color.grain }} />
+    <View pointerEvents="none" style={[FILL, { backgroundColor: p.gradient[0] }]}>
+      <LinearGradient colors={p.gradient as unknown as [string, string, ...string[]]} start={GRADIENT_START} end={GRADIENT_END} style={FILL} />
+      <Svg width="100%" height="100%" viewBox={GLOW_VIEWBOX} preserveAspectRatio="none" style={FILL}>
+        <Defs>
+          {p.glows.map((g, i) => (
+            <RadialGradient key={`rg${i}`} id={`glow-${t.name}-${i}`} cx="50%" cy="50%" r="50%">
+              <Stop offset="0" stopColor={g.color} stopOpacity={g.alpha} />
+              <Stop offset="1" stopColor={g.color} stopOpacity={0} />
+            </RadialGradient>
+          ))}
+        </Defs>
+        {p.glows.map((g, i) => (
+          <Circle key={`gc${i}`} cx={g.x * 100} cy={g.y * 100} r={g.r * 100} fill={`url(#glow-${t.name}-${i})`} />
+        ))}
+      </Svg>
+      <Svg width="100%" height="100%" style={FILL}>
+        <Defs>
+          <Pattern id={`grain-${t.name}`} x="0" y="0" width={GRAIN_TILE_PX} height={GRAIN_TILE_PX} patternUnits="userSpaceOnUse">
+            <SvgImage href={{ uri: GRAIN_DATA_URI }} x="0" y="0" width={GRAIN_TILE_PX} height={GRAIN_TILE_PX} />
+          </Pattern>
+        </Defs>
+        <Rect width="100%" height="100%" fill={`url(#grain-${t.name})`} opacity={p.grainAlpha} />
+      </Svg>
     </View>
   );
+}
+
+/** Soft ambient shadow for glass tiles. iOS shadow props plus Android elevation. */
+function tileShadow(t: MirrorTheme): ViewStyle {
+  return {
+    shadowColor: t.palette.shadow,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 1,
+    shadowRadius: 22,
+    elevation: 3,
+  };
 }
 
 /* -------------------------------------------------------------- materials --- */
@@ -138,6 +154,7 @@ export function Card({
           backgroundColor: elevated ? t.color.elevated : t.glass.card.fill,
           borderWidth: elevated ? 0 : 1,
           borderColor: t.color.borderCard,
+          ...tileShadow(t),
         },
         style,
       ]}

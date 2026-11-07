@@ -16,6 +16,7 @@
  */
 import { tokens as raw } from '../tokens/index';
 import type { ThemeName } from '../tokens/index';
+import { PALETTE, type Palette } from './palette';
 
 export type { ThemeName };
 
@@ -123,6 +124,8 @@ export type MirrorTheme = {
   motion: (name: DurationName) => number;
   easing: (name: keyof (typeof raw)['motion']['easings']) => string;
   shadow: { ambient: string; card: string };
+  /** Hand-authored hue layer (gradients, glows, chart and gauge colours). See palette.ts. */
+  palette: Palette;
 };
 
 export type ThemeOverrides = {
@@ -157,15 +160,16 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
 
   // Reduced transparency swaps every glass surface for its measured opaque
   // equivalent — the same trade the CSS token block makes for the prototype.
+  const pal = PALETTE[isDark ? 'dark' : 'light'];
+  // Glass is a translucent fill with a hairline border and a soft shadow. There is no live blur
+  // anywhere in the redesign. Sheets and the tab bar are solid, and reduced transparency makes
+  // every glass surface solid.
+  // The alpha comes from the token set (`fillAlpha`), never a palette constant. The fill is white
+  // over the backdrop in both appearances, so only the alpha differs per theme.
   const glassFill = (kind: 'shell' | 'card' | 'sheet'): string => {
-    if (reducedTransparency) {
-      if (kind === 'shell') return t.surface.shell;
-      if (kind === 'card') return t.surface.card;
-      return t.surface.white;
-    }
-    if (kind === 'sheet') return rgba(t.surface.white, raw.glass.sheet.alpha);
+    if (reducedTransparency || kind === 'sheet') return pal.glassSolid;
     const alpha = kind === 'shell' ? t.fillAlpha.shell : t.fillAlpha.card;
-    return rgba(raw.glass[kind].fill, alpha);
+    return `rgba(255, 255, 255, ${alpha})`;
   };
 
   const blur = (kind: keyof typeof raw.glass.blurPx): number => {
@@ -188,15 +192,15 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
       anchor: t.surface.anchor,
       chip: t.surface.chipOnAnchor,
       ink: t.ink.core,
-      inkMuted: t.ink.muted,
+      inkMuted: pal.inkMuted ?? t.ink.muted,
       onAnchor: t.ink.onAnchor,
       mutedOnAnchor: t.ink.mutedOnAnchor,
       onChip: t.ink.onChip,
       // Dark hairlines are lifted: a 1px white line at the light theme's alpha is
       // invisible on black. Both are derived from the same measured border, which
       // is why they live here rather than in a component.
-      borderHairline: rgba('#FFFFFF', isDark ? 0.14 : raw.glass.borders.hairlineAlpha),
-      borderCard: rgba('#FFFFFF', isDark ? 0.18 : raw.glass.borders.cardAlpha),
+      borderHairline: pal.hairline,
+      borderCard: pal.hairline,
       scrim: rgba(isDark ? '#000000' : '#0E0E10', isDark ? 0.62 : raw.overlays.sheetScrim),
       lightSource: raw.lightSource.hex,
       grain: raw.overlays.grain,
@@ -206,9 +210,9 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
     glass: {
       shell: { fill: glassFill('shell'), blurPx: blur('shell'), live: false },
       card: { fill: glassFill('card'), blurPx: blur('card'), live: false },
-      sheet: { fill: glassFill('sheet'), blurPx: blur('sheet'), live: !reducedTransparency },
+      sheet: { fill: glassFill('sheet'), blurPx: blur('sheet'), live: false },
       // The tab bar is the only other surface allowed to spend a live-blur pass.
-      tabbar: { fill: glassFill('shell'), blurPx: blur('tabbar'), live: !reducedTransparency },
+      tabbar: { fill: pal.glassSolid, blurPx: 0, live: false },
       chip: { fill: glassFill('card'), blurPx: 0, live: false },
       blurBudget: raw.glass.blurBudget,
     },
@@ -237,6 +241,7 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
     motion: (n: DurationName) => (reducedMotion ? 0 : raw.motion.durations[n]),
     easing: (n) => raw.motion.easings[n],
     shadow: { ambient: raw.glass.shadow.ambient, card: raw.glass.shadow.card },
+    palette: pal,
   };
 
   return Object.freeze(theme);
@@ -251,3 +256,33 @@ export const adjustments = raw.adjustments;
 export const tokenMeta = raw.meta;
 
 export const px = pxOf;
+
+/**
+ * The Home hero is a solid tile in both appearances, painted from the palette's hero colours.
+ * Its subtree uses the hero ink and fill as its own text and surface colours, so text on the
+ * tile never sits on a translucent layer. Built once per theme, outside components.
+ */
+export function heroTheme(theme: MirrorTheme): MirrorTheme {
+  const c = theme.color;
+  const p = theme.palette;
+  return {
+    ...theme,
+    color: {
+      ...c,
+      ink: p.heroInk,
+      inkMuted: p.heroMuted,
+      anchor: p.heroInk,
+      onAnchor: p.heroFill,
+      mutedOnAnchor: p.heroMuted,
+      card: p.heroFill,
+      borderCard: p.heroMuted,
+      borderHairline: p.heroMuted,
+    },
+    glass: {
+      ...theme.glass,
+      chip: { fill: 'rgba(255, 255, 255, 0.12)', blurPx: 0, live: false },
+      shell: { ...theme.glass.shell, fill: p.heroFill, blurPx: 0, live: false },
+      card: { ...theme.glass.card, fill: p.heroFill, blurPx: 0, live: false },
+    },
+  };
+}
