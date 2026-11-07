@@ -4,6 +4,7 @@ import { Sheet, useTheme } from '@mirror/ui';
 import { useMirrorApp } from '../context/MirrorAppContext';
 import { useSafeInsets } from './useSafeInsets';
 import { ReminderSettings } from './ReminderSettings';
+import { AppearanceSettings } from './AppearanceSettings';
 import { LocalDataControls } from './LocalDataControls';
 
 /**
@@ -31,6 +32,7 @@ export function SettingsSheet({
       theme={theme}
     >
       <View testID="settings-sheet" style={{ gap: theme.space(5), paddingBottom: theme.space(2) }}>
+        <AppearanceSettings />
         <ReminderSettings />
         <LocalDataControls />
       </View>

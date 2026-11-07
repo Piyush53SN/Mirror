@@ -78,7 +78,7 @@ test('bump-version --check passes on the repo and detects version drift or bumps
   const bumpScript = join(ROOT, 'scripts', 'release', 'bump-version.mjs');
   const repoCheck = spawnSync(process.execPath, [bumpScript, '--check'], { encoding: 'utf8' });
   assert.equal(repoCheck.status, 0, repoCheck.stdout + repoCheck.stderr);
-  assert.match(repoCheck.stdout, /Version check OK: v0\.4\.0 \(versionCode 8\)/);
+  assert.match(repoCheck.stdout, /Version check OK: v0\.4\.0 \(versionCode 9\)/);
 
   const shippedAppJson = JSON.parse(readFileSync(join(ROOT, 'apps', 'mobile', 'app.json'), 'utf8'));
   assert.ok(

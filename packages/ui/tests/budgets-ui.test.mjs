@@ -159,7 +159,9 @@ function assertSubtreeTargetsAtLeast48dp(subtreeRoot, contextLabel) {
     const w =
       ctrl.type === 'input'
         ? 48 // single-line TextFields stretch horizontally inside flex containers with minHeight >= 48dp
-        : Math.max(parsePx(style['min-width']), parsePx(style.width));
+        : style.width === '100%'
+          ? 48 // full-width control: its width is the container's, which is at least the screen column
+          : Math.max(parsePx(style['min-width']), parsePx(style.width));
     assert.ok(
       h >= 48 && w >= 48,
       `${contextLabel}: control "${ctrl.props?.['aria-label'] ?? ctrl.type}" must be >=48x48dp (got ${w}x${h})`,

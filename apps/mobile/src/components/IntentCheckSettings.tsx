@@ -5,13 +5,17 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import { Callout, Divider, Pill, SectionHeader, Surface, Text, useTheme } from '@mirror/ui';
+import { Callout, Card, Divider, Pill, SectionHeader, Text, useTheme } from '@mirror/ui';
+import { formatWindowLabel } from '@mirror/shared-types';
 import { MIUI_BEST_EFFORT_REMINDER_NOTE } from '@mirror/core-analytics';
 import { useMirrorApp } from '../context/MirrorAppContext';
 
 export function IntentCheckSettings(): React.ReactElement {
   const theme = useTheme();
-  const { intentCheckPrefs, updateIntentCheck, notificationsAllowed } = useMirrorApp();
+  const { intentCheckPrefs, updateIntentCheck, notificationsAllowed, weeklyReportPrefs } = useMirrorApp();
+  const quietLabel = weeklyReportPrefs
+    ? formatWindowLabel({ startHour: weeklyReportPrefs.quietHoursStartHour, endHour: weeklyReportPrefs.quietHoursEndHour })
+    : '23:00–05:00';
   const [busy, setBusy] = React.useState(false);
   const [notice, setNotice] = React.useState<string | null>(null);
   const enabled = intentCheckPrefs?.enabled === true;
@@ -33,7 +37,7 @@ export function IntentCheckSettings(): React.ReactElement {
   };
 
   return (
-    <Surface theme={theme}>
+    <Card theme={theme} style={{ marginBottom: 0 }}>
       <View testID="intent-check-settings" style={{ gap: theme.space(2.5) }}>
         <View style={{ gap: theme.space(0.5) }}>
           <Text role="micro" tone="muted" theme={theme}>
@@ -98,6 +102,15 @@ export function IntentCheckSettings(): React.ReactElement {
           </Callout>
         ) : null}
 
+        <View testID="intent-check-quiet-hours" style={{ gap: theme.space(0.5) }}>
+          <Text role="label" theme={theme}>
+            {`Quiet hours ${quietLabel}`}
+          </Text>
+          <Text role="micro" tone="muted" theme={theme}>
+            No question is asked inside this window. It uses the shared reminder quiet hours, so changing them above changes this too.
+          </Text>
+        </View>
+
         <Divider theme={theme} />
         <Text role="micro" tone="muted" theme={theme}>
           Your answers are ordinary per-sitting labels. They appear in Sessions and Insights, and
@@ -107,6 +120,6 @@ export function IntentCheckSettings(): React.ReactElement {
           {MIUI_BEST_EFFORT_REMINDER_NOTE}
         </Text>
       </View>
-    </Surface>
+    </Card>
   );
 }

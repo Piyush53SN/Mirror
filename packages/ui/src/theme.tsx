@@ -7,7 +7,7 @@
  * provider noise (`<ThemeProvider theme={darkTheme()}>`).
  */
 import * as React from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, useColorScheme } from 'react-native';
 import { createTheme, DEFAULT_THEME, type MirrorTheme, type ThemeName, type ThemeOverrides } from './tokens';
 
 type ThemeContextValue = {
@@ -31,10 +31,29 @@ export type ThemeProviderProps = {
   overrides?: ThemeOverrides;
   /** Follow the OS for transparency/motion (default true). */
   followSystem?: boolean;
+  /**
+   * Appearance preference. 'system' follows the OS light/dark setting, 'light' and 'dark'
+   * are fixed. When omitted, `initialTheme` is used as before.
+   */
+  appearance?: ThemePreference;
 };
 
-export function ThemeProvider({ children, initialTheme = DEFAULT_THEME, overrides = {}, followSystem = true }: ThemeProviderProps) {
+export type ThemePreference = 'system' | 'light' | 'dark';
+
+
+export function ThemeProvider({
+  children,
+  initialTheme = DEFAULT_THEME,
+  overrides = {},
+  followSystem = true,
+  appearance,
+}: ThemeProviderProps) {
   const [name, setName] = React.useState<ThemeName>(initialTheme);
+  const osScheme = useColorScheme();
+  // When an appearance preference is given, it decides the theme; 'system' follows the OS.
+  const followOs: ThemeName = osScheme === 'light' ? 'light' : 'dark';
+  const resolvedName: ThemeName =
+    appearance === 'light' || appearance === 'dark' ? appearance : appearance === 'system' ? followOs : name;
   const [system, setSystem] = React.useState<{ reduceMotion: boolean; reduceTransparency: boolean }>({
     reduceMotion: false,
     reduceTransparency: false,
@@ -53,12 +72,12 @@ export function ThemeProvider({ children, initialTheme = DEFAULT_THEME, override
 
   const theme = React.useMemo(
     () =>
-      createTheme(name, {
+      createTheme(resolvedName, {
         reducedMotion: overrides.reducedMotion ?? (followSystem ? system.reduceMotion : false),
         reducedTransparency: overrides.reducedTransparency ?? (followSystem ? system.reduceTransparency : false),
         textScale: overrides.textScale,
       }),
-    [name, overrides.reducedMotion, overrides.reducedTransparency, overrides.textScale, followSystem, system],
+    [resolvedName, overrides.reducedMotion, overrides.reducedTransparency, overrides.textScale, followSystem, system],
   );
 
   const [slots, setSlots] = React.useState<string[]>([]);

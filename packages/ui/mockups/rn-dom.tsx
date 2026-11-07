@@ -239,3 +239,44 @@ export type ViewStyle = Record<string, unknown>;
 export type TextStyle = Record<string, unknown>;
 export type StyleProp<T> = T | T[] | null | undefined | false;
 export type TextInputProps = Record<string, unknown>;
+
+/** Test/mockup shim for the built-in Animated API: values settle immediately, no timers. */
+type AnimValue = { _v: number; _l: Map<string, (s: { value: number }) => void>; setValue: (v: number) => void; addListener: (fn: (s: { value: number }) => void) => string; removeListener: (id: string) => void; interpolate: (cfg: { outputRange: number[] }) => AnimValue };
+const makeValue = (v: number): AnimValue => {
+  const listeners = new Map<string, (s: { value: number }) => void>();
+  const value: AnimValue = {
+    _v: v,
+    _l: listeners,
+    setValue(next: number) {
+      value._v = next;
+      listeners.forEach((fn) => fn({ value: next }));
+    },
+    addListener(fn) {
+      const id = String(listeners.size + Math.random());
+      listeners.set(id, fn);
+      fn({ value: value._v });
+      return id;
+    },
+    removeListener(id) {
+      listeners.delete(id);
+    },
+    interpolate(cfg) {
+      return makeValue(cfg.outputRange[cfg.outputRange.length - 1]);
+    },
+  };
+  return value;
+};
+export const Animated = {
+  Value: function AnimatedValue(this: unknown, v: number) {
+    return makeValue(v);
+  } as unknown as new (v: number) => AnimValue,
+  View,
+  timing: (value: AnimValue, cfg: { toValue: number }) => ({
+    start: (cb?: () => void) => {
+      value.setValue(cfg.toValue);
+      cb?.();
+    },
+    stop: () => undefined,
+  }),
+};
+export const useColorScheme = (): 'light' | 'dark' => 'dark';

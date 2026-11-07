@@ -1938,3 +1938,10 @@ Version: no bump in this pass. `0.3.0` / `versionCode 5` is still untagged. If P
 
 
 
+
+## Visual redesign, Stage 1 (v0.4.0, versionCode 9)
+
+- Round A: goal-type picker is full-width stacked rows with one-line descriptions and no slash labels (`App time`, `Total time`, `Late-night limit`, `Sitting limit`). Settings cards (Reminders, Intent Check) use `Card`. Intent Check shows the active quiet-hours window (the shared reminder window; J25 default is unchanged). Adaptive and monochrome app icons and a notification small icon are wired through `app.json` and `plugins/with-notification-icon.js`.
+- Round B Stage 1: Appearance (Auto / Light / Dark) in Settings. Charts in `@mirror/ui` (ring, donut, line, line sparkline), plain Views with TalkBack text alternatives. Home: dark attention tile (inverted palette, AA tested), a 7-day foreground line, a "Where time went" donut, budget rings with a dashed "Add budget" tile. Tab fade 160 ms. All motion off under reduce-motion.
+- Gap list and status: `docs/design/redesign-stage1-gaps.md`. No analytics, scoring, storage, or permission changes. `docs/SPEC.md` unchanged.
+- Test changes: `budgets-ui` 48dp helper accepts `width: '100%'` (full-width control); `config.test` appearance assertion (`automatic` / `Automatic`) and versionCode 9; `release-stage1` version pin 9.

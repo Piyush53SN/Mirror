@@ -93,9 +93,10 @@ test('forbidden capabilities are never requested, only blocked', () => {
 
 /* ------------------------------------------------------------- app config -- */
 
-test('dark is the default, and telemetry is off as configuration, not as a promise', () => {
-  assert.equal(app.userInterfaceStyle, 'dark');
-  assert.equal(app.ios.infoPlist.UIUserInterfaceStyle, 'Dark');
+test('appearance follows the system by default (Auto), and telemetry is off as configuration, not as a promise', () => {
+  // Appearance is Auto (system) by default; the in-app Light/Dark choice overrides it at runtime.
+  assert.equal(app.userInterfaceStyle, 'automatic');
+  assert.equal(app.ios.infoPlist.UIUserInterfaceStyle, 'Automatic');
   assert.equal(app.extra.telemetry, false);
   assert.equal(app.extra.privacyModeDefault, 'private');
   assert.equal(app.extra.remoteConfig, 'narrow-only');
@@ -105,7 +106,7 @@ test('the bundle id is stable, and the app targets phones only', () => {
   assert.equal(app.ios.supportsTablet, false);
   assert.equal(app.orientation, 'portrait');
   assert.equal(app.version, '0.4.0');
-  assert.equal(app.android.versionCode, 8);
+  assert.equal(app.android.versionCode, 9);
 });
 
 /* -------------------------------------------------------------------- EAS -- */

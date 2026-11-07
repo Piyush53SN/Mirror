@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View } from 'react-native';
+import { Animated, View } from 'react-native';
 import {
   Callout,
   Card,
@@ -18,6 +18,7 @@ import {
   announceValue,
   useTheme,
   type MirrorTheme,
+  type MirrorTheme as MirrorThemeType,
 } from '@mirror/ui';
 import type { Score } from '@mirror/core-analytics';
 import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
@@ -27,6 +28,7 @@ import { HomeBudgetStrip } from '../components/HomeBudgetStrip';
 import { WeeklySummaryCard } from '../components/WeeklySummaryCard';
 import { IntentCheckCard } from '../components/IntentCheckCard';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
+import { TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
 
 const GAUGE_TICKS = 18;
 const GAUGE_START_DEG = -210;
@@ -161,6 +163,56 @@ function buildPlainHomeSentence(params: {
   return `No app activity is recorded yet for ${params.isToday ? 'today' : params.selectedDay}. Your plain-language summary fills in automatically as you use your phone.`;
 }
 
+/**
+ * The hero is a dark tile in both appearances. Its subtree is painted with an inverted colour
+ * set (anchor becomes the light ink and the card fill), so text and meters keep AA contrast
+ * on the tile. Built once per theme, outside the component.
+ */
+export function inverseHeroTheme(theme: MirrorThemeType): MirrorThemeType {
+  const c = theme.color;
+  return {
+    ...theme,
+    color: {
+      ...c,
+      ink: c.onAnchor,
+      inkMuted: c.mutedOnAnchor,
+      anchor: c.onAnchor,
+      onAnchor: c.anchor,
+      mutedOnAnchor: c.inkMuted,
+      card: c.anchor,
+      borderCard: c.mutedOnAnchor,
+      borderHairline: c.mutedOnAnchor,
+    },
+    glass: {
+      ...theme.glass,
+      card: { ...theme.glass.card, fill: c.anchor, blurPx: 0, live: false },
+    },
+  };
+}
+
+// Set once per app session: the hero number settles on first load only, not on every tab switch.
+let heroSettled = false;
+
+/** Fades and lifts the hero numeral once. Off under reduce-motion (duration 0). */
+function SettleOnce({ theme, children }: { theme: MirrorThemeType; children: React.ReactNode }): React.ReactElement {
+  const anim = React.useRef(new Animated.Value(heroSettled ? 1 : 0)).current;
+  React.useEffect(() => {
+    if (heroSettled) return;
+    heroSettled = true;
+    const duration = theme.motion('base');
+    if (duration <= 0) {
+      anim.setValue(1);
+      return;
+    }
+    Animated.timing(anim, { toValue: 1, duration, useNativeDriver: true }).start();
+  }, [anim, theme]);
+  const style = {
+    opacity: anim,
+    transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [6, 0] }) }],
+  };
+  return <Animated.View style={style}>{children}</Animated.View>;
+}
+
 export function HomeTab(): React.ReactElement {
   const theme = useTheme();
   const {
@@ -185,7 +237,9 @@ export function HomeTab(): React.ReactElement {
     p3Reliable,
     checkPermissionAndCollect,
     setActiveTab,
+    weeklyReport,
   } = useMirrorApp();
+  const heroTheme = React.useMemo(() => inverseHeroTheme(theme), [theme]);
   const [showAllApps, setShowAllApps] = React.useState(false);
 
   const visibleApps = showAllApps ? dailyTotals : dailyTotals.slice(0, 6);
@@ -212,11 +266,6 @@ export function HomeTab(): React.ReactElement {
     [iqs, measuredFactors],
   );
   const unmeasuredMax = Math.max(0, scaleMax - measuredMax);
-  const confidenceExplanation = React.useMemo(() => {
-    if (!iqs) return '';
-    if (iqs.confidence.explanation) return iqs.confidence.explanation;
-    return `Confidence is ${Math.round(iqs.confidence.score * 100)}% (${iqs.confidence.level}) from ${iqs.confidence.sample} recorded sitting${iqs.confidence.sample === 1 ? '' : 's'} and ${iqs.confidence.labels} explicit label${iqs.confidence.labels === 1 ? '' : 's'}.`;
-  }, [iqs]);
 
   const isToday = selectedDay === toDayStr(Date.now());
   const homeSentence = React.useMemo(
@@ -304,27 +353,27 @@ export function HomeTab(): React.ReactElement {
       {/* Frosted Horizon Hero — fixed 0–100 IQS scale with unmeasured parts shown separately */}
       <Surface
         radius="hero"
-        theme={theme}
+        theme={heroTheme}
         style={{
           padding: theme.space(4),
           borderWidth: 1,
-          borderColor: theme.color.borderHairline,
+          borderColor: heroTheme.color.borderHairline,
           gap: theme.space(3),
         }}
       >
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: theme.space(2) }}>
           <View style={{ flex: 1, gap: theme.space(0.5) }}>
-            <Text role="micro" tone="muted" theme={theme}>
+            <Text role="micro" tone="muted" theme={heroTheme}>
               INTERACTION QUALITY · MEASURED POINTS
             </Text>
-            <Text role="title-lg" theme={theme}>
+            <Text role="title-lg" theme={heroTheme}>
               Attention signal
             </Text>
-            <Text role="label" tone="muted" theme={theme}>
-              Measured points shown directly — unmeasured points are listed separately, never counted as zero
+            <Text role="label" tone="muted" theme={heroTheme}>
+              Unmeasured points are listed separately
             </Text>
           </View>
-          <TierBadge tier="D" theme={theme} />
+          <TierBadge tier="D" theme={heroTheme} />
         </View>
 
         <View
@@ -336,13 +385,13 @@ export function HomeTab(): React.ReactElement {
           }}
         >
           {(isToday || iqs?.provisional) ? (
-            <Chip static label="Today so far, provisional" theme={theme} />
+            <Chip static label="Today so far, provisional" theme={heroTheme} />
           ) : null}
-          <Chip static label="Based on usage patterns only" theme={theme} />
+          <Chip static label="Based on usage patterns only" theme={heroTheme} />
           {iqs && iqs.confidence.sample > 0 && iqs.confidence.smallSample ? (
-            <Chip static label="Small sample" theme={theme} />
+            <Chip static label="Small sample" theme={heroTheme} />
           ) : null}
-          <ConfidenceChip tiers={['D']} label="OS usage · no app content" theme={theme} />
+          <ConfidenceChip tiers={['D']} label="OS usage · no app content" theme={heroTheme} />
         </View>
 
         {hasEventsWithoutSittings ? (
@@ -350,11 +399,11 @@ export function HomeTab(): React.ReactElement {
             title={`Usage events recorded on ${selectedDay}, but no sittings were built yet`}
             body={`Per-app screen time is available below (${formatDuration(totalScreenMs)} across ${dailyTotals.length} app${dailyTotals.length === 1 ? '' : 's'}), while derived sittings for ${selectedDay} are empty. Tap Refresh to rebuild sittings from stored events.`}
             action={
-              <Pill theme={theme} onPress={checkPermissionAndCollect}>
+              <Pill theme={heroTheme} onPress={checkPermissionAndCollect}>
                 Refresh sittings
               </Pill>
             }
-            theme={theme}
+            theme={heroTheme}
           />
         ) : iqs ? (
           <View style={{ gap: theme.space(3) }}>
@@ -365,25 +414,27 @@ export function HomeTab(): React.ReactElement {
                 gap: theme.space(4),
               }}
             >
-              <IqsHeroGauge iqs={iqs} theme={theme} />
+              <IqsHeroGauge iqs={iqs} theme={heroTheme} />
               <View style={{ flex: 1, gap: theme.space(1) }}>
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(1.5), flexWrap: 'wrap' }}>
-                  <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={theme}>
-                    {iqs.value === null ? 'Not enough activity yet' : String(Math.round(iqs.value))}
-                  </Text>
+                  <SettleOnce theme={heroTheme}>
+                    <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={heroTheme}>
+                      {iqs.value === null ? 'Not enough activity yet' : String(Math.round(iqs.value))}
+                    </Text>
+                  </SettleOnce>
                   {iqs.value !== null ? (
-                    <Text role="label" tone="muted" theme={theme}>
+                    <Text role="label" tone="muted" theme={heroTheme}>
                       {`of ${measuredMax} measured`}
                     </Text>
                   ) : null}
                 </View>
-                <Text role="label" theme={theme}>
+                <Text role="label" theme={heroTheme}>
                   {isToday || iqs.provisional ? 'Today so far, provisional' : iqs.band}
                 </Text>
-                <Text role="micro" tone="muted" theme={theme}>
+                <Text role="micro" tone="muted" theme={heroTheme}>
                   {`${unmeasuredMax} points not measured (listed separately below)`}
                 </Text>
-                <Text role="micro" tone="muted" theme={theme}>
+                <Text role="micro" tone="muted" theme={heroTheme}>
                   {`${sittingCount} sitting${sittingCount === 1 ? '' : 's'} · ${formatDuration(sittingSpanMs)} merged sitting spans`}
                 </Text>
               </View>
@@ -400,22 +451,22 @@ export function HomeTab(): React.ReactElement {
               }}
             >
               <Meter
-                theme={theme}
+                theme={heroTheme}
                 value={iqs.confidence.score}
                 label={`Confidence · ${iqs.confidence.level}`}
                 caption={`${Math.round(iqs.confidence.score * 100)}%`}
                 tone="muted"
               />
-              <Text role="micro" tone="muted" theme={theme}>
-                {confidenceExplanation}
+              <Text role="micro" tone="muted" theme={heroTheme}>
+                Confidence details are in Why this score.
               </Text>
               {measuredFactors.length > 0 ? (
                 <>
-                  <Divider theme={theme} />
+                  <Divider theme={heroTheme} />
                   {measuredFactors.map((factor) => (
                     <Meter
                       key={factor.id}
-                      theme={theme}
+                      theme={heroTheme}
                       value={factor.points / factor.max}
                       label={factor.label}
                       caption={`${factor.points} / ${factor.max}`}
@@ -426,13 +477,13 @@ export function HomeTab(): React.ReactElement {
               ) : null}
               {unmeasuredFactors.length > 0 ? (
                 <>
-                  <Divider theme={theme} />
+                  <Divider theme={heroTheme} />
                   <View style={{ gap: theme.space(1) }}>
-                    <Text role="label" theme={theme}>
+                    <Text role="label" theme={heroTheme}>
                       {`${unmeasuredMax} points not measured (listed separately)`}
                     </Text>
                     {unmeasuredFactors.map((factor) => (
-                      <Text key={factor.id} role="micro" tone="muted" theme={theme}>
+                      <Text key={factor.id} role="micro" tone="muted" theme={heroTheme}>
                         {`· ${factor.label} (up to ${factor.max} pts): ${factor.detail}`}
                       </Text>
                     ))}
@@ -441,15 +492,15 @@ export function HomeTab(): React.ReactElement {
               ) : null}
             </View>
 
-            <Callout theme={theme} tone="neutral">
+            <Callout theme={heroTheme} tone="neutral">
               {iqs.caveat}
             </Callout>
 
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), alignItems: 'center' }}>
-              <Pill theme={theme} onPress={() => setShowWhy(true)}>
+              <Pill theme={heroTheme} onPress={() => setShowWhy(true)}>
                 Why this score
               </Pill>
-              <LinkButton theme={theme} onPress={() => setActiveTab('insights')}>
+              <LinkButton theme={heroTheme} onPress={() => setActiveTab('insights')}>
                 Explore Insights
               </LinkButton>
             </View>
@@ -458,10 +509,13 @@ export function HomeTab(): React.ReactElement {
           <EmptyState
             title={`No usage data for ${selectedDay}`}
             body="Your score appears once enough activity is recorded. Mirror never fills gaps with guesses."
-            theme={theme}
+            theme={heroTheme}
           />
         )}
       </Surface>
+
+      <WeekTrendCard report={weeklyReport} selectedDay={selectedDay} />
+      <TimeSplitCard totals={dailyTotals} />
 
       {/* Summary metrics: foreground screen time vs merged sitting spans */}
       <View style={{ flexDirection: 'row', gap: theme.space(3) }}>

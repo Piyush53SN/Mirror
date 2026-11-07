@@ -30,7 +30,7 @@ const OUT = join(HERE, '.build');
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 let mod;
-const LABELS = ['App time/day', 'Total time/day', 'Late-night max', 'Max sittings/day'];
+const LABELS = ['App time', 'Total time', 'Late-night limit', 'Sitting limit'];
 
 before(async () => {
   mkdirSync(OUT, { recursive: true });
@@ -79,22 +79,20 @@ test('goal types: four labels, exact wording, in the agreed order', () => {
   );
 });
 
-test('goal types: a two-column grid with equal 48% cells and no shrinking', () => {
+test('goal types: four full-width stacked rows, each a radio with a label and description', () => {
   const renderer = renderGrid();
-  const grid = renderer.root.findAll((el) => el.props?.testID === 'goal-type-grid');
-  assert.equal(grid.length, 1, 'one grid');
-  assert.equal(grid[0].props.style.flexWrap, 'wrap');
+  const list = renderer.root.findAll((el) => el.props?.testID === 'goal-type-grid');
+  assert.equal(list.length, 1, 'one list');
   for (const opt of mod.GOAL_KIND_OPTIONS) {
-    const cells = renderer.root.findAll((el) => el.props?.testID === `goal-kind-cell-${opt.id}`);
-    assert.equal(cells.length, 1, `cell for ${opt.id}`);
-    assert.equal(cells[0].props.style.width, '48%', `equal width for ${opt.id}`);
-    assert.equal(cells[0].props.style.flexShrink, 0, `no shrink for ${opt.id}`);
-    const chip = renderer.root.findAll((el) => el.props?.testID === `goal-kind-${opt.id}`);
-    assert.ok(chip.length >= 1, `chip for ${opt.id}`);
-    const chipStyle = chip[0].props.style;
-    const flat = Array.isArray(chipStyle) ? Object.assign({}, ...chipStyle.flat(Infinity).filter(Boolean)) : chipStyle;
-    assert.equal(flat.width, '100%', `chip fills its cell for ${opt.id}`);
-    assert.equal(flat.flexShrink, 0, `chip cannot be squeezed for ${opt.id}`);
+    const rows = renderer.root.findAll((el) => el.props?.testID === `goal-kind-${opt.id}`);
+    assert.ok(rows.length >= 1, `row for ${opt.id}`);
+    const style = rows[0].props.style;
+    const flat = Array.isArray(style) ? Object.assign({}, ...style.flat(Infinity).filter(Boolean)) : style;
+    assert.equal(flat.width, '100%', `full width for ${opt.id}`);
+    assert.equal(flat.flexShrink, 0, `no shrink for ${opt.id}`);
+    assert.equal(flat.height, undefined, `no fixed height for ${opt.id}`);
+    assert.ok(flat['min-height'] >= 48 || flat.minHeight >= 48, `48dp target for ${opt.id}`);
+    assert.match(String(rows[0].props.accessibilityLabel), new RegExp(opt.label.replace(/[-]/g, '\\-')));
   }
 });
 
@@ -129,5 +127,5 @@ test('goal types: the selected chip is marked for screen readers', () => {
   const chip = renderer.root.findAll((el) => el.props?.testID === 'goal-kind-daily_total_foreground');
   assert.ok(chip.length >= 1);
   const a11y = chip[0].props.accessibilityLabel ?? chip[0].props['aria-label'];
-  assert.match(String(a11y), /Goal type Total time\/day, selected/);
+  assert.match(String(a11y), /^Total time\. .*Selected\.$/);
 });

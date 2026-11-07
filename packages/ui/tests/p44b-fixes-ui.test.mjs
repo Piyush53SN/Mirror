@@ -72,9 +72,10 @@ test('chips: goal-type labels are short enough to fit one or two lines at normal
   const src = read('apps/mobile/src/components/GoalTypeOptions.tsx');
   const block = src.slice(src.indexOf('export const GOAL_KIND_OPTIONS'), src.indexOf('];', src.indexOf('export const GOAL_KIND_OPTIONS')));
   const labels = [...block.matchAll(/label: '([^']+)'/g)].map((m) => m[1]);
-  assert.deepEqual(labels, ['App time/day', 'Total time/day', 'Late-night max', 'Max sittings/day']);
+  assert.deepEqual(labels, ['App time', 'Total time', 'Late-night limit', 'Sitting limit']);
   for (const label of labels) {
     assert.ok(label.length <= 16, `"${label}" should be 16 characters or fewer`);
+    assert.equal(label.includes('/'), false, `"${label}" has no slash`);
   }
 });
 

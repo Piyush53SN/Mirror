@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { ScrollView, View } from 'react-native';
-import { Card, PermissionPrimer, Text, useTheme } from '@mirror/ui';
+import { Animated, ScrollView, View } from 'react-native';
+import { Card, PermissionPrimer, Text, useTheme, type MirrorTheme } from '@mirror/ui';
 import { DebugView } from './components/DebugView';
 import { useSafeInsets } from './components/useSafeInsets';
 import { useMirrorApp } from './context/MirrorAppContext';
@@ -121,7 +121,15 @@ export function MirrorTabShell(): React.ReactElement {
     return <DebugView />;
   }
 
-  switch (activeTab) {
+  return (
+    <TabFade key={activeTab} theme={theme}>
+      {renderTab(activeTab)}
+    </TabFade>
+  );
+}
+
+function renderTab(tab: string): React.ReactElement {
+  switch (tab) {
     case 'home':
       return <HomeTab />;
     case 'insights':
@@ -135,4 +143,21 @@ export function MirrorTabShell(): React.ReactElement {
     default:
       return <HomeTab />;
   }
+}
+
+/**
+ * Fades a tab in when it is selected: 160 ms (the 'fast' token, under the 200 ms limit).
+ * Off under reduce-motion, where the duration token is 0.
+ */
+function TabFade({ children, theme }: { children: React.ReactNode; theme: MirrorTheme }): React.ReactElement {
+  const anim = React.useRef(new Animated.Value(0)).current;
+  React.useEffect(() => {
+    const duration = theme.motion('fast');
+    if (duration <= 0) {
+      anim.setValue(1);
+      return;
+    }
+    Animated.timing(anim, { toValue: 1, duration, useNativeDriver: true }).start();
+  }, [anim, theme]);
+  return <Animated.View style={{ flex: 1, opacity: anim }}>{children}</Animated.View>;
 }

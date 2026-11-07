@@ -394,7 +394,12 @@ class UsageStatsModule : Module() {
         val pendingIntent = if (launchIntent != null) {
           PendingIntent.getActivity(context, notificationId, launchIntent, pendingFlags)
         } else null
-        val iconRes = context.applicationInfo.icon.takeIf { it != 0 } ?: android.R.drawable.ic_dialog_info
+        // Monochrome small icon (ic_stat_mirror, shipped by the with-notification-icon plugin).
+        // Falls back to the launcher icon, then to a system icon, if the resource is absent.
+        val statIcon = context.resources.getIdentifier("ic_stat_mirror", "drawable", context.packageName)
+        val iconRes = statIcon.takeIf { it != 0 }
+          ?: context.applicationInfo.icon.takeIf { it != 0 }
+          ?: android.R.drawable.ic_dialog_info
         builder
           .setSmallIcon(iconRes)
           .setContentTitle(title)

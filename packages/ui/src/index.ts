@@ -14,6 +14,7 @@
  */
 export * from './tokens';
 export { ThemeProvider, useTheme, useThemeControls, useLiveBlur, ThemeContext } from './theme';
+export type { ThemePreference, ThemeProviderProps } from './theme';
 export * from './flags';
 export * from './tiers';
 export * from './a11y';
@@ -23,4 +24,5 @@ export * from './format';
 export * from './primitives/text';
 export * from './primitives/controls';
 export * from './primitives/containers';
+export * from './primitives/charts';
 export * from './patterns';

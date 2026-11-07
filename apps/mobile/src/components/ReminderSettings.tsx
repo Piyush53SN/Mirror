@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { Callout, Divider, Pill, SectionHeader, Surface, Text, useTheme } from '@mirror/ui';
+import { Callout, Card, Divider, Pill, SectionHeader, Text, useTheme } from '@mirror/ui';
 import { DEFAULT_WEEKLY_REPORT_PREFS, type WeeklyReportPrefs } from '@mirror/store';
 import { NIGHT_WINDOW, formatWindowLabel } from '@mirror/shared-types';
 import { MIUI_BEST_EFFORT_REMINDER_NOTE } from '@mirror/core-analytics';
@@ -93,7 +93,7 @@ export function ReminderSettings(): React.ReactElement {
       <IntentCheckSettings />
 
       {/* 3. Opt-in Local Reminder & Optional Gentle Budget Note */}
-      <Surface theme={theme}>
+      <Card theme={theme} style={{ marginBottom: 0 }}>
         <View testID="insights-reminders-card" style={{ gap: theme.space(2.5) }}>
           <View style={{ gap: theme.space(0.5) }}>
             <Text role="micro" tone="muted" theme={theme}>
@@ -271,7 +271,7 @@ export function ReminderSettings(): React.ReactElement {
             {MIUI_BEST_EFFORT_REMINDER_NOTE}
           </Text>
         </View>
-      </Surface>
+      </Card>
     </View>
   );
 }
