@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Pressable, RefreshControl, ScrollView, StatusBar, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Backdrop, Callout, Pill, TabBar, Text, Toolbar, rgba, tabBarMetrics, useLiveBlur, useTheme } from '@mirror/ui';
 import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
@@ -101,26 +102,18 @@ export function AppShell({
             style={{ height: bottomSpacerHeight }}
           />
         </ScrollView>
-        {/* Bottom backdrop scrim so scrolling text dims before reaching the floating TabBar */}
+        {/* Bottom fade: a gradient from clear into the backdrop, so scrolling content dissolves
+            under the floating bar. No flat band; the bar itself is the glass pill. */}
         <View
           pointerEvents="none"
           testID="tab-bar-bottom-scrim"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: bar.scrimHeight,
-            justifyContent: 'flex-end',
-          }}
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: bar.scrimHeight }}
         >
-          <View style={{ height: bar.fadeBandHeight, backgroundColor: rgba(theme.color.canvas, 0.45) }} />
-          <View style={{ height: bar.fadeBandHeight, backgroundColor: rgba(theme.color.canvas, 0.82) }} />
-          <View
-            style={{
-              height: bar.solidBandHeight,
-              backgroundColor: theme.color.canvas,
-            }}
+          <LinearGradient
+            colors={[rgba(theme.palette.gradient[3], 0), rgba(theme.palette.gradient[3], 0.92)] as unknown as [string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 0, y: 1 }}
+            style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0 }}
           />
         </View>
         <View
@@ -133,26 +126,11 @@ export function AppShell({
             bottom: navBarReserve,
           }}
         >
-          {/* Solid opaque surface behind TabBar pill so scrolling text never shows through */}
-          <View
-            pointerEvents="none"
-            testID="tab-bar-opaque-backing"
-            style={{
-              position: 'absolute',
-              left: theme.space(4),
-              right: theme.space(4),
-              bottom: bar.barBottom,
-              height: theme.size.tabBar,
-              borderRadius: theme.radius.pill,
-              backgroundColor: theme.color.card,
-            }}
-          />
           <TabBar
             items={TAB_ITEMS}
             active={activeTab}
             onChange={(id) => setActiveTab(id as TabKey)}
             liveBlur={tabBarBlur}
-            opaque
             bottomOffset={bar.barBottom}
             theme={theme}
           />

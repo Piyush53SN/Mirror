@@ -22,6 +22,8 @@ export {
   useWindowDimensions,
   Animated,
   RefreshControl,
+  BackHandler,
+  PanResponder,
 } from 'react-native';
 
 export type { ViewStyle, TextStyle, StyleProp, TextInputProps, PressableProps } from 'react-native';

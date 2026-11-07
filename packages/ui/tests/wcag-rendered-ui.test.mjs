@@ -40,6 +40,7 @@ before(async () => {
       `export { MirrorAppContext } from '${p(join(ROOT, 'apps/mobile/src/context/MirrorAppContext.tsx'))}';`,
       `export { heroTheme } from '${p(join(UI, 'src/tokens.ts'))}';`,
       `export { PALETTE } from '${p(join(UI, 'src/palette.ts'))}';`,
+      `export { ScoreParts } from '${p(join(ROOT, 'apps/mobile/src/components/ScoreParts.tsx'))}';`,
     ].join('\n'),
   );
   await esbuild.build({
@@ -154,7 +155,11 @@ export function collectRendered(tree) {
     if (style.color) here.colour = style.color;
     if (style.fontSize !== undefined) here.fontSize = px(style.fontSize, here.fontSize);
     if (style.fontWeight !== undefined) here.fontWeight = String(style.fontWeight);
-    const nextLayers = style.backgroundColor ? [...layers, style.backgroundColor] : layers;
+    // A layer is a colour, or an array of gradient stops (each stop is an alternative the text may sit on).
+    // data-glow is a translucent glow colour; both are read from the element that owns the content.
+    let nextLayers = style.backgroundColor ? [...layers, style.backgroundColor] : layers;
+    if (typeof props['data-glow'] === 'string') nextLayers = [...nextLayers, props['data-glow']];
+    if (Array.isArray(props['data-gradient'])) nextLayers = [...nextLayers, props['data-gradient']];
     if (props['data-svg'] === 'path' || props['data-svg'] === 'circle' || props['data-svg'] === 'rect') {
       if (props.stroke && props.stroke !== 'none') graphics.push({ kind: 'stroke', colour: props.stroke, layers: nextLayers });
       if (props.fill && props.fill !== 'none' && !String(props.fill).startsWith('url(')) graphics.push({ kind: 'fill', colour: props.fill, layers: nextLayers });
@@ -166,15 +171,27 @@ export function collectRendered(tree) {
 }
 
 /** Lowest contrast across every backdrop colour of the palette (the gradient is the true base). */
+function expandLayers(layers) {
+  // Cartesian product: every combination of gradient stops is one concrete stack of colours.
+  let stacks = [[]];
+  for (const layer of layers) {
+    const options = Array.isArray(layer) ? layer : [layer];
+    stacks = stacks.flatMap((stack) => options.map((c) => [...stack, c]));
+  }
+  return stacks;
+}
+
 function worstContrast(fgString, layers, gradient) {
   const fg = parseColour(fgString);
   if (!fg) return { ratio: Infinity, unparsed: fgString };
   let worst = Infinity;
-  for (const baseHex of gradient) {
-    const base = parseColour(baseHex);
-    const bg = composite(layers.map(parseColour).filter(Boolean), base);
-    const solidFg = fg.a < 1 ? over(fg, bg) : fg;
-    worst = Math.min(worst, contrast(solidFg, bg));
+  for (const stack of expandLayers(layers)) {
+    for (const baseHex of gradient) {
+      const base = parseColour(baseHex);
+      const bg = composite(stack.map(parseColour).filter(Boolean), base);
+      const solidFg = fg.a < 1 ? over(fg, bg) : fg;
+      worst = Math.min(worst, contrast(solidFg, bg));
+    }
   }
   return { ratio: worst };
 }
@@ -264,6 +281,31 @@ for (const name of ['dark', 'light']) {
       assert.deepEqual(result.failures, [], result.failures.join('\n'));
     });
   }
+}
+
+// The score parts open under the hero: audited directly, on a glass card, in both appearances.
+for (const name of ['dark', 'light']) {
+  test(`rendered score parts (opened from the hero) meet WCAG AA in ${name}`, () => {
+    const factors = [
+      { id: 'session', label: 'Session length', points: 18.5, max: 25, tier: 'D', detail: 'Measured', measurable: true },
+      { id: 'deliberate', label: 'Deliberate share', points: 9, max: 20, tier: 'D', detail: 'Measured', measurable: true },
+      { id: 'late', label: 'Late-night use', points: 0, max: 15, tier: 'D', detail: 'Not measured on this device', measurable: false },
+    ];
+    const iqs = { id: 'iqs', value: 27.5, max: 100, measuredMax: 45, unmeasuredMax: 55, band: 'Moderate', factors };
+    let renderer;
+    TestRenderer.act(() => {
+      renderer = TestRenderer.create(
+        React.createElement(
+          ui.ThemeProvider,
+          { initialTheme: name },
+          React.createElement(ui.Card, { theme: ui.createTheme(name) }, React.createElement(ui.ScoreParts, { iqs, theme: ui.createTheme(name) })),
+        ),
+      );
+    });
+    const result = audit(renderer.toJSON(), ui.createTheme(name), `score-parts/${name}`);
+    assert.ok(result.checkedText > 8, `expected the score parts to render text, checked ${result.checkedText}`);
+    assert.deepEqual(result.failures, [], result.failures.join('\n'));
+  });
 }
 
 test('the hero tile is solid in both appearances, so its ink never sits on a translucent layer', () => {

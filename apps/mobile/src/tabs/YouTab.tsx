@@ -99,7 +99,7 @@ export function YouTab(): React.ReactElement {
               <View
                 style={{
                   borderRadius: theme.radius.md,
-                  backgroundColor: theme.color.card,
+                  backgroundColor: theme.glass.panel.fill,
                   borderWidth: 1,
                   borderColor: theme.color.borderCard,
                   padding: theme.space(3),
@@ -127,7 +127,7 @@ export function YouTab(): React.ReactElement {
             <View
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),

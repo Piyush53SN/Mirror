@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View } from 'react-native';
-import { describeRuleCoverage, isLabelingExcludedApp, ruleBasedNote } from '@mirror/core-analytics';
+import { MIN_LABELS, describeRuleCoverage, isLabelingExcludedApp, ruleBasedNote } from '@mirror/core-analytics';
 import {
   Card,
   Chip,
@@ -56,7 +56,7 @@ export function SessionsTab(): React.ReactElement {
     };
   }, [dayLabelCounts]);
 
-  const labelTargetRatio = Math.min(1, explicitLabelStats.totalExplicit / 5);
+  const labelTargetRatio = Math.min(1, explicitLabelStats.totalExplicit / MIN_LABELS);
   const isEmptyDay =
     scaledSessions.length === 0 && !hasEventsWithoutSittings && dailyTotals.length === 0;
 
@@ -130,7 +130,7 @@ export function SessionsTab(): React.ReactElement {
             <View
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
@@ -140,7 +140,7 @@ export function SessionsTab(): React.ReactElement {
               <View style={{ flexDirection: 'row', gap: theme.space(3), flexWrap: 'wrap' }}>
                 <View style={{ flex: 1, minWidth: 120 }}>
                   <Stat
-                    value={`${explicitLabelStats.totalExplicit} / 5`}
+                    value={`${explicitLabelStats.totalExplicit} / ${MIN_LABELS}`}
                     label="Explicit labels today"
                     hint={`${explicitLabelStats.intentional} intentional · ${explicitLabelStats.mindless} mindless${explicitLabelStats.unsure > 0 ? ` · ${explicitLabelStats.unsure} unsure` : ''}`}
                     theme={theme}
@@ -166,11 +166,11 @@ export function SessionsTab(): React.ReactElement {
                 value={labelTargetRatio}
                 label="Deliberate share threshold"
                 caption={
-                  explicitLabelStats.totalExplicit >= 5
-                    ? 'Unlocked (≥5 explicit labels)'
-                    : `${5 - explicitLabelStats.totalExplicit} more to unlock`
+                  explicitLabelStats.totalExplicit >= MIN_LABELS
+                    ? `Unlocked (≥${MIN_LABELS} explicit labels)`
+                    : `${MIN_LABELS - explicitLabelStats.totalExplicit} more to unlock`
                 }
-                tone={explicitLabelStats.totalExplicit >= 5 ? 'anchor' : 'muted'}
+                tone={explicitLabelStats.totalExplicit >= MIN_LABELS ? 'anchor' : 'muted'}
               />
             </View>
           </Surface>
@@ -237,7 +237,7 @@ export function SessionsTab(): React.ReactElement {
                       key={s.id}
                       style={{
                         borderRadius: theme.radius.md,
-                        backgroundColor: theme.color.card,
+                        backgroundColor: theme.glass.panel.fill,
                         borderWidth: 1,
                         borderColor: isExpanded ? theme.color.anchor : theme.color.borderCard,
                         padding: theme.space(2.5),

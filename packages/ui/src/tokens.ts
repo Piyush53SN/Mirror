@@ -110,6 +110,8 @@ export type MirrorTheme = {
   };
   glass: {
     shell: GlassSpec;
+    /** The one shared panel material: nested panels, cards and chips all use it. */
+    panel: GlassSpec;
     card: GlassSpec;
     sheet: GlassSpec;
     tabbar: GlassSpec;
@@ -166,8 +168,9 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
   // every glass surface solid.
   // The alpha comes from the token set (`fillAlpha`), never a palette constant. The fill is white
   // over the backdrop in both appearances, so only the alpha differs per theme.
-  const glassFill = (kind: 'shell' | 'card' | 'sheet'): string => {
-    if (reducedTransparency || kind === 'sheet') return pal.glassSolid;
+  const glassFill = (kind: 'shell' | 'card' | 'sheet' | 'panel'): string => {
+    if (reducedTransparency || kind === 'sheet') return pal.panelSolid;
+    if (kind === 'panel') return pal.panelTint;
     const alpha = kind === 'shell' ? t.fillAlpha.shell : t.fillAlpha.card;
     return `rgba(255, 255, 255, ${alpha})`;
   };
@@ -209,11 +212,12 @@ export function createTheme(name: ThemeName = DEFAULT_THEME, overrides: ThemeOve
     },
     glass: {
       shell: { fill: glassFill('shell'), blurPx: blur('shell'), live: false },
-      card: { fill: glassFill('card'), blurPx: blur('card'), live: false },
+      panel: { fill: glassFill('panel'), blurPx: 0, live: false },
+      card: { fill: glassFill('panel'), blurPx: blur('card'), live: false },
       sheet: { fill: glassFill('sheet'), blurPx: blur('sheet'), live: false },
       // The tab bar is the only other surface allowed to spend a live-blur pass.
-      tabbar: { fill: pal.glassSolid, blurPx: 0, live: false },
-      chip: { fill: glassFill('card'), blurPx: 0, live: false },
+      tabbar: { fill: reducedTransparency ? pal.panelSolid : pal.tabbarTint, blurPx: 0, live: false },
+      chip: { fill: glassFill('panel'), blurPx: 0, live: false },
       blurBudget: raw.glass.blurBudget,
     },
     radius: {
@@ -283,6 +287,7 @@ export function heroTheme(theme: MirrorTheme): MirrorTheme {
       chip: { fill: 'rgba(255, 255, 255, 0.12)', blurPx: 0, live: false },
       shell: { ...theme.glass.shell, fill: p.heroFill, blurPx: 0, live: false },
       card: { ...theme.glass.card, fill: p.heroFill, blurPx: 0, live: false },
+      panel: { ...theme.glass.panel, fill: p.heroFill, blurPx: 0, live: false },
     },
   };
 }

@@ -379,12 +379,16 @@ export type LineGeometry = {
   scaleMax: number;
 };
 
+/** Horizontal inset of the plot, so the first and last points sit inside the card edge. */
+export const LINE_PAD_X = 14;
+
 /** Pixel geometry for a line chart of `width` x `height`. Pure. Gaps split the runs. */
 export function lineGeometry(points: readonly LinePoint[], width: number, height: number): LineGeometry {
   const max = axisMax(points);
   const scaleMax = max > 0 ? max * 1.15 : 1;
-  const step = points.length > 1 ? width / (points.length - 1) : 0;
-  const xs = points.map((_, i) => i * step);
+  const inner = Math.max(0, width - 2 * LINE_PAD_X);
+  const step = points.length > 1 ? inner / (points.length - 1) : 0;
+  const xs = points.map((_, i) => LINE_PAD_X + i * step);
   const ys = points.map((p) => (p.value === null ? null : height - (p.value / scaleMax) * height));
   const runs: string[] = [];
   let current = '';
@@ -422,12 +426,17 @@ export function LineChart({
   const avg = React.useMemo(() => lineAverage(points), [points]);
   const active = scrubIndex ?? scrub ?? focus;
   const inkColour = theme.color.ink;
-  const cardColour = theme.color.card;
+  const cardColour = theme.palette.panelSolid;
   const accent = theme.palette.chart[0];
   const n = points.length;
+  // Long ranges (14 and 30 days) thin the day labels; every value stays reachable by its own control.
+  const labelEvery = n > 10 ? Math.ceil(n / 7) : 1;
   const handleLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width);
 
-  const indexAtX = React.useCallback((x: number) => scrubIndexFromX(x, plotWidth, n), [plotWidth, n]);
+  const indexAtX = React.useCallback(
+    (x: number) => scrubIndexFromX(x - LINE_PAD_X, plotWidth - 2 * LINE_PAD_X, n),
+    [plotWidth, n],
+  );
   const pan = React.useMemo(
     () =>
       PanResponder.create({
@@ -578,7 +587,7 @@ export function LineChart({
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginLeft: Y_GUTTER, marginTop: theme.space(1.5) }}>
           {points.map((p, i) => (
             <Text key={`l${i}`} role="micro" tone={p.selected ? undefined : 'muted'} theme={theme}>
-              {p.label}
+              {i % labelEvery === 0 || p.selected || i === n - 1 ? p.label : ''}
             </Text>
           ))}
         </View>

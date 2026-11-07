@@ -35,6 +35,24 @@ export type Palette = {
   /** Optional muted-ink override for this appearance (keeps muted text >= 4.5:1 on glass). */
   inkMuted?: string;
   grainAlpha: number;
+  /** Shared glass panel: a translucent tint over the backdrop (never a flat grey). */
+  panelTint: string;
+  /** The same panel with reduced transparency: solid, same hue family. */
+  panelSolid: string;
+  /** Soft top highlight laid over the top of a panel. Gradient only, no blur. */
+  panelHighlight: string;
+  /** Floating tab bar tint. Mostly opaque so scrolling text under it stays readable. */
+  tabbarTint: string;
+  /** Soft coloured glows behind cards. Gradients that fade to transparent. Neutral hues only. */
+  glowTeal: string;
+  glowViolet: string;
+  glowIndigo: string;
+  /** Primary button gradient. White ink passes 4.5:1 on both stops in each appearance. */
+  primaryGradient: readonly [string, string];
+  primaryInk: string;
+  /** Chip tint and the selected tab tint: the first category hue at low alpha. Neutral, never good or bad. */
+  chipTint: string;
+  navSelected: string;
 };
 
 export const PALETTE: Record<ThemeKey, Palette> = {
@@ -51,9 +69,20 @@ export const PALETTE: Record<ThemeKey, Palette> = {
     heroInk: '#F5F7FF',
     heroMuted: '#B9C2EA',
     gauge: ['#2DD4BF', '#6366F1'],
-    chart: ['#2DD4BF', '#8B9CFF', '#38BDF8', '#C4B5FD', '#A3B1C6', '#7C8AA5'],
+    chart: ['#2DD4BF', '#8B9CFF', '#38BDF8', '#C4B5FD', '#A3B1C6', '#8E9BB8'],
     inkMuted: '#CBD2EC',
     grainAlpha: 0.06,
+    panelTint: 'rgba(12, 16, 48, 0.5)',
+    panelSolid: '#171D4A',
+    panelHighlight: 'rgba(255, 255, 255, 0.07)',
+    tabbarTint: 'rgba(20, 26, 66, 0.9)',
+    glowTeal: 'rgba(45, 212, 191, 0.22)',
+    glowViolet: 'rgba(139, 92, 246, 0.26)',
+    glowIndigo: 'rgba(99, 102, 241, 0.24)',
+    primaryGradient: ['#0F766E', '#4338CA'],
+    primaryInk: '#FFFFFF',
+    chipTint: 'rgba(45, 212, 191, 0.16)',
+    navSelected: 'rgba(45, 212, 191, 0.22)',
   },
   light: {
     gradient: ['#F7F9FF', '#E7EDFB', '#F1EEFD', '#EEF3FB'],
@@ -70,5 +99,16 @@ export const PALETTE: Record<ThemeKey, Palette> = {
     gauge: ['#0B7A70', '#4F46E5'],
     chart: ['#0B7A70', '#4F46E5', '#0369A1', '#7C3AED', '#475569', '#5B6478'],
     grainAlpha: 0.05,
+    panelTint: 'rgba(255, 255, 255, 0.62)',
+    panelSolid: '#FFFFFF',
+    panelHighlight: 'rgba(255, 255, 255, 0.9)',
+    tabbarTint: 'rgba(255, 255, 255, 0.9)',
+    glowTeal: 'rgba(11, 122, 112, 0.14)',
+    glowViolet: 'rgba(124, 58, 237, 0.14)',
+    glowIndigo: 'rgba(79, 70, 229, 0.14)',
+    primaryGradient: ['#0B7A70', '#4F46E5'],
+    primaryInk: '#FFFFFF',
+    chipTint: 'rgba(11, 122, 112, 0.14)',
+    navSelected: 'rgba(11, 122, 112, 0.16)',
   },
 };

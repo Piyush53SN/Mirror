@@ -207,7 +207,7 @@ export function LocalDataControls(): React.ReactElement {
               testID="export-data-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
@@ -268,7 +268,7 @@ export function LocalDataControls(): React.ReactElement {
               testID="clear-labels-confirm-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
@@ -303,7 +303,7 @@ export function LocalDataControls(): React.ReactElement {
               testID="delete-all-data-confirm-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),

@@ -32,6 +32,7 @@ import { DayPickerStrip } from '../components/DayPickerStrip';
 import { HomeBudgetStrip } from '../components/HomeBudgetStrip';
 import { WeeklySummaryCard } from '../components/WeeklySummaryCard';
 import { IntentCheckCard } from '../components/IntentCheckCard';
+import { ScoreParts, ScorePartsExpand } from '../components/ScoreParts';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 import { HourStripCard, TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
 import { AppDetailSheet, type AppDetailTarget } from '../components/AppDetailSheet';
@@ -121,7 +122,7 @@ function IqsHeroGauge({ iqs, theme, measuredMax }: { iqs: Score | null; theme: M
           width: innerSize,
           height: innerSize,
           borderRadius: theme.radius.pill,
-          backgroundColor: theme.color.card,
+          backgroundColor: theme.glass.panel.fill,
           borderWidth: 1,
           borderColor: theme.color.borderHairline,
           alignItems: 'center',
@@ -281,6 +282,9 @@ export function HomeTab(): React.ReactElement {
   const unmeasuredMax = Math.max(0, (iqs && iqs.max > 0 ? iqs.max : 100) - measuredMax);
 
   const isToday = selectedDay === toDayStr(now);
+  // App labels and rank order for the day, from the same totals the donut uses.
+  const appLabels = React.useMemo(() => Object.fromEntries(dailyTotals.map((t) => [t.app, t.label])), [dailyTotals]);
+  const appOrder = React.useMemo(() => dailyTotals.map((t) => t.app), [dailyTotals]);
   const countedScore = useCountUp(iqs && iqs.value !== null ? Math.round(iqs.value) : null, hero);
   const homeSentence = React.useMemo(
     () =>
@@ -312,6 +316,7 @@ export function HomeTab(): React.ReactElement {
         : 'Day-clipped OS foreground events · matches Digital Wellbeing';
 
   const openWhy = (): void => setShowWhy(true);
+  const [partsOpen, setPartsOpen] = React.useState(false);
   const openApp = (target: AppDetailTarget): void => setDetailApp(target);
   const stagger = (index: number): { index: number; enabled: boolean } => ({ index, enabled: animateEntry });
 
@@ -430,6 +435,12 @@ export function HomeTab(): React.ReactElement {
               </View>
             </View>
 
+            {partsOpen ? (
+              <ScorePartsExpand theme={hero}>
+                <ScoreParts iqs={iqs} theme={hero} />
+              </ScorePartsExpand>
+            ) : null}
+
             <View testID="home-plain-sentence" style={{ gap: theme.space(1) }}>
               <Text role="micro" tone="muted" theme={hero}>
                 DAY IN PLAIN WORDS
@@ -442,6 +453,15 @@ export function HomeTab(): React.ReactElement {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2), alignItems: 'center' }}>
               <Pill theme={hero} onPress={openWhy}>
                 Why this score
+              </Pill>
+              <Pill
+                testID="home-score-parts-toggle"
+                theme={hero}
+                variant="secondary"
+                onPress={() => setPartsOpen((o) => !o)}
+                accessibilityLabel={partsOpen ? 'Hide the score parts' : 'Show the score parts as bars'}
+              >
+                {partsOpen ? 'Hide parts' : 'Score parts'}
               </Pill>
               <LinkButton theme={hero} onPress={() => setActiveTab('insights')}>
                 Explore Insights
@@ -461,7 +481,12 @@ export function HomeTab(): React.ReactElement {
 
       {/* 2. Seven-day chart */}
       <EnterTile {...stagger(1)} theme={theme}>
-        <WeekTrendCard report={weeklyReport} selectedDay={selectedDay} />
+        <WeekTrendCard
+          report={weeklyReport}
+          selectedDay={selectedDay}
+          todayDay={toDayStr(now)}
+          historyStartDay={historyStartDay}
+        />
       </EnterTile>
 
       {/* 3. Where time went: donut with its source and the info button */}
@@ -471,7 +496,7 @@ export function HomeTab(): React.ReactElement {
 
       {/* 4. Sitting time through the 24 hours */}
       <EnterTile {...stagger(3)} theme={theme}>
-        <HourStripCard sessions={dayScoredSessions} day={selectedDay} />
+        <HourStripCard sessions={dayScoredSessions} day={selectedDay} labels={appLabels} appOrder={appOrder} />
       </EnterTile>
 
       {/* 5. Attention budgets (same day-clipped foreground totals as Home) */}

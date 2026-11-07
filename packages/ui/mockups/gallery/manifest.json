@@ -237,7 +237,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "State the three promises before asking for anything.",
-      "bytes": 6086
+      "bytes": 9717
     },
     {
       "id": "J1",
@@ -254,7 +254,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "State the three promises before asking for anything.",
-      "bytes": 6091
+      "bytes": 9743
     },
     {
       "id": "J2",
@@ -271,7 +271,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Explain each permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
-      "bytes": 9213
+      "bytes": 10620
     },
     {
       "id": "J2",
@@ -288,7 +288,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Explain each permission before the OS dialog, and make \"not now\" as easy as \"allow\".",
-      "bytes": 9198
+      "bytes": 10620
     },
     {
       "id": "J3",
@@ -307,7 +307,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 27994
+      "bytes": 32562
     },
     {
       "id": "J3",
@@ -326,7 +326,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 27965
+      "bytes": 32599
     },
     {
       "id": "J3",
@@ -345,7 +345,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 13375
+      "bytes": 14960
     },
     {
       "id": "J3",
@@ -364,1240 +364,1240 @@
       ],
       "requiresAnyOf": [],
       "rule": "The measured reference layout — and an honest empty state instead of estimates.",
-      "bytes": 13348
-    },
-    {
-      "id": "J4",
-      "slug": "interest-evolution",
-      "title": "Interest Evolution",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "dark",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 21125
-    },
-    {
-      "id": "J4",
-      "slug": "interest-evolution",
-      "title": "Interest Evolution",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "light",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 21114
-    },
-    {
-      "id": "J4",
-      "slug": "interest-evolution",
-      "title": "Interest Evolution",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 12780
-    },
-    {
-      "id": "J4",
-      "slug": "interest-evolution",
-      "title": "Interest Evolution",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Interest evolution is only shown when topic-level data exists.",
-      "bytes": 12763
-    },
-    {
-      "id": "J5",
-      "slug": "depth",
-      "title": "Depth",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "dark",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 18137
-    },
-    {
-      "id": "J5",
-      "slug": "depth",
-      "title": "Depth",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "light",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 18121
-    },
-    {
-      "id": "J5",
-      "slug": "depth",
-      "title": "Depth",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 10088
-    },
-    {
-      "id": "J5",
-      "slug": "depth",
-      "title": "Depth",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
-      "bytes": 10076
-    },
-    {
-      "id": "J6",
-      "slug": "curiosity-vs-habit",
-      "title": "Curiosity vs Habit",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "dark",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 15216
-    },
-    {
-      "id": "J6",
-      "slug": "curiosity-vs-habit",
-      "title": "Curiosity vs Habit",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "light",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 15202
-    },
-    {
-      "id": "J6",
-      "slug": "curiosity-vs-habit",
-      "title": "Curiosity vs Habit",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 10143
-    },
-    {
-      "id": "J6",
-      "slug": "curiosity-vs-habit",
-      "title": "Curiosity vs Habit",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Name both halves of the week without framing habit as a failure.",
-      "bytes": 10131
-    },
-    {
-      "id": "J7",
-      "slug": "iqs",
-      "title": "IQS",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 26135
-    },
-    {
-      "id": "J7",
-      "slug": "iqs",
-      "title": "IQS",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 26088
-    },
-    {
-      "id": "J7",
-      "slug": "iqs",
-      "title": "IQS",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 14658
-    },
-    {
-      "id": "J7",
-      "slug": "iqs",
-      "title": "IQS",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A composite score built only from parts that exist, with the band shown.",
-      "bytes": 14632
-    },
-    {
-      "id": "J8",
-      "slug": "sessions",
-      "title": "Sessions",
-      "kind": "screen",
-      "parent": null,
-      "tab": "sessions",
-      "phase": "P2",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 13493
-    },
-    {
-      "id": "J8",
-      "slug": "sessions",
-      "title": "Sessions",
-      "kind": "screen",
-      "parent": null,
-      "tab": "sessions",
-      "phase": "P2",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 13466
-    },
-    {
-      "id": "J8",
-      "slug": "sessions",
-      "title": "Sessions",
-      "kind": "screen",
-      "parent": null,
-      "tab": "sessions",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 15901
-    },
-    {
-      "id": "J8",
-      "slug": "sessions",
-      "title": "Sessions",
-      "kind": "screen",
-      "parent": null,
-      "tab": "sessions",
-      "phase": "P2",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
-      "bytes": 15869
-    },
-    {
-      "id": "J9",
-      "slug": "discovery-journey",
-      "title": "Discovery Journey",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "dark",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 12502
-    },
-    {
-      "id": "J9",
-      "slug": "discovery-journey",
-      "title": "Discovery Journey",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "light",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 12488
-    },
-    {
-      "id": "J9",
-      "slug": "discovery-journey",
-      "title": "Discovery Journey",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 14942
-    },
-    {
-      "id": "J9",
-      "slug": "discovery-journey",
-      "title": "Discovery Journey",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
-      "bytes": 14923
-    },
-    {
-      "id": "J10",
-      "slug": "behavior-profile",
-      "title": "Behavior Profile",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 10388
-    },
-    {
-      "id": "J10",
-      "slug": "behavior-profile",
-      "title": "Behavior Profile",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 10379
-    },
-    {
-      "id": "J10",
-      "slug": "behavior-profile",
-      "title": "Behavior Profile",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 12814
-    },
-    {
-      "id": "J10",
-      "slug": "behavior-profile",
-      "title": "Behavior Profile",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
-      "bytes": 12800
-    },
-    {
-      "id": "J11",
-      "slug": "rabbit-hole",
-      "title": "Rabbit Hole",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "dark",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 16839
-    },
-    {
-      "id": "J11",
-      "slug": "rabbit-hole",
-      "title": "Rabbit Hole",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "default",
-      "theme": "light",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 16814
-    },
-    {
-      "id": "J11",
-      "slug": "rabbit-hole",
-      "title": "Rabbit Hole",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 13577
-    },
-    {
-      "id": "J11",
-      "slug": "rabbit-hole",
-      "title": "Rabbit Hole",
-      "kind": "screen",
-      "parent": null,
-      "tab": "journey",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Print the definition, let the user change it, and never punish what it finds.",
-      "bytes": 13557
-    },
-    {
-      "id": "J12",
-      "slug": "weekly-report-goals",
-      "title": "Weekly Report + Goals",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16035
-    },
-    {
-      "id": "J12",
-      "slug": "weekly-report-goals",
-      "title": "Weekly Report + Goals",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 16019
-    },
-    {
-      "id": "J12",
-      "slug": "weekly-report-goals",
-      "title": "Weekly Report + Goals",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 18453
-    },
-    {
-      "id": "J12",
-      "slug": "weekly-report-goals",
-      "title": "Weekly Report + Goals",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "A local document plus goals the user set; no streaks, no nudges.",
-      "bytes": 18432
-    },
-    {
-      "id": "J13",
-      "slug": "connections",
-      "title": "Connections / Consent Dashboard (with capability matrix)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Every source with its capability matrix and a one-tap revoke.",
-      "bytes": 25369
-    },
-    {
-      "id": "J13",
-      "slug": "connections",
-      "title": "Connections / Consent Dashboard (with capability matrix)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Every source with its capability matrix and a one-tap revoke.",
-      "bytes": 25318
-    },
-    {
-      "id": "J14",
-      "slug": "privacy-center",
-      "title": "Privacy Center (network log, delete everything)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 14603
-    },
-    {
-      "id": "J14",
-      "slug": "privacy-center",
-      "title": "Privacy Center (network log, delete everything)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 14588
-    },
-    {
-      "id": "J14",
-      "slug": "privacy-center",
-      "title": "Privacy Center (network log, delete everything)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 14603
-    },
-    {
-      "id": "J14",
-      "slug": "privacy-center",
-      "title": "Privacy Center (network log, delete everything)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P5",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [],
-      "requiresAnyOf": [],
-      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
-      "bytes": 14588
-    },
-    {
-      "id": "J15",
-      "slug": "public-profile-editor",
-      "title": "Public Profile editor (live preview)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "default",
-      "theme": "dark",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 17029
-    },
-    {
-      "id": "J15",
-      "slug": "public-profile-editor",
-      "title": "Public Profile editor (live preview)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "default",
-      "theme": "light",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 17001
-    },
-    {
-      "id": "J15",
-      "slug": "public-profile-editor",
-      "title": "Public Profile editor (live preview)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 16065
-    },
-    {
-      "id": "J15",
-      "slug": "public-profile-editor",
-      "title": "Public Profile editor (live preview)",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Edit what is published with a live preview of exactly what a match sees.",
-      "bytes": 16044
-    },
-    {
-      "id": "J16",
-      "slug": "matches-chat",
-      "title": "Matches / Chat",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "default",
-      "theme": "dark",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 11803
-    },
-    {
-      "id": "J16",
-      "slug": "matches-chat",
-      "title": "Matches / Chat",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "default",
-      "theme": "light",
-      "persona": "mei",
-      "degraded": false,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 11786
-    },
-    {
-      "id": "J16",
-      "slug": "matches-chat",
-      "title": "Matches / Chat",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 14712
-    },
-    {
-      "id": "J16",
-      "slug": "matches-chat",
-      "title": "Matches / Chat",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P6",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": true,
-      "requires": [
-        "A",
-        "B",
-        "C"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Social is off by default; chat shares nothing but what the user sent.",
-      "bytes": 14690
-    },
-    {
-      "id": "J17",
-      "slug": "why-drawer",
-      "title": "Why drawer",
-      "kind": "sheet",
-      "parent": "dashboard",
-      "tab": null,
-      "phase": "P2",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 46348
-    },
-    {
-      "id": "J17",
-      "slug": "why-drawer",
-      "title": "Why drawer",
-      "kind": "sheet",
-      "parent": "dashboard",
-      "tab": null,
-      "phase": "P2",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Every number opens into the parts that produced it, and the parts add up.",
-      "bytes": 46282
-    },
-    {
-      "id": "J18",
-      "slug": "what-if",
-      "title": "What-if Simulator",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P3",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 12726
-    },
-    {
-      "id": "J18",
-      "slug": "what-if",
-      "title": "What-if Simulator",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P3",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 12717
-    },
-    {
-      "id": "J18",
-      "slug": "what-if",
-      "title": "What-if Simulator",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 15152
-    },
-    {
-      "id": "J18",
-      "slug": "what-if",
-      "title": "What-if Simulator",
-      "kind": "screen",
-      "parent": null,
-      "tab": "insights",
-      "phase": "P3",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Counterfactuals are calculations over your history, never predictions.",
-      "bytes": 15138
-    },
-    {
-      "id": "J19",
-      "slug": "attention-budget",
-      "title": "Attention Budget",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 12631
-    },
-    {
-      "id": "J19",
-      "slug": "attention-budget",
-      "title": "Attention Budget",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "default",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 12626
-    },
-    {
-      "id": "J19",
-      "slug": "attention-budget",
-      "title": "Attention Budget",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "dark",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 8320
-    },
-    {
-      "id": "J19",
-      "slug": "attention-budget",
-      "title": "Attention Budget",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P4",
-      "state": "empty",
-      "theme": "light",
-      "persona": "ananya",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [],
-      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
-      "bytes": 8308
-    },
-    {
-      "id": "J20",
-      "slug": "focus-windows",
-      "title": "Focus Windows",
-      "kind": "screen",
-      "parent": null,
-      "tab": "you",
-      "phase": "P3",
-      "state": "default",
-      "theme": "dark",
-      "persona": "rehan",
-      "degraded": false,
-      "requires": [
-        "D"
-      ],
-      "requiresAnyOf": [
-        "A",
-        "B",
-        "C"
-      ],
-      "rule": "Focus never blocks or shames; it repeats the choice you made.",
       "bytes": 14963
     },
     {
+      "id": "J4",
+      "slug": "interest-evolution",
+      "title": "Interest Evolution",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 23538
+    },
+    {
+      "id": "J4",
+      "slug": "interest-evolution",
+      "title": "Interest Evolution",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 23556
+    },
+    {
+      "id": "J4",
+      "slug": "interest-evolution",
+      "title": "Interest Evolution",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 15209
+    },
+    {
+      "id": "J4",
+      "slug": "interest-evolution",
+      "title": "Interest Evolution",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Interest evolution is only shown when topic-level data exists.",
+      "bytes": 15221
+    },
+    {
+      "id": "J5",
+      "slug": "depth",
+      "title": "Depth",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
+      "bytes": 20476
+    },
+    {
+      "id": "J5",
+      "slug": "depth",
+      "title": "Depth",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
+      "bytes": 20512
+    },
+    {
+      "id": "J5",
+      "slug": "depth",
+      "title": "Depth",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
+      "bytes": 11409
+    },
+    {
+      "id": "J5",
+      "slug": "depth",
+      "title": "Depth",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Show how long visits last, and refuse to call any visit good or wasted.",
+      "bytes": 11419
+    },
+    {
+      "id": "J6",
+      "slug": "curiosity-vs-habit",
+      "title": "Curiosity vs Habit",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Name both halves of the week without framing habit as a failure.",
+      "bytes": 17613
+    },
+    {
+      "id": "J6",
+      "slug": "curiosity-vs-habit",
+      "title": "Curiosity vs Habit",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Name both halves of the week without framing habit as a failure.",
+      "bytes": 17644
+    },
+    {
+      "id": "J6",
+      "slug": "curiosity-vs-habit",
+      "title": "Curiosity vs Habit",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Name both halves of the week without framing habit as a failure.",
+      "bytes": 11464
+    },
+    {
+      "id": "J6",
+      "slug": "curiosity-vs-habit",
+      "title": "Curiosity vs Habit",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Name both halves of the week without framing habit as a failure.",
+      "bytes": 11474
+    },
+    {
+      "id": "J7",
+      "slug": "iqs",
+      "title": "IQS",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A composite score built only from parts that exist, with the band shown.",
+      "bytes": 27362
+    },
+    {
+      "id": "J7",
+      "slug": "iqs",
+      "title": "IQS",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A composite score built only from parts that exist, with the band shown.",
+      "bytes": 27364
+    },
+    {
+      "id": "J7",
+      "slug": "iqs",
+      "title": "IQS",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A composite score built only from parts that exist, with the band shown.",
+      "bytes": 17087
+    },
+    {
+      "id": "J7",
+      "slug": "iqs",
+      "title": "IQS",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A composite score built only from parts that exist, with the band shown.",
+      "bytes": 17090
+    },
+    {
+      "id": "J8",
+      "slug": "sessions",
+      "title": "Sessions",
+      "kind": "screen",
+      "parent": null,
+      "tab": "sessions",
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
+      "bytes": 14802
+    },
+    {
+      "id": "J8",
+      "slug": "sessions",
+      "title": "Sessions",
+      "kind": "screen",
+      "parent": null,
+      "tab": "sessions",
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
+      "bytes": 14793
+    },
+    {
+      "id": "J8",
+      "slug": "sessions",
+      "title": "Sessions",
+      "kind": "screen",
+      "parent": null,
+      "tab": "sessions",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
+      "bytes": 18334
+    },
+    {
+      "id": "J8",
+      "slug": "sessions",
+      "title": "Sessions",
+      "kind": "screen",
+      "parent": null,
+      "tab": "sessions",
+      "phase": "P2",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "The user annotates their own sessions; labels stay local and train a local model.",
+      "bytes": 18327
+    },
+    {
+      "id": "J9",
+      "slug": "discovery-journey",
+      "title": "Discovery Journey",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
+      "bytes": 14915
+    },
+    {
+      "id": "J9",
+      "slug": "discovery-journey",
+      "title": "Discovery Journey",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
+      "bytes": 14930
+    },
+    {
+      "id": "J9",
+      "slug": "discovery-journey",
+      "title": "Discovery Journey",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
+      "bytes": 18479
+    },
+    {
+      "id": "J9",
+      "slug": "discovery-journey",
+      "title": "Discovery Journey",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Show the route a topic was reached by, step by step, with the tier of each step.",
+      "bytes": 18496
+    },
+    {
+      "id": "J10",
+      "slug": "behavior-profile",
+      "title": "Behavior Profile",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 11693
+    },
+    {
+      "id": "J10",
+      "slug": "behavior-profile",
+      "title": "Behavior Profile",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 11706
+    },
+    {
+      "id": "J10",
+      "slug": "behavior-profile",
+      "title": "Behavior Profile",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 15243
+    },
+    {
+      "id": "J10",
+      "slug": "behavior-profile",
+      "title": "Behavior Profile",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Descriptive traits with their evidence attached, never clinical labels.",
+      "bytes": 15258
+    },
+    {
+      "id": "J11",
+      "slug": "rabbit-hole",
+      "title": "Rabbit Hole",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Print the definition, let the user change it, and never punish what it finds.",
+      "bytes": 20357
+    },
+    {
+      "id": "J11",
+      "slug": "rabbit-hole",
+      "title": "Rabbit Hole",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Print the definition, let the user change it, and never punish what it finds.",
+      "bytes": 20368
+    },
+    {
+      "id": "J11",
+      "slug": "rabbit-hole",
+      "title": "Rabbit Hole",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Print the definition, let the user change it, and never punish what it finds.",
+      "bytes": 16003
+    },
+    {
+      "id": "J11",
+      "slug": "rabbit-hole",
+      "title": "Rabbit Hole",
+      "kind": "screen",
+      "parent": null,
+      "tab": "journey",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Print the definition, let the user change it, and never punish what it finds.",
+      "bytes": 16012
+    },
+    {
+      "id": "J12",
+      "slug": "weekly-report-goals",
+      "title": "Weekly Report + Goals",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A local document plus goals the user set; no streaks, no nudges.",
+      "bytes": 18388
+    },
+    {
+      "id": "J12",
+      "slug": "weekly-report-goals",
+      "title": "Weekly Report + Goals",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A local document plus goals the user set; no streaks, no nudges.",
+      "bytes": 18415
+    },
+    {
+      "id": "J12",
+      "slug": "weekly-report-goals",
+      "title": "Weekly Report + Goals",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A local document plus goals the user set; no streaks, no nudges.",
+      "bytes": 21930
+    },
+    {
+      "id": "J12",
+      "slug": "weekly-report-goals",
+      "title": "Weekly Report + Goals",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "A local document plus goals the user set; no streaks, no nudges.",
+      "bytes": 21959
+    },
+    {
+      "id": "J13",
+      "slug": "connections",
+      "title": "Connections / Consent Dashboard (with capability matrix)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Every source with its capability matrix and a one-tap revoke.",
+      "bytes": 26670
+    },
+    {
+      "id": "J13",
+      "slug": "connections",
+      "title": "Connections / Consent Dashboard (with capability matrix)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Every source with its capability matrix and a one-tap revoke.",
+      "bytes": 26645
+    },
+    {
+      "id": "J14",
+      "slug": "privacy-center",
+      "title": "Privacy Center (network log, delete everything)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
+      "bytes": 19254
+    },
+    {
+      "id": "J14",
+      "slug": "privacy-center",
+      "title": "Privacy Center (network log, delete everything)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
+      "bytes": 19281
+    },
+    {
+      "id": "J14",
+      "slug": "privacy-center",
+      "title": "Privacy Center (network log, delete everything)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
+      "bytes": 19254
+    },
+    {
+      "id": "J14",
+      "slug": "privacy-center",
+      "title": "Privacy Center (network log, delete everything)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P5",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [],
+      "requiresAnyOf": [],
+      "rule": "Retention, the network log, deletion and the receipt — all checkable in-app.",
+      "bytes": 19281
+    },
+    {
+      "id": "J15",
+      "slug": "public-profile-editor",
+      "title": "Public Profile editor (live preview)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Edit what is published with a live preview of exactly what a match sees.",
+      "bytes": 19711
+    },
+    {
+      "id": "J15",
+      "slug": "public-profile-editor",
+      "title": "Public Profile editor (live preview)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Edit what is published with a live preview of exactly what a match sees.",
+      "bytes": 19715
+    },
+    {
+      "id": "J15",
+      "slug": "public-profile-editor",
+      "title": "Public Profile editor (live preview)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Edit what is published with a live preview of exactly what a match sees.",
+      "bytes": 19548
+    },
+    {
+      "id": "J15",
+      "slug": "public-profile-editor",
+      "title": "Public Profile editor (live preview)",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Edit what is published with a live preview of exactly what a match sees.",
+      "bytes": 19566
+    },
+    {
+      "id": "J16",
+      "slug": "matches-chat",
+      "title": "Matches / Chat",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "default",
+      "theme": "dark",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Social is off by default; chat shares nothing but what the user sent.",
+      "bytes": 14222
+    },
+    {
+      "id": "J16",
+      "slug": "matches-chat",
+      "title": "Matches / Chat",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "default",
+      "theme": "light",
+      "persona": "mei",
+      "degraded": false,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Social is off by default; chat shares nothing but what the user sent.",
+      "bytes": 14233
+    },
+    {
+      "id": "J16",
+      "slug": "matches-chat",
+      "title": "Matches / Chat",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Social is off by default; chat shares nothing but what the user sent.",
+      "bytes": 18255
+    },
+    {
+      "id": "J16",
+      "slug": "matches-chat",
+      "title": "Matches / Chat",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P6",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": true,
+      "requires": [
+        "A",
+        "B",
+        "C"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Social is off by default; chat shares nothing but what the user sent.",
+      "bytes": 18268
+    },
+    {
+      "id": "J17",
+      "slug": "why-drawer",
+      "title": "Why drawer",
+      "kind": "sheet",
+      "parent": "dashboard",
+      "tab": null,
+      "phase": "P2",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Every number opens into the parts that produced it, and the parts add up.",
+      "bytes": 54082
+    },
+    {
+      "id": "J17",
+      "slug": "why-drawer",
+      "title": "Why drawer",
+      "kind": "sheet",
+      "parent": "dashboard",
+      "tab": null,
+      "phase": "P2",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Every number opens into the parts that produced it, and the parts add up.",
+      "bytes": 54113
+    },
+    {
+      "id": "J18",
+      "slug": "what-if",
+      "title": "What-if Simulator",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 14019
+    },
+    {
+      "id": "J18",
+      "slug": "what-if",
+      "title": "What-if Simulator",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P3",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 14044
+    },
+    {
+      "id": "J18",
+      "slug": "what-if",
+      "title": "What-if Simulator",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 17569
+    },
+    {
+      "id": "J18",
+      "slug": "what-if",
+      "title": "What-if Simulator",
+      "kind": "screen",
+      "parent": null,
+      "tab": "insights",
+      "phase": "P3",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Counterfactuals are calculations over your history, never predictions.",
+      "bytes": 17596
+    },
+    {
+      "id": "J19",
+      "slug": "attention-budget",
+      "title": "Attention Budget",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 15036
+    },
+    {
+      "id": "J19",
+      "slug": "attention-budget",
+      "title": "Attention Budget",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "default",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 15068
+    },
+    {
+      "id": "J19",
+      "slug": "attention-budget",
+      "title": "Attention Budget",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "dark",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 9916
+    },
+    {
+      "id": "J19",
+      "slug": "attention-budget",
+      "title": "Attention Budget",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P4",
+      "state": "empty",
+      "theme": "light",
+      "persona": "ananya",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [],
+      "rule": "Budgets are chosen by the user and rendered as numbers, never alarms.",
+      "bytes": 9926
+    },
+    {
+      "id": "J20",
+      "slug": "focus-windows",
+      "title": "Focus Windows",
+      "kind": "screen",
+      "parent": null,
+      "tab": "you",
+      "phase": "P3",
+      "state": "default",
+      "theme": "dark",
+      "persona": "rehan",
+      "degraded": false,
+      "requires": [
+        "D"
+      ],
+      "requiresAnyOf": [
+        "A",
+        "B",
+        "C"
+      ],
+      "rule": "Focus never blocks or shames; it repeats the choice you made.",
+      "bytes": 18490
+    },
+    {
       "id": "J20",
       "slug": "focus-windows",
       "title": "Focus Windows",
@@ -1618,7 +1618,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 14944
+      "bytes": 18506
     },
     {
       "id": "J20",
@@ -1641,7 +1641,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 9607
+      "bytes": 10932
     },
     {
       "id": "J20",
@@ -1664,7 +1664,7 @@
         "C"
       ],
       "rule": "Focus never blocks or shames; it repeats the choice you made.",
-      "bytes": 9598
+      "bytes": 10941
     },
     {
       "id": "J21",
@@ -1685,7 +1685,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 19594
+      "bytes": 24219
     },
     {
       "id": "J21",
@@ -1706,7 +1706,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 19576
+      "bytes": 24244
     },
     {
       "id": "J21",
@@ -1727,7 +1727,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 10074
+      "bytes": 11395
     },
     {
       "id": "J21",
@@ -1748,7 +1748,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A stalled arc is reported exactly like a growing one.",
-      "bytes": 10062
+      "bytes": 11405
     },
     {
       "id": "J22",
@@ -1767,7 +1767,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 32811
+      "bytes": 39738
     },
     {
       "id": "J22",
@@ -1786,7 +1786,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 32768
+      "bytes": 39769
     },
     {
       "id": "J22",
@@ -1805,7 +1805,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 31119
+      "bytes": 37757
     },
     {
       "id": "J22",
@@ -1824,7 +1824,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Answer from local data or refuse — never guess, never call out.",
-      "bytes": 31082
+      "bytes": 37794
     },
     {
       "id": "J23",
@@ -1841,7 +1841,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 19166
+      "bytes": 27004
     },
     {
       "id": "J23",
@@ -1858,7 +1858,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 19147
+      "bytes": 27038
     },
     {
       "id": "J23",
@@ -1875,7 +1875,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 19166
+      "bytes": 27004
     },
     {
       "id": "J23",
@@ -1892,7 +1892,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "What left the device, in bytes, with the empty case explained rather than hidden.",
-      "bytes": 19147
+      "bytes": 27038
     },
     {
       "id": "J24",
@@ -1909,7 +1909,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 35335
+      "bytes": 41194
     },
     {
       "id": "J24",
@@ -1926,7 +1926,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Demo data replaces yours while it is on, and is never mixed with it.",
-      "bytes": 35282
+      "bytes": 41204
     },
     {
       "id": "J25",
@@ -1945,7 +1945,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The only place Mirror may interrupt, off unless asked for, with quiet hours.",
-      "bytes": 16834
+      "bytes": 20953
     },
     {
       "id": "J25",
@@ -1964,7 +1964,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "The only place Mirror may interrupt, off unless asked for, with quiet hours.",
-      "bytes": 16809
+      "bytes": 20964
     },
     {
       "id": "J26",
@@ -1983,7 +1983,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 22056
+      "bytes": 24353
     },
     {
       "id": "J26",
@@ -2002,7 +2002,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "Preview the whole card; nothing is shared until the user shares it.",
-      "bytes": 22026
+      "bytes": 24376
     },
     {
       "id": "J27",
@@ -2021,7 +2021,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7124
+      "bytes": 7150
     },
     {
       "id": "J27",
@@ -2040,7 +2040,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7103
+      "bytes": 7144
     },
     {
       "id": "J27",
@@ -2059,7 +2059,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7124
+      "bytes": 7150
     },
     {
       "id": "J27",
@@ -2078,7 +2078,7 @@
       ],
       "requiresAnyOf": [],
       "rule": "A lock-screen surface: totals privately, published topics only in public.",
-      "bytes": 7103
+      "bytes": 7144
     },
     {
       "id": "J28",
@@ -2095,7 +2095,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 32987
+      "bytes": 37503
     },
     {
       "id": "J28",
@@ -2112,7 +2112,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Calm and non-blocking, and explicit that nothing new is collected.",
-      "bytes": 32944
+      "bytes": 37532
     }
   ],
   "extraItems": 1,
@@ -2132,7 +2132,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 20014
+      "bytes": 23487
     },
     {
       "id": "X1",
@@ -2149,7 +2149,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 19984
+      "bytes": 23495
     },
     {
       "id": "X1",
@@ -2166,7 +2166,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 11452
+      "bytes": 12707
     },
     {
       "id": "X1",
@@ -2183,7 +2183,7 @@
       "requires": [],
       "requiresAnyOf": [],
       "rule": "Preview first, then confirm; read one file at a time and refuse a file too large to read whole.",
-      "bytes": 11444
+      "bytes": 12720
     }
   ]
 }

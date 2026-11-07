@@ -272,9 +272,10 @@ export const Animated = {
   } as unknown as new (v: number) => AnimValue,
   View,
   timing: (value: AnimValue, cfg: { toValue: number }) => ({
-    start: (cb?: () => void) => {
+    // Real Animated passes { finished } to the callback; callers rely on it.
+    start: (cb?: (result: { finished: boolean }) => void) => {
       value.setValue(cfg.toValue);
-      cb?.();
+      cb?.({ finished: true });
     },
     stop: () => undefined,
   }),
@@ -283,6 +284,28 @@ export const useColorScheme = (): 'light' | 'dark' => 'dark';
 
 /** Test shims: refresh control renders nothing; pan responder hands out no handlers. */
 export const RefreshControl = () => null;
+/**
+ * Test double for PanResponder. It keeps the last config so tests can drive a gesture
+ * (move, release) directly, without a real touch stream.
+ */
 export const PanResponder = {
-  create: () => ({ panHandlers: {} }),
+  last: null as null | Record<string, (...args: unknown[]) => unknown>,
+  create(config: Record<string, (...args: unknown[]) => unknown>) {
+    PanResponder.last = config;
+    return { panHandlers: {} };
+  },
+};
+
+/** Test double for BackHandler: listeners are kept so tests can fire the hardware back press. */
+export const BackHandler = {
+  listeners: new Set<() => boolean>(),
+  addEventListener(_name: string, fn: () => boolean) {
+    BackHandler.listeners.add(fn);
+    return { remove: () => BackHandler.listeners.delete(fn) };
+  },
+  /** Fires hardwareBackPress as Android does: the first listener that returns true consumes it. */
+  fire(): boolean {
+    for (const fn of [...BackHandler.listeners].reverse()) if (fn()) return true;
+    return false;
+  },
 };

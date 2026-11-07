@@ -320,6 +320,9 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
       },
       caveat: '44.5 of 55 measured points (45 points not measured: deliberate share 20 pts, topic depth 25 pts). Unmeasured parts are listed separately — never counted as zero and never rescaled.',
     },
+    // alpha.8: Curiosity is gated on the selected-day label count (the same count the Sessions unlock
+    // shows), so the fixture supplies that count alongside the split.
+    dayLabelCounts: { intentional: 3, mindless: 2, unsure: 0, decisive: 5, total: 5 },
     curiosity: {
       deepMs: 1_200_000,
       habitMs: 600_000,
@@ -581,8 +584,9 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
 
     const scrims = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-bar-bottom-scrim');
     assert.equal(scrims.length, 1, `tab ${activeTab} must render bottom backdrop scrim behind floating TabBar`);
-    const backings = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-bar-opaque-backing');
-    assert.equal(backings.length, 1, `tab ${activeTab} must render high-opacity pill backing behind floating TabBar`);
+    // alpha.8: the flat opaque band was replaced by the floating glass pill (the bar itself).
+    const pills = renderer.root.findAll((el) => el.props?.['data-testid'] === 'tab-bar-pill');
+    assert.equal(pills.length, 1, `tab ${activeTab} must render the floating glass TabBar pill`);
 
     if (activeTab === 'home') {
       const gauges = renderer.root.findAll(

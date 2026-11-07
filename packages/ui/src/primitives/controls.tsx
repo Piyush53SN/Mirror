@@ -7,7 +7,8 @@
  * `size` prop only ever changes what you *see*, never what you can hit.
  */
 import * as React from 'react';
-import { Pressable, TextInput, View } from '../host';
+import { Pressable, StyleSheet, TextInput, View } from '../host';
+import { LinearGradient } from 'expo-linear-gradient';
 import type { StyleProp, ViewStyle } from '../host';
 import { useTheme } from '../theme';
 import type { MirrorTheme } from '../tokens';
@@ -73,10 +74,14 @@ export function Pill({
   const height = size ?? 44;
   const press = usePressableBase(t, height, onPress, disabled);
   // A selected pill is filled with the anchor, so the chosen option reads at a glance (not only to TalkBack).
-  const isFilled = variant === 'primary' || selected === true;
-  const baseBackground = isFilled ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
+  // Primary: a gradient pill (white ink passes AA on both stops). Secondary: outlined, no fill.
+  // A selected non-primary pill is filled with the anchor so the chosen option reads at a glance.
+  const isGradient = variant === 'primary' && !disabled;
+  const isFilled = selected === true && variant !== 'primary';
+  const baseBackground = isFilled ? t.color.anchor : 'transparent';
   const background = disabled ? t.glass.chip.fill : baseBackground;
-  const colour = disabled ? t.color.inkMuted : isFilled ? t.color.onAnchor : t.color.ink;
+  const colour = disabled ? t.color.inkMuted : isGradient ? t.palette.primaryInk : isFilled ? t.color.onAnchor : t.color.ink;
+  const outlined = variant === 'secondary' && !disabled;
   // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array at runtime
   const rawChildren: unknown = accessibilityLabel ?? children;
   const labelForA11y = typeof rawChildren === 'string' ? rawChildren : Array.isArray(rawChildren) ? rawChildren.join(' ') : String(rawChildren ?? '');
@@ -99,6 +104,8 @@ export function Pill({
       ]}
     >
       <View
+        // The audit reads the gradient stops from the owner of the text.
+        data-gradient={isGradient ? [...t.palette.primaryGradient] : undefined}
         style={{
           // minHeight, not height: a wrapped label must grow the pill instead of being clipped (P4.4-UX "App time /").
           minHeight: height,
@@ -108,11 +115,22 @@ export function Pill({
           gap: t.space(2),
           paddingHorizontal: t.space(4),
           borderRadius: t.radius.pill,
+          overflow: 'hidden',
           backgroundColor: background,
-          borderWidth: disabled || variant === 'quiet' ? 1 : 0,
-          borderColor: t.color.borderCard,
+          borderWidth: disabled || variant === 'quiet' || outlined ? 1 : 0,
+          borderColor: outlined ? t.color.inkMuted : t.color.borderCard,
         }}
       >
+        {isGradient ? (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            <LinearGradient
+              colors={[...t.palette.primaryGradient] as unknown as [string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </View>
+        ) : null}
         {icon}
         {/* flexShrink + centred: a long label wraps inside the pill instead of clipping at 200% font. */}
         <Text role="label" theme={t} style={{ color: colour, fontWeight: '600', flexShrink: 1, textAlign: 'center' }}>
@@ -178,6 +196,11 @@ export function IconButton({
  * A filter chip. The tap area is 48dp tall; the pill you see is 32dp. That gap
  * is the whole reason chips in this system feel right on a phone.
  */
+/** Chip tint: the first category hue at low alpha. Neutral, so a chip never reads as good or bad. */
+function chipTint(t: MirrorTheme): string {
+  return t.palette.chipTint;
+}
+
 export function Chip({
   label,
   value,
@@ -187,18 +210,20 @@ export function Chip({
   testID,
 }: ControlBase & { label: string; value?: string; static?: boolean }) {
   const t = withTheme(theme);
+  // Smaller than the old chip (28dp visual) and tinted with the first category hue. The touch target stays 48dp.
+  const chipVisual = 28;
   if (isStatic) {
     return (
       <View style={{ height: t.size.touchTarget, justifyContent: 'center' }}>
         <View
           style={{
-            height: t.size.chipHeight,
+            height: chipVisual,
             flexDirection: 'row',
             alignItems: 'center',
             gap: t.space(1),
             paddingHorizontal: t.space(3),
             borderRadius: t.radius.pill,
-            backgroundColor: t.glass.chip.fill,
+            backgroundColor: chipTint(t),
             borderWidth: 1,
             borderColor: t.color.borderCard,
           }}
@@ -215,7 +240,7 @@ export function Chip({
       </View>
     );
   }
-  const press = usePressableBase(t, t.size.chipHeight, onPress);
+  const press = usePressableBase(t, chipVisual, onPress);
   return (
     <Pressable
       testID={testID}
@@ -225,13 +250,13 @@ export function Chip({
     >
       <View
         style={{
-          height: t.size.chipHeight,
+          height: chipVisual,
           flexDirection: 'row',
           alignItems: 'center',
           gap: t.space(1),
           paddingHorizontal: t.space(3),
           borderRadius: t.radius.pill,
-          backgroundColor: t.glass.chip.fill,
+          backgroundColor: chipTint(t),
           borderWidth: 1,
           borderColor: t.color.borderCard,
         }}
@@ -388,7 +413,6 @@ export function TabBar({
   active,
   onChange,
   bottomOffset,
-  opaque = true,
   theme,
 }: {
   items: TabItem[];
@@ -396,8 +420,6 @@ export function TabBar({
   onChange: (id: string) => void;
   /** Granted by useLiveBlur(); false paints the pre-composited fill instead. */
   liveBlur?: boolean;
-  /** Solid surface so scrolling text underneath cannot bleed through the bar. */
-  opaque?: boolean;
   /** Distance from the bottom edge in dp (defaults to 16dp, or safe-area bottom + 8dp on device). */
   bottomOffset?: number;
   theme?: MirrorTheme;
@@ -405,6 +427,7 @@ export function TabBar({
   const t = withTheme(theme);
   return (
     <View
+      testID="tab-bar-pill"
       accessibilityRole="tablist"
       accessibilityLabel="Sections"
       style={{
@@ -418,9 +441,15 @@ export function TabBar({
         alignItems: 'center',
         paddingHorizontal: t.space(1),
         borderRadius: t.radius.pill,
-        backgroundColor: opaque ? t.color.card : t.glass.tabbar.fill,
+        backgroundColor: t.glass.tabbar.fill,
         borderWidth: 1,
-        borderColor: opaque ? t.color.borderCard : t.color.borderHairline,
+        borderColor: t.color.borderHairline,
+        // A floating glass pill: soft ambient shadow, no blur, no flat band behind it.
+        shadowColor: t.palette.shadow,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 1,
+        shadowRadius: 18,
+        elevation: 4,
       }}
     >
       {/*
@@ -446,7 +475,7 @@ export function TabBar({
               justifyContent: 'center',
               gap: 2,
               borderRadius: t.radius.pill,
-              backgroundColor: selected ? t.color.elevated : 'transparent',
+              backgroundColor: selected ? t.palette.navSelected : 'transparent',
             }}
           >
             {item.icon}
@@ -576,7 +605,7 @@ export function TextField({
         paddingHorizontal: t.space(3),
         paddingVertical: t.space(2),
         borderRadius: t.radius.md,
-        backgroundColor: t.color.card,
+        backgroundColor: t.glass.panel.fill,
         borderWidth: 1,
         borderColor: t.color.borderCard,
         color: t.color.ink,

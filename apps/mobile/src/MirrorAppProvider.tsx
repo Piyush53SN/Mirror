@@ -1789,6 +1789,27 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     [loadForegroundRange],
   );
 
+  /**
+   * All-app foreground total for each day (null where the day is not recorded: never zero). Same
+   * day-clipped query as the Home donut, so a range line agrees with the day views.
+   */
+  const loadDayTotalsRange = React.useCallback(
+    async (days: readonly { day: string; recorded: boolean }[]): Promise<(number | null)[]> => {
+      const out: (number | null)[] = [];
+      for (const d of days) {
+        const bounds = dayBounds(d.day);
+        if (!d.recorded || !bounds) {
+          out.push(null);
+          continue;
+        }
+        const rows = await loadForegroundRange(bounds).catch(() => []);
+        out.push(rows.reduce((sum, r) => sum + r.totalMs, 0));
+      }
+      return out;
+    },
+    [loadForegroundRange],
+  );
+
   const value = React.useMemo<MirrorAppContextValue>(
     () => ({
       activeTab,
@@ -1813,6 +1834,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       setSelectedDay,
       loadForegroundRange,
       loadAppWeek,
+      loadDayTotalsRange,
       dayOptions,
       sessions,
       dailyTotals,
@@ -1906,7 +1928,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       answerIntentCheck,
       acknowledgeIntentCheckPauseNotice,
     }),
-    [loadForegroundRange, loadAppWeek, 
+    [loadForegroundRange, loadAppWeek, loadDayTotalsRange, 
       activeTab,
       permission,
       permissionDismissed,

@@ -131,3 +131,106 @@ export function updatedLabel(nowMs: number, atMs: number | null): string {
   const d = new Date(atMs);
   return `Updated at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+
+/** The line chart's range choices, in days. "Month" is the last 30 days. */
+export const RANGE_DAYS = [7, 14, 30] as const;
+export type RangeDays = (typeof RANGE_DAYS)[number];
+
+/** The last `n` local days ending at `today`, oldest first (chronological, as a line reads). Pure. */
+export function rangeDaysChronological(today: string, n: number): string[] {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today);
+  if (!m) return [];
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i -= 1) {
+    const dt = new Date(y, mo, d - i);
+    out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`);
+  }
+  return out;
+}
+
+/**
+ * Line points for a range. `values` are per day, null where the day is not recorded (a gap, never
+ * zero). Today is partial: drawn hollow and labelled, and never extrapolated. Pure.
+ */
+export function buildRangePoints(
+  days: readonly string[],
+  values: readonly (number | null)[],
+  selectedDay: string,
+  todayDay: string,
+): { label: string; value: number | null; partial: boolean; selected: boolean; day: string }[] {
+  return days.map((day, i) => ({
+    label: String(Number(day.slice(8))),
+    value: values[i] ?? null,
+    partial: day === todayDay,
+    selected: day === selectedDay,
+    day,
+  }));
+}
+
+/** Coloured sitting block on the day ribbon. `left` and `width` are fractions of the day (0..1). */
+export type RibbonBlock = {
+  key: string;
+  app: string;
+  startMs: number;
+  endMs: number;
+  left: number;
+  width: number;
+  /** Index into the category palette. Top apps get their own hue; the rest share the last one. */
+  colourIndex: number;
+};
+
+/**
+ * Sittings across one local day as ribbon blocks. Each sitting is clipped to the day. The colour is
+ * the app's rank among the day's apps (`appOrder`, most used first), with everything past the
+ * top `topN` sharing one neutral hue. Colour separates categories only. Pure.
+ */
+export function ribbonBlocks(
+  sessions: readonly { id?: string; app: string; startMs: number; endMs: number }[],
+  day: string,
+  appOrder: readonly string[],
+  topN = 5,
+): RibbonBlock[] {
+  const bounds = dayBounds(day);
+  if (!bounds) return [];
+  const span = bounds.toMs - bounds.fromMs;
+  const out: RibbonBlock[] = [];
+  sessions.forEach((s, i) => {
+    const start = Math.max(bounds.fromMs, s.startMs);
+    const end = Math.min(bounds.toMs, s.endMs);
+    if (end <= start) return;
+    const rank = appOrder.indexOf(s.app);
+    out.push({
+      key: s.id ?? `${s.app}-${i}`,
+      app: s.app,
+      startMs: start,
+      endMs: end,
+      left: (start - bounds.fromMs) / span,
+      width: (end - start) / span,
+      colourIndex: rank >= 0 && rank < topN ? rank : topN,
+    });
+  });
+  return out.sort((a, b) => a.startMs - b.startMs);
+}
+
+/** The block under a fraction `x` (0..1) of the ribbon, or the nearest within `slop` (fraction). Pure. */
+export function ribbonIndexAt(blocks: readonly RibbonBlock[], x: number, slop = 0.02): number | null {
+  let best: number | null = null;
+  let bestDist = Infinity;
+  blocks.forEach((b, i) => {
+    const dist = x >= b.left && x <= b.left + b.width ? 0 : Math.min(Math.abs(x - b.left), Math.abs(x - (b.left + b.width)));
+    if (dist <= slop && dist < bestDist) {
+      best = i;
+      bestDist = dist;
+    }
+  });
+  return best;
+}
+
+/** "09:10" for an epoch-ms time on the local clock. Pure given the timezone. */
+export function clockLabel(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}

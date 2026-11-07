@@ -1,3 +1,4 @@
+import { MIN_LABELS } from '@mirror/core-analytics';
 import * as React from 'react';
 import { View } from 'react-native';
 import {
@@ -63,7 +64,7 @@ export function InsightsTab(): React.ReactElement {
     setWhatIfQuietPreset,
     whatIfActiveScenarios,
     toggleWhatIfScenario,
-    allLabelCounts,
+    dayLabelCounts,
     p3Reliable,
     orphanCount,
     totalGaps,
@@ -90,8 +91,10 @@ export function InsightsTab(): React.ReactElement {
   const isToday = selectedDay === toDayStr(Date.now());
   const quietLabel = whatIfQuietPreset === '22-07' ? '22:00–07:00' : '23:00–05:00';
 
-  // Explicit labels across loaded history, through the shared counter (rule gate applied).
-  const explicitLabelCount = allLabelCounts?.decisive ?? 0;
+  // The same count the Sessions meter shows: the selected day, through the shared counter with the rule
+  // gate applied. Curiosity and the Sessions unlock must agree, so both read this one number.
+  const explicitLabelCount = dayLabelCounts?.decisive ?? 0;
+  const curiosityUnlocked = explicitLabelCount >= MIN_LABELS;
 
   const sittingCount = dayScoredSessions.length;
   const bandTotalCount = React.useMemo(
@@ -269,7 +272,7 @@ export function InsightsTab(): React.ReactElement {
               <View
                 style={{
                   borderRadius: theme.radius.md,
-                  backgroundColor: theme.color.card,
+                  backgroundColor: theme.glass.panel.fill,
                   borderWidth: 1,
                   borderColor: theme.color.borderCard,
                   padding: theme.space(3),
@@ -325,7 +328,7 @@ export function InsightsTab(): React.ReactElement {
                 testID="whatif-combinable-scenarios"
                 style={{
                   borderRadius: theme.radius.md,
-                  backgroundColor: theme.color.card,
+                  backgroundColor: theme.glass.panel.fill,
                   borderWidth: 1,
                   borderColor: theme.color.borderCard,
                   padding: theme.space(3),
@@ -429,7 +432,7 @@ export function InsightsTab(): React.ReactElement {
                   testID="whatif-combined-card"
                   style={{
                     borderRadius: theme.radius.md,
-                    backgroundColor: theme.color.card,
+                    backgroundColor: theme.glass.panel.fill,
                     borderWidth: 1,
                     borderColor: theme.color.anchor,
                     padding: theme.space(3),
@@ -507,7 +510,7 @@ export function InsightsTab(): React.ReactElement {
                       key={sc.id}
                       style={{
                         borderRadius: theme.radius.md,
-                        backgroundColor: theme.color.card,
+                        backgroundColor: theme.glass.panel.fill,
                         borderWidth: 1,
                         borderColor: isScenarioOn ? theme.color.anchor : theme.color.borderCard,
                         padding: theme.space(3),
@@ -671,7 +674,7 @@ export function InsightsTab(): React.ReactElement {
               caption="only explicit user labels count — duration hints never count"
             />
           </View>
-          {curiosity ? (
+          {curiosity && curiosityUnlocked ? (
             <View style={{ gap: theme.space(2.5) }}>
               {(() => {
                 const labelledMs = curiosity.deepMs + curiosity.habitMs;
@@ -688,7 +691,7 @@ export function InsightsTab(): React.ReactElement {
                     <View
                       style={{
                         borderRadius: theme.radius.md,
-                        backgroundColor: theme.color.card,
+                        backgroundColor: theme.glass.panel.fill,
                         borderWidth: 1,
                         borderColor: theme.color.borderCard,
                         padding: theme.space(3),
@@ -748,8 +751,16 @@ export function InsightsTab(): React.ReactElement {
           ) : (
             <View style={{ gap: theme.space(2.5) }}>
               <EmptyState
-                title={`Coming with more data (${explicitLabelCount} of 5 explicit labels)`}
-                body="Mirror will not infer whether an open was curiosity or habit from duration or app category. Label 5 or more sittings in Sessions to unlock this split."
+                title={
+                  curiosityUnlocked
+                    ? 'Not enough labelled sittings to split yet'
+                    : `Coming with more data (${explicitLabelCount} of ${MIN_LABELS} explicit labels)`
+                }
+                body={
+                  curiosityUnlocked
+                    ? 'The split needs labelled sittings outside excluded apps. Mirror will not guess the rest from duration or app category.'
+                    : `Mirror will not infer whether an open was curiosity or habit from duration or app category. Label ${MIN_LABELS} or more sittings on this day in Sessions to unlock this split.`
+                }
                 action={
                   <LinkButton theme={theme} onPress={() => setActiveTab('sessions')}>
                     Label sittings in Sessions
@@ -794,7 +805,7 @@ export function InsightsTab(): React.ReactElement {
               <View
                 style={{
                   borderRadius: theme.radius.md,
-                  backgroundColor: theme.color.card,
+                  backgroundColor: theme.glass.panel.fill,
                   borderWidth: 1,
                   borderColor: theme.color.borderCard,
                   padding: theme.space(3),

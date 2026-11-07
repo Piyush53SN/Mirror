@@ -613,7 +613,7 @@ export function AttentionBudgetSection(): React.ReactElement {
             testID="budget-editor-panel"
             style={{
               borderRadius: theme.radius.md,
-              backgroundColor: theme.color.card,
+              backgroundColor: theme.glass.panel.fill,
               borderWidth: 1,
               borderColor: theme.color.borderCard,
               padding: theme.space(3),
@@ -939,7 +939,7 @@ export function AttentionBudgetSection(): React.ReactElement {
                   testID={`insights-budget-card-${item.id}`}
                   style={{
                     borderRadius: theme.radius.md,
-                    backgroundColor: theme.color.card,
+                    backgroundColor: theme.glass.panel.fill,
                     borderWidth: 1,
                     borderColor: theme.color.borderCard,
                     padding: theme.space(3),

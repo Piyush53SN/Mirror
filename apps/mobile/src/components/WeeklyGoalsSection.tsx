@@ -463,7 +463,7 @@ export function WeeklyGoalsSection({
               testID="goal-editor-panel"
               style={{
                 borderRadius: theme.radius.md,
-                backgroundColor: theme.color.card,
+                backgroundColor: theme.glass.panel.fill,
                 borderWidth: 1,
                 borderColor: theme.color.borderCard,
                 padding: theme.space(3),
@@ -702,7 +702,7 @@ export function WeeklyGoalsSection({
                     testID={`insights-goal-card-${item.id}`}
                     style={{
                       borderRadius: theme.radius.md,
-                      backgroundColor: theme.color.card,
+                      backgroundColor: theme.glass.panel.fill,
                       borderWidth: 1,
                       borderColor: theme.color.borderCard,
                       padding: theme.space(3),

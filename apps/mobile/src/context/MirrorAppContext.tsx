@@ -239,6 +239,7 @@ export type MirrorAppContextValue = {
   loadForegroundRange?: (range: { fromMs: number; toMs: number }) => Promise<{ app: string; label: string; totalMs: number }[]>;
   /** One app's foreground time per day; null for unrecorded days. */
   loadAppWeek?: (app: string, days: readonly { day: string; recorded: boolean }[]) => Promise<(number | null)[]>;
+  loadDayTotalsRange?: (days: readonly { day: string; recorded: boolean }[]) => Promise<(number | null)[]>;
 
   sessions: SessionRow[];
   dailyTotals: DailyTotal[];

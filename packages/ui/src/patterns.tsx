@@ -560,7 +560,7 @@ export function WidgetPreview({
         width,
         height: 158,
         borderRadius: t.radius.card,
-        backgroundColor: variant === 'public' ? t.color.anchor : t.color.card,
+        backgroundColor: variant === "public" ? t.color.anchor : t.glass.panel.fill,
         borderWidth: 1,
         borderColor: t.color.borderCard,
         padding: t.space(4),

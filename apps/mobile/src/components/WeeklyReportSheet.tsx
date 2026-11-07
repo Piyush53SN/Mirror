@@ -323,7 +323,7 @@ export function WeeklyReportSheet({
           testID="weekly-report-metrics"
           style={{
             borderRadius: theme.radius.md,
-            backgroundColor: theme.color.card,
+            backgroundColor: theme.glass.panel.fill,
             borderWidth: 1,
             borderColor: theme.color.borderCard,
             padding: theme.space(3),
@@ -372,7 +372,7 @@ export function WeeklyReportSheet({
           testID="weekly-report-prior-week"
           style={{
             borderRadius: theme.radius.md,
-            backgroundColor: theme.color.card,
+            backgroundColor: theme.glass.panel.fill,
             borderWidth: 1,
             borderColor: theme.color.borderCard,
             padding: theme.space(3),
@@ -410,7 +410,7 @@ export function WeeklyReportSheet({
           testID="weekly-report-your-labels"
           style={{
             borderRadius: theme.radius.md,
-            backgroundColor: theme.color.card,
+            backgroundColor: theme.glass.panel.fill,
             borderWidth: 1,
             borderColor: theme.color.borderCard,
             padding: theme.space(3),
@@ -454,7 +454,7 @@ export function WeeklyReportSheet({
           testID="weekly-report-top-apps"
           style={{
             borderRadius: theme.radius.md,
-            backgroundColor: theme.color.card,
+            backgroundColor: theme.glass.panel.fill,
             borderWidth: 1,
             borderColor: theme.color.borderCard,
             padding: theme.space(3),
@@ -492,7 +492,7 @@ export function WeeklyReportSheet({
             testID="weekly-report-goals-snapshot"
             style={{
               borderRadius: theme.radius.md,
-              backgroundColor: theme.color.card,
+              backgroundColor: theme.glass.panel.fill,
               borderWidth: 1,
               borderColor: theme.color.borderCard,
               padding: theme.space(3),
@@ -522,7 +522,7 @@ export function WeeklyReportSheet({
           testID="weekly-report-per-day"
           style={{
             borderRadius: theme.radius.md,
-            backgroundColor: theme.color.card,
+            backgroundColor: theme.glass.panel.fill,
             borderWidth: 1,
             borderColor: theme.color.borderCard,
             padding: theme.space(3),

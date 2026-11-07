@@ -7,7 +7,8 @@
  * over 40px, so a hard drop shadow would be a lie).
  */
 import * as React from 'react';
-import { View, ScrollView, Pressable, Animated } from '../host';
+import { View, ScrollView, Pressable, Animated, BackHandler, PanResponder } from '../host';
+import { isSheetDragStart, sheetDragOffset, sheetReleaseAction } from './sheetDrag';
 import type { PressableProps } from '../host';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, Pattern, Rect, RadialGradient, Image as SvgImage, Stop } from 'react-native-svg';
@@ -37,7 +38,8 @@ export function Backdrop({ theme }: { theme?: MirrorTheme }) {
   const t = withTheme(theme);
   const p = t.palette;
   return (
-    <View pointerEvents="none" style={[FILL, { backgroundColor: p.gradient[0] }]}>
+    // Clipped to its own bounds, so the gradient and grain never draw past a rounded tile.
+    <View pointerEvents="none" style={[FILL, { backgroundColor: p.gradient[0], overflow: 'hidden' }]}>
       <LinearGradient colors={p.gradient as unknown as [string, string, ...string[]]} start={GRADIENT_START} end={GRADIENT_END} style={FILL} />
       <Svg width="100%" height="100%" viewBox={GLOW_VIEWBOX} preserveAspectRatio="none" style={FILL}>
         <Defs>
@@ -132,35 +134,144 @@ export function GlassSurface({
   );
 }
 
-/** A card sunk into the shell: the surface the reference uses for content. */
-export function Card({
+/* ------------------------------------------------------- shared glass panel --- */
+
+export type GlowName = 'teal' | 'violet' | 'indigo' | 'none';
+
+/** Glow colour for a card. Neutral hues only; a glow never says good or bad. */
+export function glowColour(t: MirrorTheme, glow: GlowName): string | undefined {
+  if (glow === 'none') return undefined;
+  if (glow === 'violet') return t.palette.glowViolet;
+  if (glow === 'indigo') return t.palette.glowIndigo;
+  return t.palette.glowTeal;
+}
+
+/** Splits an rgba() string into a hex colour and its alpha, for SVG stops. Null when it does not parse. Pure. */
+export function rgbaParts(value: string): { hex: string; alpha: number } | null {
+  const m = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)/.exec(value);
+  if (!m) return null;
+  const hex = `#${[m[1], m[2], m[3]].map((v) => Number(v).toString(16).padStart(2, '0')).join('')}`;
+  return { hex, alpha: m[4] === undefined ? 1 : Number(m[4]) };
+}
+
+/** Soft top highlight: a gradient from the panel highlight to clear, over the top 45%. No blur. */
+export function PanelHighlight({ theme }: { theme: MirrorTheme }) {
+  const p = theme.palette.panelHighlight;
+  return (
+    <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: '45%' }}>
+      <LinearGradient
+        colors={[p, 'transparent'] as unknown as [string, string]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={FILL}
+      />
+    </View>
+  );
+}
+
+/** Coloured glow: a radial gradient that fades to clear, drawn in the card's corner. Static, no blur. */
+function GlowLayer({ colour, name }: { colour: string; name: string }) {
+  const parts = rgbaParts(colour);
+  if (!parts) return null;
+  const { hex, alpha } = parts;
+  const id = `card-glow-${name}`;
+  return (
+    <View pointerEvents="none" style={FILL}>
+      <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style={FILL}>
+        <Defs>
+          <RadialGradient id={id} cx="85%" cy="0%" r="80%">
+            <Stop offset="0" stopColor={hex} stopOpacity={alpha} />
+            <Stop offset="1" stopColor={hex} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect width="100" height="100" fill={`url(#${id})`} />
+      </Svg>
+    </View>
+  );
+}
+
+/**
+ * The one shared panel material. Every nested panel, card and chip uses it: a translucent tint
+ * (never a flat grey), a hairline border and a soft top highlight. It clips its children to its
+ * radius, so no backdrop, grain or glow layer can show as a square edge. Nothing here blurs.
+ */
+export function GlassPanel({
   children,
-  elevated,
+  radius = 'card',
+  glow = 'none',
   style,
   theme,
+  testID,
 }: {
   children?: React.ReactNode;
-  elevated?: boolean;
+  radius?: keyof MirrorTheme['radius'];
+  glow?: GlowName;
   style?: StyleProp<ViewStyle>;
   theme?: MirrorTheme;
+  testID?: string;
 }) {
   const t = withTheme(theme);
+  const colour = glowColour(t, glow);
   return (
     <View
+      testID={testID}
+      // The audit reads these from the owning panel: the glow and the highlight both sit under its text.
+      data-glow={colour}
+      data-gradient={[t.palette.panelHighlight, 'transparent']}
       style={[
         {
-          borderRadius: t.radius.card,
-          padding: t.space(4),
-          marginBottom: t.space(3),
-          backgroundColor: elevated ? t.color.elevated : t.glass.card.fill,
-          borderWidth: elevated ? 0 : 1,
+          borderRadius: t.radius[radius],
+          overflow: 'hidden',
+          backgroundColor: t.glass.panel.fill,
+          borderWidth: 1,
           borderColor: t.color.borderCard,
-          ...tileShadow(t),
         },
         style,
       ]}
     >
+      {colour ? <GlowLayer colour={colour} name={`${t.name}-${glow}`} /> : null}
+      <PanelHighlight theme={t} />
       {children}
+    </View>
+  );
+}
+
+/** A card sunk into the shell: a GlassPanel with padding and the ambient shadow outside its clip. */
+export function Card({
+  children,
+  elevated,
+  glow = 'teal',
+  style,
+  theme,
+  testID,
+}: {
+  children?: React.ReactNode;
+  elevated?: boolean;
+  glow?: GlowName;
+  style?: StyleProp<ViewStyle>;
+  theme?: MirrorTheme;
+  testID?: string;
+}) {
+  const t = withTheme(theme);
+  if (elevated) {
+    return (
+      <View
+        testID={testID}
+        style={[
+          { borderRadius: t.radius.card, padding: t.space(4), marginBottom: t.space(3), backgroundColor: t.color.elevated, ...tileShadow(t) },
+          style,
+        ]}
+      >
+        {children}
+      </View>
+    );
+  }
+  // The shadow sits on an outer view: iOS clips shadows of a view that has overflow hidden.
+  return (
+    <View style={[{ borderRadius: t.radius.card, marginBottom: t.space(3), backgroundColor: t.glass.panel.fill }, tileShadow(t), style]}>
+      <GlassPanel theme={t} glow={glow} style={{ padding: t.space(4) }} testID={testID}>
+        {children}
+      </GlassPanel>
     </View>
   );
 }
@@ -306,11 +417,15 @@ export function Toolbar({
 /* ----------------------------------------------------------------- Sheet ---- */
 
 /**
- * A bottom sheet — uses an opaque `theme.color.card` surface so underlying text
- * never bleeds through and contrast stays >= 4.5:1 across dark and light themes.
- * `dismissible` is always true by construction: the scrim and the handle are both
- * real >= 48dp `Pressable` targets for TalkBack, and `accessibilityViewIsModal`
- * keeps screen-reader focus inside the open sheet.
+ * A bottom sheet. Five ways to close it, each tested:
+ *   1. drag the handle or header down past the snap threshold (or flick down);
+ *   2. tap the scrim outside the sheet;
+ *   3. the Android back button (hardwareBackPress);
+ *   4. the visible Close button, which is also the TalkBack route;
+ *   5. the handle, a 48dp Pressable.
+ * Snap points are OPEN (rest) and DISMISSED (off the bottom). Dragging up is rubber-banded.
+ * Motion uses the theme's durations, so reduce-motion closes and snaps instantly.
+ * The surface is solid (the same panel hue family), so text never sits on a live layer.
  */
 export function Sheet({
   open,
@@ -333,6 +448,69 @@ export function Sheet({
 }) {
   const t = withTheme(theme);
   const { height } = useWindowDimensions();
+  const sheetHeight = (height * parseInt(maxHeight, 10)) / 100;
+  const dragY = React.useRef(new Animated.Value(0)).current;
+  const [sheetH, setSheetH] = React.useState(sheetHeight);
+  const closingRef = React.useRef(false);
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
+  const dismiss = React.useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const run = (): void => {
+      closingRef.current = false;
+      dragY.setValue(0);
+      onCloseRef.current();
+    };
+    const duration = t.motion('base');
+    if (duration <= 0) {
+      run();
+      return;
+    }
+    Animated.timing(dragY, { toValue: sheetH, duration, useNativeDriver: true }).start(({ finished }) => {
+      if (finished) run();
+    });
+  }, [dragY, sheetH, t]);
+
+  const snapBack = React.useCallback(() => {
+    const duration = t.motion('fast');
+    if (duration <= 0) {
+      dragY.setValue(0);
+      return;
+    }
+    Animated.timing(dragY, { toValue: 0, duration, useNativeDriver: true }).start();
+  }, [dragY, t]);
+
+  // Android back closes the sheet while it is open (and is consumed, so the screen behind stays).
+  React.useEffect(() => {
+    if (!open) return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismiss();
+      return true;
+    });
+    return () => sub.remove();
+  }, [open, dismiss]);
+
+  // Reset the drag whenever the sheet opens again.
+  React.useEffect(() => {
+    if (open) dragY.setValue(0);
+  }, [open, dragY]);
+
+  const pan = React.useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => isSheetDragStart(g.dx, g.dy),
+        onPanResponderMove: (_e, g) => dragY.setValue(sheetDragOffset(g.dy)),
+        onPanResponderRelease: (_e, g) => {
+          if (sheetReleaseAction(g.dy, g.vy, sheetH) === 'dismiss') dismiss();
+          else snapBack();
+        },
+        onPanResponderTerminate: () => snapBack(),
+      }),
+    [dragY, dismiss, snapBack, sheetH],
+  );
+
   if (!open) return null;
   return (
     <View
@@ -341,7 +519,7 @@ export function Sheet({
     >
       {/* scrim: tapping outside closes, and it is always at least 48dp in both dimensions */}
       <Pressable
-        onPress={onClose}
+        onPress={dismiss}
         {...a11yTarget(`Dismiss ${title}`)}
         style={{
           position: 'absolute',
@@ -354,44 +532,73 @@ export function Sheet({
           minHeight: t.size.touchTarget,
         }}
       />
-      <View
+      <Animated.View
+        data-gradient={[t.palette.panelHighlight, 'transparent']}
+        onLayout={(e: { nativeEvent: { layout: { height: number } } }) => setSheetH(e.nativeEvent.layout.height)}
         style={{
-          backgroundColor: t.color.card,
+          backgroundColor: t.glass.sheet.fill,
           borderTopLeftRadius: t.radius.sheet,
           borderTopRightRadius: t.radius.sheet,
           borderWidth: 1,
           borderColor: t.color.borderCard,
+          overflow: 'hidden',
           // A bounded column: the scroll area below takes what is left after the handle and
           // header, so long content (e.g. three budget suggestions) scrolls instead of clipping.
           maxHeight: (height * parseInt(maxHeight, 10)) / 100,
           flexShrink: 1,
           paddingBottom: t.space(6) + Math.max(0, bottomInset),
+          transform: [{ translateY: dragY }],
         }}
       >
-        {/* grab handle: 48dp tall Pressable, the visible bar is 4dp */}
-        <Pressable
-          onPress={onClose}
-          {...a11yTarget(`Close ${title}`)}
-          style={{
-            width: '100%',
-            height: t.size.touchTarget,
-            minWidth: t.size.touchTarget,
-            minHeight: t.size.touchTarget,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <View style={{ width: 40, height: 4, borderRadius: t.radius.pill, backgroundColor: t.color.borderCard }} />
-        </Pressable>
-        <View accessible accessibilityRole="header" style={{ paddingHorizontal: t.space(4), paddingBottom: t.space(2) }}>
-          <Text role="title-lg" theme={t}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text role="label" tone="muted" theme={t}>
-              {subtitle}
-            </Text>
-          ) : null}
+        <PanelHighlight theme={t} />
+        {/* Drag area: the grab handle and the header. A 48dp Pressable closes it too. */}
+        <View {...pan.panHandlers}>
+          <Pressable
+            onPress={dismiss}
+            {...a11yTarget(`Close ${title}`)}
+            style={{
+              width: '100%',
+              height: t.size.touchTarget,
+              minWidth: t.size.touchTarget,
+              minHeight: t.size.touchTarget,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <View style={{ width: 40, height: 4, borderRadius: t.radius.pill, backgroundColor: t.color.borderCard }} />
+          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: t.space(2), paddingHorizontal: t.space(4), paddingBottom: t.space(2) }}>
+            <View accessible accessibilityRole="header" style={{ flex: 1, flexShrink: 1 }}>
+              <Text role="title-lg" theme={t}>
+                {title}
+              </Text>
+              {subtitle ? (
+                <Text role="label" tone="muted" theme={t}>
+                  {subtitle}
+                </Text>
+              ) : null}
+            </View>
+            {/* The visible Close: 48dp, labelled for TalkBack, same action as the other paths. */}
+            <Pressable
+              testID="sheet-close"
+              onPress={dismiss}
+              {...a11yTarget(`Close ${title}`)}
+              style={{
+                minHeight: t.size.touchTarget,
+                minWidth: t.size.touchTarget,
+                paddingHorizontal: t.space(3),
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: t.radius.pill,
+                borderWidth: 1,
+                borderColor: t.color.inkMuted,
+              }}
+            >
+              <Text role="label" theme={t} style={{ fontWeight: '600' }}>
+                Close
+              </Text>
+            </Pressable>
+          </View>
         </View>
         <ScrollView
           style={{ flexGrow: 0, flexShrink: 1 }}
@@ -401,7 +608,7 @@ export function Sheet({
         >
           {children}
         </ScrollView>
-      </View>
+      </Animated.View>
     </View>
   );
 }

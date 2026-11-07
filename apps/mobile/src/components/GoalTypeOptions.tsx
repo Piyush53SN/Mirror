@@ -62,7 +62,7 @@ export function GoalTypeOptions({
       press: () => onSelect(opt.id),
       rowStyle: {
         ...rowBase,
-        backgroundColor: selected ? theme.color.anchor : theme.color.card,
+        backgroundColor: selected ? theme.color.anchor : theme.glass.panel.fill,
         borderColor: selected ? theme.color.anchor : theme.color.borderCard,
       },
       dotStyle: {
