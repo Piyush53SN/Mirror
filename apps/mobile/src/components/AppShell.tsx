@@ -1,8 +1,10 @@
 import * as React from 'react';
-import { ScrollView, StatusBar, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StatusBar, View } from 'react-native';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { Backdrop, Callout, Pill, TabBar, Text, Toolbar, rgba, tabBarMetrics, useLiveBlur, useTheme } from '@mirror/ui';
 import { TAB_ITEMS } from '@mirror/ui/tabs';
 import { useMirrorApp, type TabKey } from '../context/MirrorAppContext';
+import { useAppearance } from '../appearance/AppearanceContext';
 import { useSafeInsets } from './useSafeInsets';
 import { WeeklyReportSheet } from './WeeklyReportSheet';
 import { SettingsSheet } from './SettingsSheet';
@@ -13,11 +15,16 @@ export function AppShell({
   subtitle,
   actions,
   children,
+  onRefresh,
+  refreshing = false,
 }: {
   title: string;
   subtitle?: string;
   actions?: React.ReactNode;
   children: React.ReactNode;
+  /** Pull-to-refresh. Omit for tabs that have nothing to refresh. */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }): React.ReactElement {
   const theme = useTheme();
   const {
@@ -55,10 +62,15 @@ export function AppShell({
         style={{ flex: 1 }}
       >
         <View style={{ paddingTop: topInset, paddingLeft: insets.left, paddingRight: insets.right }}>
-          <Toolbar title={title} subtitle={subtitle} actions={actions} theme={theme} />
+          <Toolbar title={title} subtitle={subtitle} actions={<HeaderActions actions={actions} />} theme={theme} />
         </View>
         <ScrollView
           style={{ flex: 1 }}
+          refreshControl={
+            onRefresh ? (
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.color.anchor} colors={[theme.color.anchor]} />
+            ) : undefined
+          }
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingHorizontal: horizontalInset,
@@ -152,6 +164,49 @@ export function AppShell({
         onClose={() => setShowWeeklyReport?.(false)}
       />
       <SettingsSheet open={Boolean(showSettings)} onClose={() => setShowSettings?.(false)} />
+    </View>
+  );
+}
+
+/** Actions slot plus the sun/moon control. Sets an explicit light or dark preference (48dp). */
+function HeaderActions({ actions }: { actions?: React.ReactNode }): React.ReactElement {
+  const theme = useTheme();
+  const { setAppearance } = useAppearance();
+  const toLight = theme.isDark;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space(1) }}>
+      {actions}
+      <Pressable
+        testID="header-theme-toggle"
+        accessibilityRole="button"
+        accessibilityLabel={toLight ? 'Switch to light appearance' : 'Switch to dark appearance'}
+        accessibilityState={{ checked: !theme.isDark }}
+        onPress={() => setAppearance(toLight ? 'light' : 'dark')}
+        style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}
+      >
+        {theme.isDark ? (
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Circle cx={12} cy={12} r={4} stroke={theme.color.ink} strokeWidth={2} fill="none" />
+            {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+              <Line
+                key={deg}
+                x1={12}
+                y1={2}
+                x2={12}
+                y2={4.5}
+                stroke={theme.color.ink}
+                strokeWidth={2}
+                strokeLinecap="round"
+                transform={`rotate(${deg} 12 12)`}
+              />
+            ))}
+          </Svg>
+        ) : (
+          <Svg width={22} height={22} viewBox="0 0 24 24">
+            <Path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke={theme.color.ink} strokeWidth={2} fill="none" strokeLinejoin="round" />
+          </Svg>
+        )}
+      </Pressable>
     </View>
   );
 }

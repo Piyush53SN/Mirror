@@ -72,9 +72,11 @@ export function Pill({
   const t = withTheme(theme);
   const height = size ?? 44;
   const press = usePressableBase(t, height, onPress, disabled);
-  const baseBackground = variant === 'primary' ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
+  // A selected pill is filled with the anchor, so the chosen option reads at a glance (not only to TalkBack).
+  const isFilled = variant === 'primary' || selected === true;
+  const baseBackground = isFilled ? t.color.anchor : variant === 'secondary' ? t.glass.chip.fill : 'transparent';
   const background = disabled ? t.glass.chip.fill : baseBackground;
-  const colour = disabled ? t.color.inkMuted : variant === 'primary' ? t.color.onAnchor : t.color.ink;
+  const colour = disabled ? t.color.inkMuted : isFilled ? t.color.onAnchor : t.color.ink;
   // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array at runtime
   const rawChildren: unknown = accessibilityLabel ?? children;
   const labelForA11y = typeof rawChildren === 'string' ? rawChildren : Array.isArray(rawChildren) ? rawChildren.join(' ') : String(rawChildren ?? '');

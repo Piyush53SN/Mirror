@@ -200,12 +200,15 @@ function audit(tree, theme, label) {
     }
     if (ratio < required) failures.push(`${label}: "${t.text.slice(0, 48)}" ${t.colour} ${ratio.toFixed(2)}:1 < ${required}`);
   }
+  // Graphics (donut segments are filled arcs, rings and lines are strokes) need 3:1 against their tile.
   for (const g of graphics) {
-    if (g.kind !== 'stroke') continue;
     checkedGraphics += 1;
     const { ratio, unparsed } = worstContrast(g.colour, g.layers, gradient);
-    if (unparsed) continue;
-    if (ratio < 3) failures.push(`${label}: stroke ${g.colour} ${ratio.toFixed(2)}:1 < 3 against its tile`);
+    if (unparsed) {
+      failures.push(`${label}: unparsed ${g.kind} colour ${g.colour}`);
+      continue;
+    }
+    if (ratio < 3) failures.push(`${label}: ${g.kind} ${g.colour} ${ratio.toFixed(2)}:1 < 3 against its tile`);
   }
   return { checkedText, checkedGraphics, failures };
 }
@@ -256,7 +259,8 @@ for (const name of ['dark', 'light']) {
       const theme = ui.createTheme(name);
       const result = audit(renderer.toJSON(), theme, `${surface.name}/${name}`);
       assert.ok(result.checkedText > 20, `expected many rendered text nodes, checked ${result.checkedText}`);
-      if (surface.name === 'home+why') assert.ok(result.checkedGraphics >= 1, 'expected the donut arcs to be audited');
+      // Five apps plus "Other" = six donut arcs, each audited (plus the sun/moon and chart strokes).
+      if (surface.name === 'home+why') assert.ok(result.checkedGraphics >= 6, `expected six donut arcs to be audited, checked ${result.checkedGraphics}`);
       assert.deepEqual(result.failures, [], result.failures.join('\n'));
     });
   }
@@ -283,4 +287,19 @@ test('the audit catches a failing pair (so a pass means something)', () => {
   };
   const result = audit(bad, ui.createTheme('light'), 'probe');
   assert.equal(result.failures.length, 1, 'a light grey on white must fail body contrast');
+});
+
+test('the audit flags a donut segment under 3:1 against its tile', () => {
+  const tile = { type: 'div', props: { style: { backgroundColor: '#ffffff' } }, children: [] };
+  const bad = {
+    ...tile,
+    children: [{ type: 'svg', props: { 'data-svg': 'path', fill: 'none', stroke: '#f2f2f2' }, children: [] }],
+  };
+  const good = {
+    ...tile,
+    children: [{ type: 'svg', props: { 'data-svg': 'path', fill: 'none', stroke: '#1a6e6a' }, children: [] }],
+  };
+  const dark = ui.createTheme('dark');
+  assert.ok(audit(bad, dark, 'probe').failures.some((f) => /stroke #f2f2f2/.test(f)), 'low-contrast segment must be reported');
+  assert.deepEqual(audit(good, dark, 'probe').failures, []);
 });

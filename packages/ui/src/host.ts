@@ -20,6 +20,8 @@ export {
   Platform,
   StyleSheet,
   useWindowDimensions,
+  Animated,
+  RefreshControl,
 } from 'react-native';
 
-export type { ViewStyle, TextStyle, StyleProp, TextInputProps } from 'react-native';
+export type { ViewStyle, TextStyle, StyleProp, TextInputProps, PressableProps } from 'react-native';

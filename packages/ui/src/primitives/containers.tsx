@@ -7,7 +7,8 @@
  * over 40px, so a hard drop shadow would be a lie).
  */
 import * as React from 'react';
-import { View, ScrollView, Pressable } from '../host';
+import { View, ScrollView, Pressable, Animated } from '../host';
+import type { PressableProps } from '../host';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Circle, Defs, Pattern, Rect, RadialGradient, Image as SvgImage, Stop } from 'react-native-svg';
 import { GRAIN_DATA_URI, GRAIN_TILE_PX } from '../grain';
@@ -589,5 +590,92 @@ export function Ring({
         {caption}
       </Text>
     </View>
+  );
+}
+
+/* ------------------------------------------------------- press + entrance --- */
+
+/**
+ * Press feedback: the child eases to 98% while pressed (instant, 90 ms). The gesture and the
+ * press handlers are the Pressable's own, so accessibility and hit targets are unchanged.
+ * Under reduce-motion the duration is 0 and nothing scales.
+ */
+export function PressScale({
+  children,
+  theme,
+  onPressIn,
+  onPressOut,
+  ...rest
+}: PressableProps & { theme?: MirrorTheme; children: React.ReactNode }) {
+  const t = withTheme(theme);
+  const scale = React.useRef(new Animated.Value(1)).current;
+  const ease = (to: number) => {
+    const duration = t.motion('instant');
+    if (duration <= 0) {
+      scale.setValue(to);
+      return;
+    }
+    Animated.timing(scale, { toValue: to, duration, useNativeDriver: true }).start();
+  };
+  return (
+    <Pressable
+      {...rest}
+      onPressIn={(e) => {
+        ease(0.98);
+        onPressIn?.(e);
+      }}
+      onPressOut={(e) => {
+        ease(1);
+        onPressOut?.(e);
+      }}
+    >
+      <Animated.View style={{ flex: 1, transform: [{ scale }] }}>{children}</Animated.View>
+    </Pressable>
+  );
+}
+
+/** Staggered entrance step and the cap on how many steps are staggered. Total stays under 300 ms. */
+export const ENTER_STEP_MS = 30;
+export const ENTER_MAX_STEPS = 4;
+
+/**
+ * One tile of a staggered entrance: fades in and rises 8 dp. Delay is index x 30 ms, capped at
+ * four steps, then 160 ms (fast). Maximum 280 ms. Off when `enabled` is false or under reduce-motion.
+ */
+export function EnterTile({
+  index,
+  enabled,
+  theme,
+  children,
+}: {
+  index: number;
+  enabled: boolean;
+  theme?: MirrorTheme;
+  children: React.ReactNode;
+}) {
+  const t = withTheme(theme);
+  const anim = React.useRef(new Animated.Value(enabled ? 0 : 1)).current;
+  React.useEffect(() => {
+    if (!enabled) return undefined;
+    const duration = t.motion('fast');
+    if (duration <= 0) {
+      anim.setValue(1);
+      return undefined;
+    }
+    const delay = Math.min(index, ENTER_MAX_STEPS) * ENTER_STEP_MS;
+    const run = Animated.timing(anim, { toValue: 1, duration, delay, useNativeDriver: true });
+    run.start();
+    return () => run.stop();
+    // Runs once per mount: the entrance plays when the tab first appears, not on every render.
+  }, []);
+  return (
+    <Animated.View
+      style={{
+        opacity: anim,
+        transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }],
+      }}
+    >
+      {children}
+    </Animated.View>
   );
 }

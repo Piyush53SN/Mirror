@@ -103,6 +103,7 @@ import {
   type UpdateReminderPrefsResult,
   type IntentCheckCardState,
 } from './context/MirrorAppContext';
+import { dayBounds } from './homeCharts';
 
 export function MirrorAppProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [activeTab, setActiveTab] = React.useState<TabKey>('home');
@@ -1746,6 +1747,48 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
     setPermissionDismissed(false);
   }, []);
 
+  /**
+   * Read-only foreground totals for a range, from the same events the day totals use: live OS
+   * events, falling back to Mirror's stored events. Used by the app sheet and the hour list.
+   */
+  const loadForegroundRange = React.useCallback(
+    async (range: { fromMs: number; toMs: number }): Promise<{ app: string; label: string; totalMs: number }[]> => {
+      const runtime = runtimeRef.current;
+      if (!runtime) return [];
+      const [live, stored] = await Promise.all([
+        runtime.liveDayForegroundTotals(range).catch(() => []),
+        runtime.storedForegroundTotals(range).catch(() => []),
+      ]);
+      const src = live.length > 0 ? live : stored;
+      const totals = new Map<string, number>();
+      for (const r of src) totals.set(r.packageName, (totals.get(r.packageName) ?? 0) + r.totalMs);
+      const apps = [...totals.entries()]
+        .filter(([app, ms]) => ms > 0 && !isExcludedApp(app, { ignorePackages: launcherPackages }))
+        .map(([app, totalMs]) => ({ app, totalMs }));
+      const labels = await resolveAppLabels(apps.map((a) => a.app)).catch(() => ({}) as Record<string, string>);
+      return apps.map((a) => ({ ...a, label: labels[a.app] ?? a.app })).sort((a, b) => b.totalMs - a.totalMs);
+    },
+    [launcherPackages],
+  );
+
+  /** One app's foreground time for each day (null where the day is not recorded: never zero). */
+  const loadAppWeek = React.useCallback(
+    async (app: string, days: readonly { day: string; recorded: boolean }[]): Promise<(number | null)[]> => {
+      const out: (number | null)[] = [];
+      for (const d of days) {
+        const bounds = dayBounds(d.day);
+        if (!d.recorded || !bounds) {
+          out.push(null);
+          continue;
+        }
+        const rows = await loadForegroundRange(bounds).catch(() => []);
+        out.push(rows.find((r) => r.app === app)?.totalMs ?? 0);
+      }
+      return out;
+    },
+    [loadForegroundRange],
+  );
+
   const value = React.useMemo<MirrorAppContextValue>(
     () => ({
       activeTab,
@@ -1768,6 +1811,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       lastReset,
       selectedDay,
       setSelectedDay,
+      loadForegroundRange,
+      loadAppWeek,
       dayOptions,
       sessions,
       dailyTotals,
@@ -1861,7 +1906,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       answerIntentCheck,
       acknowledgeIntentCheckPauseNotice,
     }),
-    [
+    [loadForegroundRange, loadAppWeek, 
       activeTab,
       permission,
       permissionDismissed,

@@ -565,7 +565,8 @@ test('populated 5-tab shell renders fixed 0–100 score scale with separate unme
       });
     }
     const json = renderer.toJSON();
-    const rawTree = JSON.stringify(json);
+    // The ScrollView refreshControl prop is a React element with circular fiber links; leave it out of the text scan.
+    const rawTree = JSON.stringify(json, (k, v) => (k === 'refreshControl' ? undefined : v));
     const fullText = collectText(json).join(' ');
     assert.doesNotMatch(rawTree, /none of which is not/i, `tab ${activeTab} must never render double negative`);
     assert.doesNotMatch(rawTree, /You sign in with OAuth/i, `tab ${activeTab} must hide OAuth copy until a connector exists`);

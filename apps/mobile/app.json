@@ -21,7 +21,7 @@
     },
     "android": {
       "package": "dev.mirror.app",
-      "versionCode": 10,
+      "versionCode": 11,
       "permissions": [
         "android.permission.PACKAGE_USAGE_STATS",
         "android.permission.POST_NOTIFICATIONS"

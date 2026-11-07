@@ -37,12 +37,12 @@ export function buildWeekPoints(report: WeeklyReportResult | null | undefined, s
   }));
 }
 
-export type DonutSlice = { label: string; value: number };
+export type DonutSlice = { label: string; value: number; /** Package name; absent for the "Other" slice. */ app?: string };
 
 /** Top five apps by day-clipped foreground time, plus one "Other" slice for the rest. */
 export function buildDonutSlices(totals: readonly DailyTotal[], topN = 5): DonutSlice[] {
   const sorted = [...totals].filter((t) => t.totalMs > 0).sort((a, b) => b.totalMs - a.totalMs);
-  const top = sorted.slice(0, topN).map((t) => ({ label: t.label, value: t.totalMs }));
+  const top: DonutSlice[] = sorted.slice(0, topN).map((t) => ({ label: t.label, value: t.totalMs, app: t.app }));
   const rest = sorted.slice(topN).reduce((sum, t) => sum + t.totalMs, 0);
   if (rest > 0) top.push({ label: 'Other', value: rest });
   return top;
@@ -81,4 +81,53 @@ export function buildHourBuckets(
 /** Hour label for a 0..23 hour, e.g. 9 -> "09:00". */
 export function hourLabel(hour: number): string {
   return `${String(hour).padStart(2, '0')}:00`;
+}
+
+/** Local-midnight bounds of a YYYY-MM-DD day, as epoch milliseconds. Pure. */
+export function dayBounds(day: string): { fromMs: number; toMs: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  return { fromMs: new Date(y, mo, d).getTime(), toMs: new Date(y, mo, d + 1).getTime() };
+}
+
+/** Local-hour bounds of hour `hour` (0..23) on `day`. Pure. */
+export function hourBounds(day: string, hour: number): { fromMs: number; toMs: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]) - 1;
+  const d = Number(m[3]);
+  return { fromMs: new Date(y, mo, d, hour).getTime(), toMs: new Date(y, mo, d, hour + 1).getTime() };
+}
+
+/**
+ * The day one step away from `day` in `options` (newest first, as `lastNDays` returns them).
+ * `delta` +1 is the next newer day, -1 the previous older day. Null at either end. Pure.
+ */
+export function adjacentDay(options: readonly string[], day: string, delta: 1 | -1): string | null {
+  const i = options.indexOf(day);
+  if (i < 0) return null;
+  const j = i - delta; // newest first: moving to a newer day lowers the index
+  return j >= 0 && j < options.length ? options[j] : null;
+}
+
+/** Hour (0..23) under x for a strip `width` wide. Pure, clamped. */
+export function hourFromX(x: number, width: number): number {
+  if (width <= 0) return 0;
+  const h = Math.floor((Math.max(0, Math.min(width - 1e-6, x)) / width) * 24);
+  return Math.max(0, Math.min(23, h));
+}
+
+/** "Updated just now" / "Updated 5 min ago" / "Updated at 14:05". Pure. */
+export function updatedLabel(nowMs: number, atMs: number | null): string {
+  if (atMs === null) return 'Not updated yet this session';
+  const sec = Math.max(0, Math.round((nowMs - atMs) / 1000));
+  if (sec < 60) return 'Updated just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `Updated ${min} min ago`;
+  const d = new Date(atMs);
+  return `Updated at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }

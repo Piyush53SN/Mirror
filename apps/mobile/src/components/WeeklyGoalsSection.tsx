@@ -30,7 +30,7 @@ import {
 } from '../context/MirrorAppContext';
 import { useResolvedBudgets } from './AttentionBudgetSection';
 import { useResolvedWeeklyReport } from './WeeklyReportSheet';
-import { GOAL_KIND_OPTIONS, GoalTypeOptions } from './GoalTypeOptions';
+import { GoalTypeOptions } from './GoalTypeOptions';
 
 const MIN_MS = 60_000;
 const HOUR_MS = 3_600_000;
@@ -485,9 +485,6 @@ export function WeeklyGoalsSection({
                     setFormErrors([]);
                   }}
                 />
-                <Text role="micro" tone="muted" theme={theme}>
-                  {GOAL_KIND_OPTIONS.find((o) => o.id === kind)?.description ?? ''}
-                </Text>
               </View>
 
               <View style={{ gap: theme.space(1) }}>

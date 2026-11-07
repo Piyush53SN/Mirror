@@ -6,7 +6,7 @@
  * Presentation only. Every number comes from the existing context; nothing here computes a metric.
  */
 import * as React from 'react';
-import { Animated, View } from 'react-native';
+import { Animated, PanResponder, View } from 'react-native';
 import {
   Callout,
   Card,
@@ -15,11 +15,14 @@ import {
   EmptyState,
   LinkButton,
   Pill,
+  EnterTile,
   Surface,
   Text,
   TierBadge,
   announceValue,
   heroTheme,
+  useCountUp,
+  useSweep,
   useTheme,
   type MirrorTheme,
 } from '@mirror/ui';
@@ -31,6 +34,8 @@ import { WeeklySummaryCard } from '../components/WeeklySummaryCard';
 import { IntentCheckCard } from '../components/IntentCheckCard';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 import { HourStripCard, TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
+import { AppDetailSheet, type AppDetailTarget } from '../components/AppDetailSheet';
+import { adjacentDay, updatedLabel } from '../homeCharts';
 
 const GAUGE_TICKS = 18;
 const GAUGE_START_DEG = -210;
@@ -59,7 +64,9 @@ function IqsHeroGauge({ iqs, theme, measuredMax }: { iqs: Score | null; theme: M
   const unmeasuredMax = Math.max(0, scaleMax - measuredMax);
   const hasScore = iqs !== null && iqs.value !== null && measuredMax > 0;
   const ratio = hasScore ? Math.max(0, Math.min(1, (iqs.value ?? 0) / measuredMax)) : 0;
-  const activeTicks = hasScore ? Math.round(ratio * GAUGE_TICKS) : 0;
+  // Ticks sweep to the score (once per app session, immediate under reduce-motion).
+  const sweep = useSweep(ratio, theme);
+  const activeTicks = hasScore ? Math.round(sweep * GAUGE_TICKS) : 0;
 
   const size = theme.size.ring + theme.space(3); // 108dp
   const center = size / 2;
@@ -166,6 +173,8 @@ export const inverseHeroTheme = heroTheme;
 
 // Set once per app session: the hero number settles on first load only, not on every tab switch.
 let heroSettled = false;
+// Set once per app session: the tile stagger plays on first Home render only.
+let tilesEntered = false;
 
 /** Fades and lifts the hero numeral once. Off under reduce-motion (duration 0). */
 function SettleOnce({ theme, children }: { theme: MirrorTheme; children: React.ReactNode }): React.ReactElement {
@@ -192,7 +201,6 @@ export function HomeTab(): React.ReactElement {
   const {
     selectedDay,
     collectingSince,
-    lastCollect,
     error,
     keyMismatch,
     resetStoredData,
@@ -209,8 +217,59 @@ export function HomeTab(): React.ReactElement {
     checkPermissionAndCollect,
     setActiveTab,
     weeklyReport,
+    dayOptions,
+    setSelectedDay,
   } = useMirrorApp();
   const hero = React.useMemo(() => heroTheme(theme), [theme]);
+  const [now, setNow] = React.useState(() => Date.now());
+  const [updatedAt, setUpdatedAt] = React.useState<number | null>(null);
+  const [refreshing, setRefreshing] = React.useState(false);
+  const [detailApp, setDetailApp] = React.useState<AppDetailTarget | null>(null);
+
+  // Keeps "Updated 5 min ago" honest without a refresh: re-reads the clock every 30 s.
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30000);
+    // Node (tests) keeps the process alive for open timers; RN's timer is a number, so this is a no-op there.
+    (id as unknown as { unref?: () => void }).unref?.();
+    return () => clearInterval(id);
+  }, []);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await checkPermissionAndCollect();
+    } finally {
+      const done = Date.now();
+      setUpdatedAt(done);
+      setNow(done);
+      setRefreshing(false);
+    }
+  }, [checkPermissionAndCollect]);
+
+  // Swipe sideways to step through the days in dayOptions (newest first).
+  const dayOptionsRef = React.useRef(dayOptions);
+  dayOptionsRef.current = dayOptions;
+  const selectedRef = React.useRef(selectedDay);
+  selectedRef.current = selectedDay;
+  const swipe = React.useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dx) > 28 && Math.abs(g.dx) > 2 * Math.abs(g.dy),
+        onPanResponderRelease: (_e, g) => {
+          if (Math.abs(g.dx) < 60) return;
+          // Swipe left goes to an older day, swipe right to a newer one.
+          const next = adjacentDay(dayOptionsRef.current, selectedRef.current, g.dx < 0 ? -1 : 1);
+          if (next) setSelectedDay(next);
+        },
+      }),
+    [setSelectedDay],
+  );
+
+  // Entrance stagger runs once per app session; later tab switches show tiles at once.
+  const animateEntry = !tilesEntered;
+  React.useEffect(() => {
+    tilesEntered = true;
+  }, []);
 
   const totalScreenMs = React.useMemo(() => dailyTotals.reduce((sum, item) => sum + item.totalMs, 0), [dailyTotals]);
   const sittingCount = dayScoredSessions.length;
@@ -221,7 +280,8 @@ export function HomeTab(): React.ReactElement {
   }, [iqs]);
   const unmeasuredMax = Math.max(0, (iqs && iqs.max > 0 ? iqs.max : 100) - measuredMax);
 
-  const isToday = selectedDay === toDayStr(Date.now());
+  const isToday = selectedDay === toDayStr(now);
+  const countedScore = useCountUp(iqs && iqs.value !== null ? Math.round(iqs.value) : null, hero);
   const homeSentence = React.useMemo(
     () =>
       buildPlainHomeSentence({
@@ -252,20 +312,27 @@ export function HomeTab(): React.ReactElement {
         : 'Day-clipped OS foreground events · matches Digital Wellbeing';
 
   const openWhy = (): void => setShowWhy(true);
+  const openApp = (target: AppDetailTarget): void => setDetailApp(target);
+  const stagger = (index: number): { index: number; enabled: boolean } => ({ index, enabled: animateEntry });
 
   return (
     <AppShell
       title={`Mirror · ${selectedDay}`}
       subtitle={headerSubtitle}
+      onRefresh={onRefresh}
+      refreshing={refreshing}
       actions={
-        <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
+        <Pill theme={theme} variant="secondary" onPress={onRefresh}>
           Refresh
         </Pill>
       }
     >
-      <Text role="micro" tone="muted" theme={theme}>
-        {`${lastCollect ?? 'Collector idle'} · On-device · encrypted`}
-      </Text>
+      <View testID="home-updated-label">
+        <Text role="micro" tone="muted" theme={theme}>
+          {`${updatedLabel(now, updatedAt)} · On-device · encrypted`}
+        </Text>
+      </View>
+      <View {...swipe.panHandlers} style={{ gap: theme.space(3) }}>
 
       {error ? (
         <Callout theme={theme} tone="limit">
@@ -297,6 +364,7 @@ export function HomeTab(): React.ReactElement {
 
       <DayPickerStrip />
 
+      <EnterTile index={0} enabled={animateEntry} theme={hero}>
       {/* 1. Hero: Attention signal, measured points, unmeasured points listed separately */}
       <Surface
         radius="hero"
@@ -341,7 +409,7 @@ export function HomeTab(): React.ReactElement {
                 <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: theme.space(1.5), flexWrap: 'wrap' }}>
                   <SettleOnce theme={hero}>
                     <Text role={iqs.value === null ? 'title-lg' : 'display'} theme={hero}>
-                      {iqs.value === null ? 'Not enough activity yet' : String(Math.round(iqs.value))}
+                      {iqs.value === null ? 'Not enough activity yet' : countedScore !== null ? String(countedScore) : String(Math.round(iqs.value))}
                     </Text>
                   </SettleOnce>
                   {iqs.value !== null ? (
@@ -389,23 +457,39 @@ export function HomeTab(): React.ReactElement {
         )}
       </Surface>
 
-      {/* 2. Seven-day chart */}
-      <WeekTrendCard report={weeklyReport} selectedDay={selectedDay} />
+      </EnterTile>
 
-      {/* 3. Where time went: donut with its source and a link to the numbers */}
-      <TimeSplitCard totals={dailyTotals} sourceLabel={sourceLabel} onWhy={openWhy} />
+      {/* 2. Seven-day chart */}
+      <EnterTile {...stagger(1)} theme={theme}>
+        <WeekTrendCard report={weeklyReport} selectedDay={selectedDay} />
+      </EnterTile>
+
+      {/* 3. Where time went: donut with its source and the info button */}
+      <EnterTile {...stagger(2)} theme={theme}>
+        <TimeSplitCard totals={dailyTotals} sourceLabel={sourceLabel} onWhy={openWhy} onOpenApp={openApp} />
+      </EnterTile>
 
       {/* 4. Sitting time through the 24 hours */}
-      <HourStripCard sessions={dayScoredSessions} day={selectedDay} />
+      <EnterTile {...stagger(3)} theme={theme}>
+        <HourStripCard sessions={dayScoredSessions} day={selectedDay} />
+      </EnterTile>
 
       {/* 5. Attention budgets (same day-clipped foreground totals as Home) */}
-      <HomeBudgetStrip />
+      <EnterTile {...stagger(4)} theme={theme}>
+        <HomeBudgetStrip />
+      </EnterTile>
 
       {/* 6. Weekly summary (same engine as the full report) */}
-      <WeeklySummaryCard />
+      <EnterTile {...stagger(4)} theme={theme}>
+        <WeeklySummaryCard />
+      </EnterTile>
 
       {/* 7. Optional one-tap Intent Check question (off by default) */}
-      <IntentCheckCard />
+      <EnterTile {...stagger(4)} theme={theme}>
+        <IntentCheckCard />
+      </EnterTile>
+      </View>
+      <AppDetailSheet target={detailApp} onClose={() => setDetailApp(null)} />
     </AppShell>
   );
 }

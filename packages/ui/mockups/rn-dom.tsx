@@ -280,3 +280,9 @@ export const Animated = {
   }),
 };
 export const useColorScheme = (): 'light' | 'dark' => 'dark';
+
+/** Test shims: refresh control renders nothing; pan responder hands out no handlers. */
+export const RefreshControl = () => null;
+export const PanResponder = {
+  create: () => ({ panHandlers: {} }),
+};
