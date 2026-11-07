@@ -309,15 +309,20 @@ export function Donut({
 /* --------------------------------------------------------------- LineChart --- */
 
 export type LinePoint = {
+  /** Short axis label (weekday, or day of month). */
   label: string;
   /** Null means "no data for this day". It is drawn as a gap, never as zero. */
   value: number | null;
-  /** The day has less than a full local day recorded. Drawn hollow and labelled partial. */
+  /** Today, so far: drawn as a dashed, hollow end and left out of the average. */
   partial?: boolean;
   /** The day the user has selected. Highlighted with a guide line and a larger dot. */
   selected?: boolean;
   /** Local day (YYYY-MM-DD), passed back when a day is tapped. */
   day?: string;
+  /** Full tooltip text, e.g. "Thu 5 Nov · 4h 19m". Falls back to label and value. */
+  tooltip?: string;
+  /** Why there is no value, e.g. "before history". Used in the bubble and the text alternative. */
+  note?: string;
 };
 
 /** Width of the left column that holds the y-axis labels. */
@@ -328,32 +333,38 @@ export type LineChartProps = {
   theme: MirrorTheme;
   /** Formats one value for the text alternative and bubble, e.g. "1h 20m". */
   formatValue: (v: number) => string;
+  /** Short y-axis label, e.g. "2h". Defaults to formatValue. Must stay on one line. */
+  formatTick?: (v: number) => string;
+  /** Y-axis ticks, ascending, starting at 0. The last tick is the top of the plot. Defaults to 0, half, top. */
+  yTicks?: readonly number[];
   height?: number;
   /** Shown as the chart's name in the text alternative. */
   title: string;
   /** Show the day labels under the plot. Sparklines turn this off. */
   showLabels?: boolean;
-  /** Dashed line at the average of the recorded days, with a label. */
+  /** Dashed line at the average of the recorded days (today so far is left out), with a label. */
   showAverage?: boolean;
   /** Tap a day (a tap, not a drag). Receives the index into `points`. */
   onSelectIndex?: (index: number) => void;
   /** Controlled scrub position for previews and tests. Null or absent: follow the touch. */
   scrubIndex?: number | null;
+  /** Shows a light skeleton over the plot while data loads. The chart stays mounted. */
+  loading?: boolean;
   testID?: string;
 };
 
 /** Builds the TalkBack summary for a line chart. Pure. */
 export function describeLine(points: readonly LinePoint[], formatValue: (v: number) => string, title: string): string {
   const parts = points.map((p) => {
-    if (p.value === null) return `${p.label} no data`;
-    return `${p.label} ${formatValue(p.value)}${p.partial ? ' (partial day)' : ''}`;
+    if (p.value === null) return `${p.label} ${p.note ?? 'no data'}`;
+    return `${p.label} ${formatValue(p.value)}${p.partial ? ' (today so far, partial)' : ''}`;
   });
   return `${title}. ${parts.join('. ')}.`;
 }
 
-/** Mean of the recorded (non-null) values, or null when none. Pure. */
+/** Mean of the recorded (non-null, not partial) values, or null when none. Pure. */
 export function lineAverage(points: readonly LinePoint[]): number | null {
-  const vals = points.map((p) => p.value).filter((v): v is number => v !== null);
+  const vals = points.filter((p) => !p.partial).map((p) => p.value).filter((v): v is number => v !== null);
   if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
@@ -365,7 +376,7 @@ export function scrubIndexFromX(x: number, plotWidth: number, n: number): number
   return Math.max(0, Math.min(n - 1, i));
 }
 
-/** Top of the y-axis: the largest recorded value, or 1 when there is none. Pure. */
+/** Top of the y-axis: the largest recorded value, or 0 when there is none. Pure. */
 export function axisMax(points: readonly LinePoint[]): number {
   return points.reduce((m, p) => (p.value !== null && p.value > m ? p.value : m), 0);
 }
@@ -383,18 +394,19 @@ export type LineGeometry = {
 export const LINE_PAD_X = 14;
 
 /** Pixel geometry for a line chart of `width` x `height`. Pure. Gaps split the runs. */
-export function lineGeometry(points: readonly LinePoint[], width: number, height: number): LineGeometry {
+export function lineGeometry(points: readonly LinePoint[], width: number, height: number, topValue?: number): LineGeometry {
   const max = axisMax(points);
-  const scaleMax = max > 0 ? max * 1.15 : 1;
+  const scaleMax = topValue && topValue > 0 ? topValue : max > 0 ? max * 1.15 : 1;
   const inner = Math.max(0, width - 2 * LINE_PAD_X);
   const step = points.length > 1 ? inner / (points.length - 1) : 0;
   const xs = points.map((_, i) => LINE_PAD_X + i * step);
   const ys = points.map((p) => (p.value === null ? null : height - (p.value / scaleMax) * height));
   const runs: string[] = [];
   let current = '';
-  points.forEach((_, i) => {
+  points.forEach((p, i) => {
     const y = ys[i];
-    if (y === null) {
+    // A partial (today so far) point is drawn as a dashed segment, not in the solid run.
+    if (y === null || p.partial) {
       if (current) runs.push(current);
       current = '';
       return;
@@ -409,12 +421,15 @@ export function LineChart({
   points,
   theme,
   formatValue,
+  formatTick,
+  yTicks,
   height = 140,
   title,
   showLabels = true,
   showAverage = false,
   onSelectIndex,
   scrubIndex = null,
+  loading = false,
   testID,
 }: LineChartProps): React.ReactElement {
   const [width, setWidth] = React.useState(0);
@@ -422,15 +437,19 @@ export function LineChart({
   const [focus, setFocus] = React.useState<number | null>(null);
   const originRef = React.useRef(0);
   const plotWidth = Math.max(0, width - Y_GUTTER);
-  const geo = React.useMemo(() => (plotWidth > 0 ? lineGeometry(points, plotWidth, height) : null), [points, plotWidth, height]);
+  const ticks = React.useMemo(() => (yTicks && yTicks.length > 1 ? [...yTicks] : [0, axisMax(points) / 2, axisMax(points)]), [yTicks, points]);
+  const topTick = ticks[ticks.length - 1] ?? 0;
+  const tickText = formatTick ?? formatValue;
+  const geo = React.useMemo(
+    () => (plotWidth > 0 ? lineGeometry(points, plotWidth, height, topTick) : null),
+    [points, plotWidth, height, topTick],
+  );
   const avg = React.useMemo(() => lineAverage(points), [points]);
   const active = scrubIndex ?? scrub ?? focus;
   const inkColour = theme.color.ink;
   const cardColour = theme.palette.panelSolid;
   const accent = theme.palette.chart[0];
   const n = points.length;
-  // Long ranges (14 and 30 days) thin the day labels; every value stays reachable by its own control.
-  const labelEvery = n > 10 ? Math.ceil(n / 7) : 1;
   const handleLayout = (e: LayoutChangeEvent): void => setWidth(e.nativeEvent.layout.width);
 
   const indexAtX = React.useCallback(
@@ -460,15 +479,21 @@ export function LineChart({
     if (!p) return null;
     const x = geo.xs[active] ?? 0;
     const y = geo.ys[active];
-    const bubbleW = 132;
+    const bubbleW = 176;
     const left = Math.max(0, Math.min(plotWidth - bubbleW, x - bubbleW / 2));
     const top = y === null || y === undefined ? 0 : Math.max(0, y - 50);
-    const text = p.value === null ? `${p.label} · no data` : `${p.label} · ${formatValue(p.value)}${p.partial ? ' (partial)' : ''}`;
+    const head = p.tooltip ?? p.label;
+    const text =
+      p.value === null
+        ? `${head} · ${p.note ?? 'no data'}`
+        : p.tooltip
+          ? p.tooltip
+          : `${p.label} · ${formatValue(p.value)}${p.partial ? ' (today so far)' : ''}`;
     return (
       <View
         testID={testID ? `${testID}-bubble` : undefined}
         pointerEvents="none"
-        style={{ position: 'absolute', left: Y_GUTTER + left, top, width: bubbleW, paddingVertical: theme.space(1), paddingHorizontal: theme.space(2), borderRadius: theme.radius.md, backgroundColor: theme.color.anchor }}
+        style={{ position: 'absolute', left: Y_GUTTER + left, top, width: bubbleW, paddingVertical: theme.space(1), paddingHorizontal: theme.space(2), borderRadius: theme.radius.md, backgroundColor: theme.palette.tabbarTint }}
       >
         <Text role="micro" theme={theme} style={{ color: theme.color.onAnchor, textAlign: 'center' }}>
           {text}
@@ -477,14 +502,11 @@ export function LineChart({
     );
   })();
 
-  const axis = [
-    { v: axisMax(points), y: 0 },
-    { v: axisMax(points) / 2, y: height / 2 },
-    { v: 0, y: height },
-  ];
-
   const interactive = Boolean(onSelectIndex);
-  const valueText = active !== null && active !== undefined && points[active] ? `${points[active].label}, ${points[active].value === null ? 'no data' : formatValue(points[active].value as number)}` : '';
+  const valueText =
+    active !== null && active !== undefined && points[active]
+      ? `${points[active].tooltip ?? points[active].label}, ${points[active].value === null ? points[active].note ?? 'no data' : formatValue(points[active].value as number)}`
+      : '';
   const a11y = interactive
     ? {
         accessibilityRole: 'adjustable' as const,
@@ -502,20 +524,26 @@ export function LineChart({
       }
     : { accessibilityRole: 'image' as const };
 
+  // Labels sit on the plot, centred under their point. Long ranges show every Nth label, plus the
+  // first, the last, the selected day, and any label that carries a month.
+  const labelEvery = n > 10 ? Math.ceil(n / 7) : 1;
+  const showLabelAt = (i: number): boolean => i % labelEvery === 0 || i === n - 1 || Boolean(points[i]?.selected) || points[i]?.label.includes(' ') === true;
+
   return (
     <View testID={testID} accessible accessibilityLabel={describeLine(points, formatValue, title)} {...a11y} onLayout={handleLayout}>
       <View style={{ flexDirection: 'row', height }}>
         <View style={{ width: Y_GUTTER, height }}>
           {width > 0
-            ? axis.map((t, i) => (
+            ? ticks.map((t, i) => (
                 <Text
                   key={`y${i}`}
                   role="micro"
                   tone="muted"
                   theme={theme}
-                  style={{ position: 'absolute', top: Math.max(0, Math.min(height - 14, t.y - 7)), left: 0, width: Y_GUTTER - theme.space(1.5), textAlign: 'right' }}
+                  numberOfLines={1}
+                  style={{ position: 'absolute', top: Math.max(0, Math.min(height - 14, height - (t / (topTick || 1)) * height - 7)), left: 0, width: Y_GUTTER - theme.space(1.5), textAlign: 'right' }}
                 >
-                  {formatValue(t.v)}
+                  {tickText(t)}
                 </Text>
               ))
             : null}
@@ -536,6 +564,9 @@ export function LineChart({
             {geo ? (
               <Svg width={plotWidth} height={height} viewBox={`0 0 ${plotWidth} ${height}`}>
                 <Line x1={0} x2={plotWidth} y1={height - 0.5} y2={height - 0.5} stroke={theme.color.borderHairline} strokeWidth={1} />
+                {ticks.slice(1, -1).map((t) => (
+                  <Line key={`t${t}`} x1={0} x2={plotWidth} y1={height - (t / topTick) * height} y2={height - (t / topTick) * height} stroke={theme.color.borderHairline} strokeWidth={1} opacity={0.5} />
+                ))}
                 {showAverage && avg !== null ? (
                   <Line
                     x1={0}
@@ -557,6 +588,31 @@ export function LineChart({
                   <Path key={`r${i}`} d={d} fill="none" stroke={accent} strokeWidth={3} strokeLinejoin="round" strokeLinecap="round" />
                 ))}
                 {points.map((p, i) => {
+                  // Dashed end for a partial day: from the last full point to today's point.
+                  if (!p.partial || geo.ys[i] === null) return null;
+                  let prev = -1;
+                  for (let j = i - 1; j >= 0; j -= 1) {
+                    if (geo.ys[j] !== null) {
+                      prev = j;
+                      break;
+                    }
+                  }
+                  if (prev < 0) return null;
+                  return (
+                    <Line
+                      key={`d${i}`}
+                      x1={geo.xs[prev]}
+                      y1={geo.ys[prev] as number}
+                      x2={geo.xs[i]}
+                      y2={geo.ys[i] as number}
+                      stroke={accent}
+                      strokeWidth={3}
+                      strokeDasharray="5 5"
+                      strokeLinecap="round"
+                    />
+                  );
+                })}
+                {points.map((p, i) => {
                   const y = geo.ys[i];
                   if (y === null || y === undefined) return null;
                   const r = p.selected || i === active ? 7 : 4;
@@ -567,7 +623,7 @@ export function LineChart({
                       cy={y}
                       r={r}
                       fill={p.partial ? cardColour : inkColour}
-                      stroke={p.partial ? inkColour : 'none'}
+                      stroke={p.partial ? accent : 'none'}
                       strokeWidth={p.partial ? 2 : 0}
                     />
                   );
@@ -575,6 +631,12 @@ export function LineChart({
               </Svg>
             ) : null}
           </Pressable>
+          {loading && geo ? (
+            // Skeleton over the plot while a range loads: the chart stays mounted under it.
+            <View testID="line-skeleton" pointerEvents="none" accessibilityLabel="Updating chart" style={{ position: 'absolute', left: 0, right: 0, top: 0, height, borderRadius: theme.radius.md, backgroundColor: theme.glass.chip.fill, opacity: 0.7 }}>
+              <View style={{ position: 'absolute', left: LINE_PAD_X, right: LINE_PAD_X, top: height / 2 - 6, height: 12, borderRadius: 6, backgroundColor: theme.color.borderHairline }} />
+            </View>
+          ) : null}
           {bubble ? <View pointerEvents="none" style={{ position: 'absolute', left: -Y_GUTTER, top: 0 }}>{bubble}</View> : null}
         </View>
       </View>
@@ -583,13 +645,22 @@ export function LineChart({
           {`Dashed line: average of recorded days, ${formatValue(avg)}`}
         </Text>
       ) : null}
-      {showLabels ? (
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginLeft: Y_GUTTER, marginTop: theme.space(1.5) }}>
-          {points.map((p, i) => (
-            <Text key={`l${i}`} role="micro" tone={p.selected ? undefined : 'muted'} theme={theme}>
-              {i % labelEvery === 0 || p.selected || i === n - 1 ? p.label : ''}
-            </Text>
-          ))}
+      {showLabels && plotWidth > 0 ? (
+        <View style={{ height: 18, marginLeft: Y_GUTTER, marginTop: theme.space(1.5), width: plotWidth }}>
+          {points.map((p, i) =>
+            showLabelAt(i) ? (
+              <Text
+                key={`l${i}`}
+                role="micro"
+                tone={p.selected ? undefined : 'muted'}
+                theme={theme}
+                numberOfLines={1}
+                style={{ position: 'absolute', left: (geo?.xs[i] ?? 0) - 28, width: 56, textAlign: 'center' }}
+              >
+                {p.label}
+              </Text>
+            ) : null,
+          )}
         </View>
       ) : null}
     </View>

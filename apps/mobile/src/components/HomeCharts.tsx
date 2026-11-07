@@ -19,23 +19,17 @@ import {
   type LinePoint,
   type MirrorTheme,
 } from '@mirror/ui';
-import Svg, { Rect } from 'react-native-svg';
+import { DayTimeline, TIMELINE_GUTTER } from './DayTimeline';
 import { formatDuration, useMirrorApp, type DailyTotal } from '../context/MirrorAppContext';
 import type { WeeklyReportResult } from '@mirror/core-analytics';
 import {
   buildDonutSlices,
   buildHourBuckets,
-  buildRangePoints,
   buildWeekPoints,
   clockLabel,
   hourBounds,
   hourFromX,
   hourLabel,
-  rangeDaysChronological,
-  ribbonBlocks,
-  ribbonIndexAt,
-  type RangeDays,
-  type RibbonBlock,
   weekdayShort,
   WEEK_MIN_RECORDED_DAYS,
 } from '../homeCharts';
@@ -85,184 +79,8 @@ function StepButton({ label, onPress, testID }: { label: string; onPress: () => 
 /* ------------------------------------------------------ 7-day line chart --- */
 
 /** The day a line point stands for. Range points always carry one; the type leaves it optional. */
-function dayOf(p: LinePoint | null | undefined): string {
-  return p?.day ?? '';
-}
+export { WeekTrendCard } from './WeekRangeChart';
 
-const RANGE_OPTIONS: { value: string; label: string }[] = [
-  { value: '7', label: '7 days' },
-  { value: '14', label: '14 days' },
-  { value: '30', label: 'Month' },
-];
-
-/**
- * The line chart with a range selector: 7 days (from the weekly report), 14 days or the last 30
- * ("Month"). Days with no recorded data are gaps, never zero. Today is partial: hollow, labelled,
- * never extrapolated. The longer ranges step with Previous and Next, so no value needs a drag.
- */
-export function WeekTrendCard({
-  report,
-  selectedDay,
-  todayDay,
-  historyStartDay,
-}: {
-  report: WeeklyReportResult | null | undefined;
-  selectedDay: string;
-  todayDay: string;
-  historyStartDay: string | null;
-}): React.ReactElement {
-  const theme = useTheme();
-  const { setSelectedDay, loadDayTotalsRange } = useMirrorApp();
-  const [range, setRange] = React.useState<RangeDays>(7);
-  const [longValues, setLongValues] = React.useState<(number | null)[] | null>(null);
-  const longDays = React.useMemo(() => rangeDaysChronological(todayDay, range), [todayDay, range]);
-
-  React.useEffect(() => {
-    if (range === 7 || !loadDayTotalsRange) {
-      setLongValues(null);
-      return undefined;
-    }
-    let live = true;
-    setLongValues(null);
-    // A day is recorded only from the history start up to today. Anything earlier is unmeasured.
-    const flags = longDays.map((day) => ({ day, recorded: historyStartDay !== null && day >= historyStartDay && day <= todayDay }));
-    loadDayTotalsRange(flags)
-      .then((values) => {
-        if (live) setLongValues(values);
-      })
-      .catch(() => {
-        if (live) setLongValues(flags.map(() => null));
-      });
-    return () => {
-      live = false;
-    };
-  }, [range, longDays, historyStartDay, todayDay, loadDayTotalsRange]);
-
-  const points: LinePoint[] | null =
-    range === 7
-      ? buildWeekPoints(report, selectedDay)
-      : longValues
-        ? buildRangePoints(longDays, longValues, selectedDay, todayDay)
-        : null;
-  const recorded = points ? points.filter((p) => p.value !== null).length : 0;
-  const selectDay = (index: number): void => {
-    const day = dayOf(points?.[index]);
-    if (day && day !== selectedDay) setSelectedDay(day);
-  };
-  const selectedIndex = points ? points.findIndex((p) => p.selected) : -1;
-  const step = (delta: 1 | -1): void => {
-    if (!points || points.length === 0) return;
-    // Nothing selected in this range yet: start from today (the newest day).
-    const from = selectedIndex < 0 ? points.length - 1 : selectedIndex;
-    const next = points[from + delta];
-    if (next && dayOf(next) !== selectedDay) setSelectedDay(dayOf(next));
-  };
-  const selectedPoint = selectedIndex >= 0 && points ? points[selectedIndex] : null;
-
-  return (
-    <Card theme={theme} style={{ marginBottom: 0 }} glow="teal">
-      <View testID="home-week-trend" style={{ gap: theme.space(2.5) }}>
-        <View style={{ gap: theme.space(0.5) }}>
-          <Text role="micro" tone="muted" theme={theme}>
-            {`${range === 30 ? 'LAST 30 DAYS' : `LAST ${range} DAYS`} · FOREGROUND TIME`}
-          </Text>
-          <Text role="title" theme={theme}>
-            Day by day
-          </Text>
-        </View>
-        <SegmentedControl
-          label="Chart range"
-          options={RANGE_OPTIONS}
-          value={String(range)}
-          onChange={(v) => setRange(Number(v) as RangeDays)}
-          theme={theme}
-        />
-        {points ? (
-          <>
-            <LineChart
-              testID="home-week-line"
-              points={points}
-              theme={theme}
-              formatValue={formatDuration}
-              title={`Foreground time, last ${range} days`}
-              showAverage
-              onSelectIndex={selectDay}
-            />
-            <Text role="micro" tone="muted" theme={theme}>
-              {`${recorded} of ${range} days recorded. Drag across the chart to read a day, or tap a day to open it on Home.`}
-            </Text>
-            {range === 7 ? (
-              /* Every value, reachable without dragging: one 48dp button per day. */
-              <View style={{ flexDirection: 'row', gap: theme.space(1) }}>
-                {points.map((p, i) => {
-                  const valueText = p.value === null ? 'no data' : formatDuration(p.value);
-                  return (
-                    <PressScale
-                      key={dayOf(p)}
-                      testID={`home-day-${dayOf(p)}`}
-                      theme={theme}
-                      onPress={() => selectDay(i)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: p.selected }}
-                      accessibilityLabel={`${weekdayShort(dayOf(p))}, ${valueText}${p.partial ? ', partial day' : ''}${p.selected ? ', selected' : ''}. Open this day.`}
-                      style={{
-                        flex: 1,
-                        minHeight: 48,
-                        borderRadius: theme.radius.md,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor: p.selected ? theme.color.anchor : 'transparent',
-                        paddingVertical: theme.space(1),
-                      }}
-                    >
-                      <Text role="micro" theme={theme} style={{ color: p.selected ? theme.color.onAnchor : theme.color.ink, fontWeight: '600' }}>
-                        {weekdayShort(dayOf(p))}
-                      </Text>
-                      <Text role="micro" theme={theme} style={{ color: p.selected ? theme.color.onAnchor : theme.color.inkMuted }}>
-                        {p.value === null ? '–' : formatDuration(p.value)}
-                      </Text>
-                    </PressScale>
-                  );
-                })}
-              </View>
-            ) : (
-              <View style={{ gap: theme.space(2) }}>
-                <View style={{ flexDirection: 'row', gap: theme.space(2) }}>
-                  <Pill theme={theme} variant="secondary" testID="home-range-prev" onPress={() => step(-1)} accessibilityLabel="Previous day in this range">
-                    Previous day
-                  </Pill>
-                  <Pill theme={theme} variant="secondary" testID="home-range-next" onPress={() => step(1)} accessibilityLabel="Next day in this range">
-                    Next day
-                  </Pill>
-                </View>
-                <View testID="home-range-readout">
-                <Text role="micro" tone="muted" theme={theme}>
-                  {selectedPoint
-                    ? `${weekdayShort(dayOf(selectedPoint))} ${selectedPoint.label}: ${selectedPoint.value === null ? 'no data recorded' : formatDuration(selectedPoint.value)}${selectedPoint.partial ? ' (partial, today so far)' : ''}`
-                    : 'Choose a day with Previous or Next, or drag across the chart.'}
-                </Text>
-                </View>
-              </View>
-            )}
-            {report && report.isPartialWeek && range === 7 ? (
-              <Text role="micro" tone="muted" theme={theme}>
-                {`Partial week: ${recorded} of 7 days recorded. Hollow dots are partial days. Gaps are days with no data, not zero.`}
-              </Text>
-            ) : null}
-          </>
-        ) : (
-          <Text role="label" tone="muted" theme={theme}>
-            {range === 7
-              ? `A week view needs at least ${WEEK_MIN_RECORDED_DAYS} recorded days. Coming with more data.`
-              : 'Loading this range…'}
-          </Text>
-        )}
-      </View>
-    </Card>
-  );
-}
-
-/** Category colours from the palette, in order. Each is >= 3:1 against the card tile. */
 export function categoryColours(theme: MirrorTheme, count: number): string[] {
   const chart = theme.palette.chart;
   return Array.from({ length: count }, (_, i) => chart[Math.min(i, chart.length - 1)]);
@@ -382,15 +200,21 @@ export function TimeSplitCard({
                       gap: theme.space(2),
                       paddingHorizontal: theme.space(2),
                       borderRadius: theme.radius.md,
-                      backgroundColor: isChosen ? theme.glass.chip.fill : 'transparent',
+                      // Selected: the soft tint with an accent border (one selected style, never a flat grey fill).
+                      backgroundColor: isChosen ? theme.palette.chipTint : 'transparent',
+                      borderWidth: isChosen ? 1 : 0,
+                      borderColor: theme.palette.primaryGradient[0],
                     }}
                   >
                     <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: s.color }} />
                     <Text role="micro" theme={theme} style={{ flex: 1, fontWeight: isChosen ? '700' : '400' }}>
                       {s.label}
                     </Text>
-                    <Text role="micro" tone="muted" theme={theme}>
-                      {`${pct}% · ${formatDuration(s.value)}`}
+                    <Text role="micro" tone="muted" theme={theme} style={{ fontVariant: ['tabular-nums'] }}>
+                      {`${pct}%`}
+                    </Text>
+                    <Text role="micro" tone="muted" theme={theme} style={{ minWidth: 56, textAlign: 'right', fontVariant: ['tabular-nums'] }}>
+                      {formatDuration(s.value)}
                     </Text>
                   </PressScale>
                 );
@@ -414,136 +238,6 @@ export function TimeSplitCard({
 
 /* ------------------------------------------------------- 24-hour strip --- */
 
-/**
- * The day ribbon: one coloured block per sitting across the local day, coloured by app rank. Tap a
- * block (or tap a row in the list, which is the 48dp route for every sitting) to see its app and
- * times. The blocks are sittings, not screen time, and the colour only tells apart categories.
- */
-function DayRibbon({
-  blocks,
-  labels,
-  day,
-}: {
-  blocks: RibbonBlock[];
-  labels: Record<string, string>;
-  day: string;
-}): React.ReactElement {
-  const theme = useTheme();
-  const [width, setWidth] = React.useState(0);
-  const [picked, setPicked] = React.useState<number | null>(null);
-  const [listOpen, setListOpen] = React.useState(false);
-  const palette = theme.palette.chart;
-  const colourOf = (b: RibbonBlock): string => palette[Math.min(b.colourIndex, palette.length - 1)];
-  const labelOf = (app: string): string => labels[app] ?? app;
-  const sel = picked !== null ? blocks[picked] : null;
-
-  React.useEffect(() => {
-    setPicked(null);
-    setListOpen(false);
-  }, [day]);
-
-  const pick = (i: number | null): void => setPicked((prev) => (i !== null && prev === i ? null : i));
-  const alt =
-    blocks.length === 0
-      ? 'No sittings recorded for this day.'
-      : `${blocks.length} ${blocks.length === 1 ? 'sitting' : 'sittings'} across the day, coloured by app. Use the sittings list to reach each one.`;
-
-  return (
-    <View testID="home-day-ribbon" style={{ gap: theme.space(1.5) }}>
-      <Pressable
-        testID="home-day-ribbon-track"
-        accessibilityRole="image"
-        accessibilityLabel={alt}
-        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
-        onPress={(e) => {
-          if (width <= 0) return;
-          pick(ribbonIndexAt(blocks, e.nativeEvent.locationX / width, 0.03));
-        }}
-        style={{ minHeight: theme.size.touchTarget, justifyContent: 'center' }}
-      >
-        <Svg width="100%" height={24} viewBox="0 0 1000 24" preserveAspectRatio="none">
-          {blocks.map((b, i) => (
-            <Rect
-              key={b.key}
-              x={b.left * 1000}
-              y={0}
-              width={Math.max(6, b.width * 1000)}
-              height={24}
-              rx={4}
-              fill={colourOf(b)}
-              stroke={picked === i ? theme.color.ink : 'none'}
-              strokeWidth={picked === i ? 3 : 0}
-            />
-          ))}
-        </Svg>
-      </Pressable>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }} pointerEvents="none">
-        <Text role="micro" tone="muted" theme={theme}>00</Text>
-        <Text role="micro" tone="muted" theme={theme}>06</Text>
-        <Text role="micro" tone="muted" theme={theme}>12</Text>
-        <Text role="micro" tone="muted" theme={theme}>18</Text>
-        <Text role="micro" tone="muted" theme={theme}>24</Text>
-      </View>
-      {sel ? (
-        <View testID="home-day-ribbon-detail" style={{ gap: theme.space(0.5) }}>
-          <Text role="label" theme={theme}>
-            {labelOf(sel.app)}
-          </Text>
-          <Text role="micro" tone="muted" theme={theme}>
-            {`${clockLabel(sel.startMs)} to ${clockLabel(sel.endMs)} · ${formatDuration(sel.endMs - sel.startMs)} sitting, clipped to this day`}
-          </Text>
-        </View>
-      ) : (
-        <Text role="micro" tone="muted" theme={theme}>
-          {blocks.length > 0 ? 'Tap a block to see its app and times.' : 'No sittings recorded for this day yet.'}
-        </Text>
-      )}
-      {blocks.length > 0 ? (
-        <View style={{ gap: theme.space(1) }}>
-          <Pill
-            testID="home-day-ribbon-list-toggle"
-            variant="secondary"
-            onPress={() => setListOpen((o) => !o)}
-            accessibilityLabel={listOpen ? 'Hide the sittings list' : `Show the sittings list, ${blocks.length} sittings`}
-          >
-            {listOpen ? 'Hide sittings' : `List sittings (${blocks.length})`}
-          </Pill>
-          {listOpen
-            ? blocks.map((b, i) => (
-                <PressScale
-                  key={`row-${b.key}`}
-                  testID={`home-sitting-${i}`}
-                  theme={theme}
-                  onPress={() => pick(i)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: picked === i }}
-                  accessibilityLabel={`${labelOf(b.app)}, ${clockLabel(b.startMs)} to ${clockLabel(b.endMs)}, ${formatDuration(b.endMs - b.startMs)}.${picked === i ? ' Selected.' : ''}`}
-                  style={{
-                    minHeight: 48,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: theme.space(2),
-                    paddingHorizontal: theme.space(2),
-                    borderRadius: theme.radius.md,
-                    backgroundColor: picked === i ? theme.palette.chipTint : 'transparent',
-                  }}
-                >
-                  <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: colourOf(b) }} />
-                  <Text role="micro" theme={theme} style={{ flex: 1 }}>
-                    {labelOf(b.app)}
-                  </Text>
-                  <Text role="micro" tone="muted" theme={theme}>
-                    {`${clockLabel(b.startMs)}–${clockLabel(b.endMs)}`}
-                  </Text>
-                </PressScale>
-              ))
-            : null}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
 export function HourStripCard({
   sessions,
   day,
@@ -559,7 +253,6 @@ export function HourStripCard({
 }): React.ReactElement {
   const theme = useTheme();
   const { loadForegroundRange } = useMirrorApp();
-  const blocks = React.useMemo(() => ribbonBlocks(sessions, day, appOrder), [sessions, day, appOrder]);
   const buckets = React.useMemo(() => buildHourBuckets(sessions, day), [sessions, day]);
   const maxMs = buckets.reduce((m, b) => (b.ms > m ? b.ms : m), 0);
   const busiest = buckets.reduce((best, b) => (b.ms > best.ms ? b : best), buckets[0]);
@@ -622,7 +315,7 @@ export function HourStripCard({
             Through the day
           </Text>
         </View>
-        <DayRibbon blocks={blocks} labels={labels} day={day} />
+        <DayTimeline sessions={sessions} day={day} labels={labels} appOrder={appOrder} />
         <Pressable
           testID="home-hour-bars"
           accessible
@@ -641,7 +334,7 @@ export function HourStripCard({
           }}
           style={{ gap: theme.space(1.5) }}
         >
-          <View pointerEvents="none" style={{ height: barAreaHeight, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+          <View pointerEvents="none" style={{ height: barAreaHeight, marginLeft: TIMELINE_GUTTER, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
             {buckets.map((b) => {
               const h = maxMs > 0 && b.ms > 0 ? Math.max(3, (b.ms / maxMs) * barAreaHeight) : 2;
               const isChosen = hour === b.hour;
@@ -658,11 +351,7 @@ export function HourStripCard({
               );
             })}
           </View>
-          <View pointerEvents="none" style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-            <Text role="micro" tone="muted" theme={theme}>00</Text>
-            <Text role="micro" tone="muted" theme={theme}>12</Text>
-            <Text role="micro" tone="muted" theme={theme}>23</Text>
-          </View>
+          {/* The 00-24 axis is the timeline's, above; the bars sit on the same track, so no second axis. */}
         </Pressable>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space(2) }}>
           <StepButton label="Previous hour" testID="home-hour-prev" onPress={() => move(-1)} />

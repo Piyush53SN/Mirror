@@ -132,101 +132,257 @@ export function updatedLabel(nowMs: number, atMs: number | null): string {
   return `Updated at ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
-/** The line chart's range choices, in days. "Month" is the last 30 days. */
+/** The line chart's range choices, in days. "Month" is the last 30. */
 export const RANGE_DAYS = [7, 14, 30] as const;
 export type RangeDays = (typeof RANGE_DAYS)[number];
 
-/** The last `n` local days ending at `today`, oldest first (chronological, as a line reads). Pure. */
-export function rangeDaysChronological(today: string, n: number): string[] {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today);
-  if (!m) return [];
-  const y = Number(m[1]);
-  const mo = Number(m[2]) - 1;
-  const d = Number(m[3]);
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+function parseDay(day: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function formatDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** The day `delta` days from `day` (local calendar arithmetic, no timezone shift). Pure. */
+export function addDays(day: string, delta: number): string {
+  const d = parseDay(day);
+  if (!d) return day;
+  return formatDay(new Date(d.getFullYear(), d.getMonth(), d.getDate() + delta));
+}
+
+/** The last `n` local days ending at `endDay`, oldest first. Pure. */
+export function rangeDaysChronological(endDay: string, n: number): string[] {
+  if (!parseDay(endDay)) return [];
   const out: string[] = [];
-  for (let i = n - 1; i >= 0; i -= 1) {
-    const dt = new Date(y, mo, d - i);
-    out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`);
+  for (let i = n - 1; i >= 0; i -= 1) out.push(addDays(endDay, -i));
+  return out;
+}
+
+/**
+ * The window's end day. It is anchored on today (or the latest day) and only moves when the user
+ * picks a day outside it. Selecting a day inside the window leaves it unchanged. Pure.
+ */
+export function windowEndFor(selectedDay: string, currentEnd: string, n: number, todayDay: string): string {
+  const start = addDays(currentEnd, -(n - 1));
+  if (selectedDay >= start && selectedDay <= currentEnd) return currentEnd;
+  if (selectedDay > currentEnd) return selectedDay > todayDay ? todayDay : selectedDay;
+  // Picked before the window: bring that day to the start of the window, never past today.
+  const end = addDays(selectedDay, n - 1);
+  return end > todayDay ? todayDay : end;
+}
+
+/**
+ * Prev / Next: move the highlight one day. The window scrolls only when the highlight would leave
+ * it at an edge. Never moves past today. Pure.
+ */
+export function stepSelection(
+  selectedDay: string,
+  direction: 1 | -1,
+  currentEnd: string,
+  n: number,
+  todayDay: string,
+): { selectedDay: string; endDay: string } {
+  const next = addDays(selectedDay, direction);
+  if (next > todayDay) return { selectedDay, endDay: currentEnd };
+  const start = addDays(currentEnd, -(n - 1));
+  if (next < start) return { selectedDay: next, endDay: addDays(next, n - 1) };
+  if (next > currentEnd) return { selectedDay: next, endDay: next };
+  return { selectedDay: next, endDay: currentEnd };
+}
+
+/**
+ * Days in the window that still need a fetch. Days before history starts, and days after today,
+ * are never fetched: they resolve to no data. Pure.
+ */
+export function missingDays(days: readonly string[], cache: ReadonlyMap<string, number | null>, historyStartDay: string | null, todayDay: string): string[] {
+  return days.filter((d) => !cache.has(d) && historyStartDay !== null && d >= historyStartDay && d <= todayDay);
+}
+
+/** Short axis label. Seven days: weekday. Longer ranges: day of month, with the month on the 1st and the first point. */
+export function axisLabelFor(day: string, index: number, n: number): string {
+  const d = parseDay(day);
+  if (!d) return day;
+  if (n <= 7) return WEEKDAYS[d.getDay()];
+  if (index === 0 || d.getDate() === 1) return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return String(d.getDate());
+}
+
+/** "Thu 5 Nov", the tooltip day. Pure. */
+export function tooltipDayLabel(day: string): string {
+  const d = parseDay(day);
+  if (!d) return day;
+  return `${WEEKDAYS[d.getDay()]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
+export type SeriesPoint = {
+  label: string;
+  tooltip: string;
+  value: number | null;
+  partial: boolean;
+  selected: boolean;
+  day: string;
+  /** Why there is no value, for the text alternative: 'before history', 'no data', or 'loading'. */
+  gap?: 'before history' | 'no data' | 'loading';
+};
+
+/**
+ * Points for the line chart. A day before history is a gap labelled "before history"; a day with
+ * no total is "no data" (never zero); a day not yet fetched is "loading". Today is partial. Pure.
+ */
+export function chartSeries(args: {
+  days: readonly string[];
+  totals: ReadonlyMap<string, number | null>;
+  historyStartDay: string | null;
+  todayDay: string;
+  selectedDay: string;
+  formatValue: (ms: number) => string;
+}): SeriesPoint[] {
+  const n = args.days.length;
+  return args.days.map((day, i) => {
+    const before = args.historyStartDay !== null && day < args.historyStartDay;
+    const loaded = args.totals.has(day);
+    const raw = loaded ? args.totals.get(day) ?? null : null;
+    const value = before ? null : raw;
+    const gap: SeriesPoint['gap'] = value !== null ? undefined : before ? 'before history' : loaded ? 'no data' : 'loading';
+    const partial = day === args.todayDay;
+    const when = tooltipDayLabel(day);
+    const tooltip =
+      value !== null
+        ? `${when}${partial ? ' · today so far' : ''} · ${args.formatValue(value)}`
+        : `${when} · ${gap === 'before history' ? 'before history' : gap === 'loading' ? 'loading' : 'no data'}`;
+    return {
+      label: axisLabelFor(day, i, n),
+      tooltip,
+      value,
+      partial,
+      selected: day === args.selectedDay,
+      day,
+      gap,
+    };
+  });
+}
+
+/**
+ * Nice y-axis ticks in ms: 0 and multiples of `stepMs`, enough to cover `max`, at most four
+ * intervals. Pure. Example: 4h19m with a 2h step gives [0, 2h, 4h, 6h].
+ */
+export function niceTicks(max: number, stepMs = 7200000): number[] {
+  let step = stepMs;
+  let top = Math.max(1, Math.ceil(max / step)) * step;
+  if (top / step > 4) {
+    step *= 2;
+    top = Math.ceil(max / step) * step;
+  }
+  const ticks: number[] = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+  return ticks;
+}
+
+/** Tick label for the y-axis: "0", "2h", "4h", "6h" (whole hours, one short line). Pure. */
+export function tickLabel(ms: number): string {
+  if (ms === 0) return '0';
+  const h = ms / 3600000;
+  return Number.isInteger(h) ? `${h}h` : `${Math.round(h * 10) / 10}h`;
+}
+
+/** Coloured sitting block, placed as fractions of the day. Pure data for the swimlane. */
+export type LaneBlock = {
+  key: string;
+  app: string;
+  startMs: number;
+  endMs: number;
+  /** Start and width as fractions of the day (0..1). */
+  left: number;
+  width: number;
+  /** Sittings merged into this block (1 when not merged). */
+  count: number;
+};
+
+export type SwimlaneRow = {
+  key: string;
+  label: string;
+  /** Package for a top app; absent for the "Other" row. */
+  app?: string;
+  /** Index into the category palette (top apps: rank; Other: the shared last hue). */
+  colourIndex: number;
+  blocks: LaneBlock[];
+};
+
+/**
+ * Merge same-app sittings whose gap is under `gapMs` (60 s by default), so a few seconds between two
+ * sittings of one app read as one block. Pure. Input must be sorted by start.
+ */
+export function mergeLaneBlocks(blocks: readonly LaneBlock[], gapMs = 60000): LaneBlock[] {
+  const out: LaneBlock[] = [];
+  for (const b of blocks) {
+    const last = out[out.length - 1];
+    if (last && last.app === b.app && b.startMs - last.endMs < gapMs) {
+      last.endMs = Math.max(last.endMs, b.endMs);
+      last.count += b.count;
+      continue;
+    }
+    out.push({ ...b });
   }
   return out;
 }
 
 /**
- * Line points for a range. `values` are per day, null where the day is not recorded (a gap, never
- * zero). Today is partial: drawn hollow and labelled, and never extrapolated. Pure.
+ * The swimlane: one row for each of the top `topN` apps (by rank in `appOrder`), plus an "Other" row
+ * when any sitting belongs to a lower app. Sittings are clipped to the day, merged per app, and
+ * placed on one shared 0–24 axis. Empty rows are kept for the top apps. Pure.
  */
-export function buildRangePoints(
-  days: readonly string[],
-  values: readonly (number | null)[],
-  selectedDay: string,
-  todayDay: string,
-): { label: string; value: number | null; partial: boolean; selected: boolean; day: string }[] {
-  return days.map((day, i) => ({
-    label: String(Number(day.slice(8))),
-    value: values[i] ?? null,
-    partial: day === todayDay,
-    selected: day === selectedDay,
-    day,
-  }));
-}
-
-/** Coloured sitting block on the day ribbon. `left` and `width` are fractions of the day (0..1). */
-export type RibbonBlock = {
-  key: string;
-  app: string;
-  startMs: number;
-  endMs: number;
-  left: number;
-  width: number;
-  /** Index into the category palette. Top apps get their own hue; the rest share the last one. */
-  colourIndex: number;
-};
-
-/**
- * Sittings across one local day as ribbon blocks. Each sitting is clipped to the day. The colour is
- * the app's rank among the day's apps (`appOrder`, most used first), with everything past the
- * top `topN` sharing one neutral hue. Colour separates categories only. Pure.
- */
-export function ribbonBlocks(
+export function swimlaneRows(
   sessions: readonly { id?: string; app: string; startMs: number; endMs: number }[],
   day: string,
   appOrder: readonly string[],
+  labels: Readonly<Record<string, string>>,
   topN = 5,
-): RibbonBlock[] {
+): SwimlaneRow[] {
   const bounds = dayBounds(day);
   if (!bounds) return [];
   const span = bounds.toMs - bounds.fromMs;
-  const out: RibbonBlock[] = [];
-  sessions.forEach((s, i) => {
+  const top = appOrder.slice(0, topN);
+  const byApp = new Map<string, LaneBlock[]>();
+  const sorted = [...sessions].sort((a, b) => a.startMs - b.startMs);
+  for (const [i, s] of sorted.entries()) {
     const start = Math.max(bounds.fromMs, s.startMs);
     const end = Math.min(bounds.toMs, s.endMs);
-    if (end <= start) return;
-    const rank = appOrder.indexOf(s.app);
-    out.push({
-      key: s.id ?? `${s.app}-${i}`,
-      app: s.app,
-      startMs: start,
-      endMs: end,
-      left: (start - bounds.fromMs) / span,
-      width: (end - start) / span,
-      colourIndex: rank >= 0 && rank < topN ? rank : topN,
+    if (end <= start) continue;
+    const key = s.app;
+    const list = byApp.get(key) ?? [];
+    list.push({ key: s.id ?? `${s.app}-${i}`, app: s.app, startMs: start, endMs: end, left: (start - bounds.fromMs) / span, width: (end - start) / span, count: 1 });
+    byApp.set(key, list);
+  }
+  const rows: SwimlaneRow[] = top.map((app, rank) => ({
+    key: `app-${app}`,
+    label: labels[app] ?? app,
+    app,
+    colourIndex: rank,
+    blocks: mergeLaneBlocks(byApp.get(app) ?? []),
+  }));
+  const otherBlocks: LaneBlock[] = [];
+  for (const [app, list] of byApp) if (!top.includes(app)) otherBlocks.push(...list);
+  if (otherBlocks.length > 0) {
+    rows.push({
+      key: 'other',
+      label: 'Other',
+      colourIndex: topN,
+      blocks: mergeLaneBlocks(otherBlocks.sort((a, b) => a.startMs - b.startMs)),
     });
-  });
-  return out.sort((a, b) => a.startMs - b.startMs);
+  }
+  return rows;
 }
 
-/** The block under a fraction `x` (0..1) of the ribbon, or the nearest within `slop` (fraction). Pure. */
-export function ribbonIndexAt(blocks: readonly RibbonBlock[], x: number, slop = 0.02): number | null {
-  let best: number | null = null;
-  let bestDist = Infinity;
-  blocks.forEach((b, i) => {
-    const dist = x >= b.left && x <= b.left + b.width ? 0 : Math.min(Math.abs(x - b.left), Math.abs(x - (b.left + b.width)));
-    if (dist <= slop && dist < bestDist) {
-      best = i;
-      bestDist = dist;
-    }
-  });
-  return best;
+/** Pixel placement for a block on a track `trackWidth` wide: never narrower than `minDp`. Pure. */
+export function blockPixels(left: number, width: number, trackWidth: number, minDp = 3): { x: number; w: number } {
+  const w = Math.min(trackWidth, Math.max(minDp, width * trackWidth));
+  const x = Math.max(0, Math.min(left * trackWidth, trackWidth - w));
+  return { x, w };
 }
 
 /** "09:10" for an epoch-ms time on the local clock. Pure given the timezone. */

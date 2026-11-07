@@ -93,6 +93,8 @@ export type ScoreInput = {
   vectors?: ReadonlyMap<string, TopicVector>;
   /** Minutes east of UTC. Late night is local, not UTC. */
   utcOffsetMinutes?: number;
+  /** Packages whose sittings never carry a label (the shared totals exclusions). Used by Curiosity alignment. */
+  labelIgnorePackages?: readonly string[];
   /** Default 23 → 05. */
   lateNight?: { startHour?: number; endHour?: number };
   /** If true, session boundaries come from reconstructed OS usage events (not exact per-sitting durations) – confidence capped at 0.49 */
@@ -521,29 +523,36 @@ export function ruleBasedNote(counts: ExplicitLabelCounts | undefined): string |
 export function curiositySplit(input: ScoreInput): CuriositySplit | null {
   const sessions = sessionsInWindow(input.sessions, input.window);
   if (sessions.length === 0) return null;
-  const labels = new Map<string, IntentLabel['label']>();
-  for (const label of input.labels ?? []) labels.set(label.sessionId, label.label);
+  // The gate and the counts are the Sessions meter's (countExplicitLabels): sitting labels and gated
+  // rule labels together, one rule label per app per local day, and the rule gate. Alignment (alpha.9).
+  const ignore = input.labelIgnorePackages ?? [];
+  const counts = countExplicitLabels(sessions, input.labels, {
+    utcOffsetMinutes: input.utcOffsetMinutes ?? 0,
+    ignorePackages: ignore,
+  });
+  if (counts.decisive < MIN_LABELS) return null;
+  const ruleCounted = counts.ruleBased?.counted === true;
+  const labels = new Map<string, { label: IntentLabel['label']; source?: IntentLabel['source'] }>();
+  for (const label of input.labels ?? []) labels.set(label.sessionId, { label: label.label, source: label.source });
   let deepMs = 0;
   let habitMs = 0;
   let unlabeledMs = 0;
-  let decisive = 0;
   for (const session of sessions) {
-    if (isLabelingExcludedApp(session.app)) {
+    if (isLabelingExcludedApp(session.app) || ignore.includes(session.app)) {
       unlabeledMs += ms(session);
       continue;
     }
-    const label = labels.get(session.id);
-    if (label === 'intentional') {
+    const entry = labels.get(session.id);
+    // A rule label counts only when the rule gate has passed, exactly as in the meter.
+    const countable = entry !== undefined && (entry.source !== 'rule' || ruleCounted);
+    if (entry && countable && entry.label === 'intentional') {
       deepMs += ms(session);
-      decisive += 1;
-    } else if (label === 'mindless') {
+    } else if (entry && countable && entry.label === 'mindless') {
       habitMs += ms(session);
-      decisive += 1;
     } else {
       unlabeledMs += ms(session);
     }
   }
-  if (decisive < MIN_LABELS) return null;
   const sw = switchingRate(sessions);
   return {
     deepMs,
@@ -551,7 +560,7 @@ export function curiositySplit(input: ScoreInput): CuriositySplit | null {
     unlabeledMs,
     switchesPerSitting: sw.perSitting,
     switchesPerHour: sw.perHour,
-    labelShare: decisive / sessions.length,
+    labelShare: counts.decisive / sessions.length,
   };
 }
 

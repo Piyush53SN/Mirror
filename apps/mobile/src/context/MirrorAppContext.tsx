@@ -240,6 +240,8 @@ export type MirrorAppContextValue = {
   /** One app's foreground time per day; null for unrecorded days. */
   loadAppWeek?: (app: string, days: readonly { day: string; recorded: boolean }[]) => Promise<(number | null)[]>;
   loadDayTotalsRange?: (days: readonly { day: string; recorded: boolean }[]) => Promise<(number | null)[]>;
+  /** Recorded days in the whole history (not the window). Gates the multi-day chart at 3. */
+  recordedDayCount?: number;
 
   sessions: SessionRow[];
   dailyTotals: DailyTotal[];

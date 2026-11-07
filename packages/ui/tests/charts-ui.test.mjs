@@ -112,7 +112,7 @@ test('LineChart text alternative keeps gaps as "no data", never zero, and marks 
     fmt,
     'Foreground time',
   );
-  assert.equal(text, 'Foreground time. Mon 60m. Tue no data. Wed 1m (partial day).');
+  assert.equal(text, 'Foreground time. Mon 60m. Tue no data. Wed 1m (today so far, partial).');
   assert.ok(!/Tue 0m/.test(text), 'a gap is never reported as zero');
 });
 

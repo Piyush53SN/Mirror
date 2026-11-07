@@ -26,12 +26,13 @@ export function AppearanceSettings(): React.ReactElement {
               <Pill
                 key={o.id}
                 theme={theme}
+                variant="secondary"
                 selected={appearance === o.id}
                 onPress={() => setAppearance(o.id)}
-                accessibilityLabel={`Appearance ${o.label}. ${o.hint}.`}
+                accessibilityLabel={`Appearance ${o.label}. ${o.hint}.${appearance === o.id ? ' Selected.' : ''}`}
                 testID={`appearance-${o.id}`}
               >
-                {o.label}
+                {appearance === o.id ? `✓ ${o.label}` : o.label}
               </Pill>
             ))}
           </View>

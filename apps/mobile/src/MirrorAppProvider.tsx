@@ -1259,6 +1259,8 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
         labels: labelArray,
         gaps: dayScoreGaps,
         utcOffsetMinutes: -new Date().getTimezoneOffset(),
+        // The same ignore list as the Sessions meter's count (dayLabelCounts), so the two gates agree.
+        labelIgnorePackages: SHARED_EXCLUDED_PACKAGES,
         approximate: true,
       });
     } catch {
@@ -1835,6 +1837,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       loadForegroundRange,
       loadAppWeek,
       loadDayTotalsRange,
+      recordedDayCount: allDistinctRecordedDays.length,
       dayOptions,
       sessions,
       dailyTotals,
@@ -1928,7 +1931,7 @@ export function MirrorAppProvider({ children }: { children: React.ReactNode }): 
       answerIntentCheck,
       acknowledgeIntentCheckPauseNotice,
     }),
-    [loadForegroundRange, loadAppWeek, loadDayTotalsRange, 
+    [loadForegroundRange, loadAppWeek, loadDayTotalsRange, allDistinctRecordedDays, 
       activeTab,
       permission,
       permissionDismissed,

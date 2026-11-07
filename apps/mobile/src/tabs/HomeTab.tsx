@@ -17,6 +17,7 @@ import {
   Pill,
   EnterTile,
   Surface,
+  IconButton,
   Text,
   TierBadge,
   announceValue,
@@ -36,7 +37,8 @@ import { ScoreParts, ScorePartsExpand } from '../components/ScoreParts';
 import { formatDuration, toDayStr, useMirrorApp } from '../context/MirrorAppContext';
 import { HourStripCard, TimeSplitCard, WeekTrendCard } from '../components/HomeCharts';
 import { AppDetailSheet, type AppDetailTarget } from '../components/AppDetailSheet';
-import { adjacentDay, updatedLabel } from '../homeCharts';
+import { adjacentDay, tooltipDayLabel, updatedLabel } from '../homeCharts';
+import { RefreshIcon } from '../components/RefreshIcon';
 
 const GAUGE_TICKS = 18;
 const GAUGE_START_DEG = -210;
@@ -302,11 +304,6 @@ export function HomeTab(): React.ReactElement {
   );
 
   const historyStartDay = focusWindows?.historyStartDay ?? evolution?.historyStartDay ?? null;
-  const headerSubtitle = historyStartDay
-    ? `History starts ${historyStartDay}${collectingSince ? ` · synced ${collectingSince}` : ''}`
-    : collectingSince
-      ? `Last sync ${collectingSince}`
-      : 'Syncing...';
 
   const sourceLabel =
     dailyTotalsSource === 'stored_events'
@@ -322,19 +319,19 @@ export function HomeTab(): React.ReactElement {
 
   return (
     <AppShell
-      title={`Mirror · ${selectedDay}`}
-      subtitle={headerSubtitle}
+      title="Mirror"
+      subtitle={tooltipDayLabel(selectedDay)}
       onRefresh={onRefresh}
       refreshing={refreshing}
       actions={
-        <Pill theme={theme} variant="secondary" onPress={onRefresh}>
-          Refresh
-        </Pill>
+        <IconButton theme={theme} label="Refresh" onPress={onRefresh}>
+          <RefreshIcon color={theme.color.ink} />
+        </IconButton>
       }
     >
       <View testID="home-updated-label">
         <Text role="micro" tone="muted" theme={theme}>
-          {`${updatedLabel(now, updatedAt)} · On-device · encrypted`}
+          {`${updatedLabel(now, updatedAt)} · On-device · encrypted${historyStartDay ? ` · History starts ${historyStartDay}` : ''}${collectingSince ? ` · synced ${collectingSince}` : ''}`}
         </Text>
       </View>
       <View {...swipe.panHandlers} style={{ gap: theme.space(3) }}>

@@ -57,6 +57,16 @@ export type PillProps = ControlBase & {
  * Primary pills are for the single most likely intent on a screen, never for
  * encouragement.
  */
+/** The one selected style: a teal-to-indigo gradient behind white text. Absolute, so it fills its owner. */
+export function SelectedGradient({ t, radius }: { t: MirrorTheme; radius?: number }): React.ReactElement {
+  // The layer clips its own corners; it is a sibling of the text, never an ancestor of it.
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: radius ?? 0, overflow: 'hidden' }]}>
+      <LinearGradient colors={[...t.palette.primaryGradient] as unknown as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+    </View>
+  );
+}
+
 export function Pill({
   children,
   variant = 'primary',
@@ -76,12 +86,12 @@ export function Pill({
   // A selected pill is filled with the anchor, so the chosen option reads at a glance (not only to TalkBack).
   // Primary: a gradient pill (white ink passes AA on both stops). Secondary: outlined, no fill.
   // A selected non-primary pill is filled with the anchor so the chosen option reads at a glance.
-  const isGradient = variant === 'primary' && !disabled;
-  const isFilled = selected === true && variant !== 'primary';
-  const baseBackground = isFilled ? t.color.anchor : 'transparent';
-  const background = disabled ? t.glass.chip.fill : baseBackground;
-  const colour = disabled ? t.color.inkMuted : isGradient ? t.palette.primaryInk : isFilled ? t.color.onAnchor : t.color.ink;
-  const outlined = variant === 'secondary' && !disabled;
+  // One selected style across the app: the teal-to-indigo gradient with white text. A primary pill is
+  // always that gradient; any other pill takes it when selected. Unselected secondary pills are outlined.
+  const isGradient = (variant === 'primary' || selected === true) && !disabled;
+  const background = disabled ? t.glass.chip.fill : 'transparent';
+  const colour = disabled ? t.color.inkMuted : isGradient ? t.palette.primaryInk : t.color.ink;
+  const outlined = variant === 'secondary' && !disabled && selected !== true;
   // Coerce children to string for accessibilityLabel – prevents ReadableNativeArray crash when children is array at runtime
   const rawChildren: unknown = accessibilityLabel ?? children;
   const labelForA11y = typeof rawChildren === 'string' ? rawChildren : Array.isArray(rawChildren) ? rawChildren.join(' ') : String(rawChildren ?? '');
@@ -121,16 +131,7 @@ export function Pill({
           borderColor: outlined ? t.color.inkMuted : t.color.borderCard,
         }}
       >
-        {isGradient ? (
-          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            <LinearGradient
-              colors={[...t.palette.primaryGradient] as unknown as [string, string]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-          </View>
-        ) : null}
+        {isGradient ? <SelectedGradient t={t} /> : null}
         {icon}
         {/* flexShrink + centred: a long label wraps inside the pill instead of clipping at 200% font. */}
         <Text role="label" theme={t} style={{ color: colour, fontWeight: '600', flexShrink: 1, textAlign: 'center' }}>
@@ -214,10 +215,10 @@ export function Chip({
   const chipVisual = 28;
   if (isStatic) {
     return (
-      <View style={{ height: t.size.touchTarget, justifyContent: 'center' }}>
+      <View style={{ minHeight: t.size.touchTarget, justifyContent: 'center' }}>
         <View
           style={{
-            height: chipVisual,
+            minHeight: chipVisual,
             flexDirection: 'row',
             alignItems: 'center',
             gap: t.space(1),
@@ -246,11 +247,11 @@ export function Chip({
       testID={testID}
       {...press}
       {...a11yTarget(`${label}${value ? `: ${value}` : ''}. Opens a picker.`)}
-      style={{ height: t.size.touchTarget, justifyContent: 'center', minWidth: t.size.touchTarget }}
+      style={{ minHeight: t.size.touchTarget, justifyContent: 'center', minWidth: t.size.touchTarget }}
     >
       <View
         style={{
-          height: chipVisual,
+          minHeight: chipVisual,
           flexDirection: 'row',
           alignItems: 'center',
           gap: t.space(1),
@@ -326,9 +327,11 @@ export function SegmentedControl<T extends string>({
             accessibilityState={{ selected }}
             accessibilityLabel={option.label}
             hitSlop={hitSlopFor(44, t)}
-            style={{ minHeight: t.size.touchTarget + 4, minWidth: t.size.touchTarget, padding: 3, justifyContent: 'center' }}
+            style={{ minHeight: t.size.touchTarget + 4, minWidth: t.size.touchTarget, padding: 3, justifyContent: 'center', borderRadius: t.radius.pill, overflow: 'hidden' }}
           >
             <View
+              // The gradient owns the white label on the selected option (audited for contrast).
+              data-gradient={selected ? [...t.palette.primaryGradient] : undefined}
               style={{
                 height: 44,
                 flexDirection: 'row',
@@ -336,11 +339,13 @@ export function SegmentedControl<T extends string>({
                 gap: t.space(1),
                 paddingHorizontal: t.space(4),
                 borderRadius: t.radius.pill,
-                backgroundColor: selected ? t.color.anchor : 'transparent',
+                overflow: 'hidden',
+                backgroundColor: 'transparent',
               }}
             >
+              {selected ? <SelectedGradient t={t} /> : null}
               {option.icon}
-              <Text role="label" theme={t} style={{ color: selected ? t.color.onAnchor : t.color.inkMuted, fontWeight: '600' }}>
+              <Text role="label" theme={t} style={{ color: selected ? t.palette.primaryInk : t.color.inkMuted, fontWeight: '600' }}>
                 {option.label}
               </Text>
             </View>
@@ -471,17 +476,21 @@ export function TabBar({
               flex: 1,
               minWidth: t.size.touchTarget,
               minHeight: t.size.touchTarget,
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 2,
               borderRadius: t.radius.pill,
-              backgroundColor: selected ? t.palette.navSelected : 'transparent',
+              overflow: 'hidden',
             }}
           >
-            {item.icon}
-            <Text role="micro" tone={selected ? 'core' : 'muted'} theme={t}>
-              {item.label}
-            </Text>
+            <View
+              // The selected tab is the shared selected style: the gradient owns its white label.
+              data-gradient={selected ? [...t.palette.primaryGradient] : undefined}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, borderRadius: t.radius.pill, overflow: 'hidden', minHeight: t.size.touchTarget }}
+            >
+              {selected ? <SelectedGradient t={t} /> : null}
+              {item.icon}
+              <Text role="micro" tone={selected ? 'core' : 'muted'} theme={t} style={selected ? { color: t.palette.primaryInk, fontWeight: '600' } : undefined}>
+                {item.label}
+              </Text>
+            </View>
           </Pressable>
         );
       })}

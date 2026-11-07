@@ -29,7 +29,7 @@ function BudgetTile({ item }: { item: BudgetItem }): React.ReactElement {
         size={64}
         thickness={6}
         theme={theme}
-        color={item.enabled ? theme.color.anchor : theme.color.inkMuted}
+        color={item.enabled ? theme.palette.primaryGradient[0] : theme.color.inkMuted}
         accessibilityLabel={`${label}. ${item.statusLine}`}
       >
         <Text role="micro" theme={theme}>

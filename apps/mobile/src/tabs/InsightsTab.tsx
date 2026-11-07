@@ -2,6 +2,7 @@ import { MIN_LABELS } from '@mirror/core-analytics';
 import * as React from 'react';
 import { View } from 'react-native';
 import {
+  IconButton,
   Callout,
   Card,
   Chip,
@@ -24,6 +25,8 @@ import { BOUNDARY_GUARD_SHORT } from '../buildDetails';
 import { AppShell } from '../components/AppShell';
 import { AttentionBudgetSection } from '../components/AttentionBudgetSection';
 import { DayPickerStrip } from '../components/DayPickerStrip';
+import { RefreshIcon } from '../components/RefreshIcon';
+import { tooltipDayLabel } from '../homeCharts';
 import { WeeklyGoalsSection } from '../components/WeeklyGoalsSection';
 import {
   formatDuration,
@@ -138,11 +141,11 @@ export function InsightsTab(): React.ReactElement {
   return (
     <AppShell
       title="Insights"
-      subtitle={`Budgets · Weekly & Goals · What-if · Score parts · Curiosity · Depth (${selectedDay}${lastSyncedAt ? ` · synced ${lastSyncedAt}` : ''})`}
+      subtitle={`Budgets, goals, what-if · ${tooltipDayLabel(selectedDay)}`}
       actions={
-        <Pill theme={theme} variant="secondary" onPress={checkPermissionAndCollect}>
-          Refresh
-        </Pill>
+        <IconButton theme={theme} label="Refresh" onPress={checkPermissionAndCollect}>
+          <RefreshIcon color={theme.color.ink} />
+        </IconButton>
       }
     >
       <DayPickerStrip />
@@ -434,7 +437,7 @@ export function InsightsTab(): React.ReactElement {
                     borderRadius: theme.radius.md,
                     backgroundColor: theme.glass.panel.fill,
                     borderWidth: 1,
-                    borderColor: theme.color.anchor,
+                    borderColor: theme.palette.primaryGradient[0],
                     padding: theme.space(3),
                     gap: theme.space(1.5),
                   }}
@@ -512,7 +515,7 @@ export function InsightsTab(): React.ReactElement {
                         borderRadius: theme.radius.md,
                         backgroundColor: theme.glass.panel.fill,
                         borderWidth: 1,
-                        borderColor: isScenarioOn ? theme.color.anchor : theme.color.borderCard,
+                        borderColor: isScenarioOn ? theme.palette.primaryGradient[0] : theme.color.borderCard,
                         padding: theme.space(3),
                         gap: theme.space(1.5),
                       }}

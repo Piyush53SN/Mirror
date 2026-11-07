@@ -239,7 +239,7 @@ export function SessionsTab(): React.ReactElement {
                         borderRadius: theme.radius.md,
                         backgroundColor: theme.glass.panel.fill,
                         borderWidth: 1,
-                        borderColor: isExpanded ? theme.color.anchor : theme.color.borderCard,
+                        borderColor: isExpanded ? theme.palette.primaryGradient[0] : theme.color.borderCard,
                         padding: theme.space(2.5),
                         gap: theme.space(1.5),
                       }}

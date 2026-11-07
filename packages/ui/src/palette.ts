@@ -25,6 +25,8 @@ export type Palette = {
   hairline: string;
   shadow: string;
   /** Hero tile: solid, so text on it is never over a translucent layer. */
+  /** Opacity of the dot grid over the backdrop (dark only; 0 in light). Never below the text contrast. */
+  dotGridAlpha: number;
   heroFill: string;
   heroInk: string;
   heroMuted: string;
@@ -57,11 +59,13 @@ export type Palette = {
 
 export const PALETTE: Record<ThemeKey, Palette> = {
   dark: {
-    gradient: ['#0A0E2A', '#111A47', '#0B0C24', '#06070F'],
+    // Charcoal with a faint green-teal undertone. Violet is a small accent only.
+    gradient: ['#0E1513', '#101C1A', '#0B1211', '#060909'],
     glows: [
-      { x: 0.85, y: 0.08, r: 0.55, color: '#5B4BFF', alpha: 0.35 },
-      { x: 0.1, y: 0.92, r: 0.5, color: '#1ED2C0', alpha: 0.16 },
+      { x: 0.92, y: 0.06, r: 0.3, color: '#7C5CFF', alpha: 0.14 },
+      { x: 0.08, y: 0.94, r: 0.5, color: '#1ED2C0', alpha: 0.12 },
     ],
+    dotGridAlpha: 0.07,
     glassSolid: '#171D4A',
     hairline: 'rgba(190, 200, 255, 0.18)',
     shadow: 'rgba(2, 3, 14, 0.45)',
@@ -75,7 +79,7 @@ export const PALETTE: Record<ThemeKey, Palette> = {
     panelTint: 'rgba(12, 16, 48, 0.5)',
     panelSolid: '#171D4A',
     panelHighlight: 'rgba(255, 255, 255, 0.07)',
-    tabbarTint: 'rgba(20, 26, 66, 0.9)',
+    tabbarTint: 'rgba(20, 26, 66, 0.94)',
     glowTeal: 'rgba(45, 212, 191, 0.22)',
     glowViolet: 'rgba(139, 92, 246, 0.26)',
     glowIndigo: 'rgba(99, 102, 241, 0.24)',
@@ -93,16 +97,18 @@ export const PALETTE: Record<ThemeKey, Palette> = {
     glassSolid: '#FFFFFF',
     hairline: 'rgba(20, 30, 80, 0.12)',
     shadow: 'rgba(30, 40, 90, 0.14)',
-    heroFill: '#1B2250',
-    heroInk: '#FFFFFF',
-    heroMuted: '#C7CEF2',
+    dotGridAlpha: 0,
+    // Light hero: a pale tinted glass tile with dark text (the navy tile is dark-only).
+    heroFill: '#E6F5F2',
+    heroInk: '#0B1A3A',
+    heroMuted: '#3A4A6E',
     gauge: ['#0B7A70', '#4F46E5'],
     chart: ['#0B7A70', '#4F46E5', '#0369A1', '#7C3AED', '#475569', '#5B6478'],
     grainAlpha: 0.05,
     panelTint: 'rgba(255, 255, 255, 0.62)',
     panelSolid: '#FFFFFF',
     panelHighlight: 'rgba(255, 255, 255, 0.9)',
-    tabbarTint: 'rgba(255, 255, 255, 0.9)',
+    tabbarTint: 'rgba(255, 255, 255, 0.94)',
     glowTeal: 'rgba(11, 122, 112, 0.14)',
     glowViolet: 'rgba(124, 58, 237, 0.14)',
     glowIndigo: 'rgba(79, 70, 229, 0.14)',

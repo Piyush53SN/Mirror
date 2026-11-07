@@ -34,6 +34,9 @@ const GRADIENT_START = { x: 0, y: 0 };
 const GRADIENT_END = { x: 0.4, y: 1 };
 const GLOW_VIEWBOX = '0 0 100 100';
 
+/** Spacing of the dark-mode dot grid, in dp. */
+const DOT_GRID_PX = 14;
+
 export function Backdrop({ theme }: { theme?: MirrorTheme }) {
   const t = withTheme(theme);
   const p = t.palette;
@@ -62,6 +65,16 @@ export function Backdrop({ theme }: { theme?: MirrorTheme }) {
         </Defs>
         <Rect width="100%" height="100%" fill={`url(#grain-${t.name})`} opacity={p.grainAlpha} />
       </Svg>
+      {p.dotGridAlpha > 0 ? (
+        <Svg width="100%" height="100%" style={FILL}>
+          <Defs>
+            <Pattern id={`dots-${t.name}`} x="0" y="0" width={DOT_GRID_PX} height={DOT_GRID_PX} patternUnits="userSpaceOnUse">
+              <Circle cx={DOT_GRID_PX / 2} cy={DOT_GRID_PX / 2} r={0.9} fill={t.color.ink} />
+            </Pattern>
+          </Defs>
+          <Rect width="100%" height="100%" fill={`url(#dots-${t.name})`} opacity={p.dotGridAlpha} />
+        </Svg>
+      ) : null}
     </View>
   );
 }

@@ -7,7 +7,7 @@
  */
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
-import { Text, useTheme } from '@mirror/ui';
+import { Text, useTheme, SelectedGradient } from '@mirror/ui';
 import type { GoalKind } from '@mirror/core-analytics';
 
 export const GOAL_KIND_OPTIONS: readonly { id: GoalKind; label: string; description: string }[] = [
@@ -62,19 +62,19 @@ export function GoalTypeOptions({
       press: () => onSelect(opt.id),
       rowStyle: {
         ...rowBase,
-        backgroundColor: selected ? theme.color.anchor : theme.glass.panel.fill,
-        borderColor: selected ? theme.color.anchor : theme.color.borderCard,
+        backgroundColor: selected ? 'transparent' : theme.glass.panel.fill,
+        borderColor: selected ? theme.palette.primaryGradient[0] : theme.color.borderCard,
       },
       dotStyle: {
         width: 12,
         height: 12,
         borderRadius: 6,
         borderWidth: 2,
-        borderColor: selected ? theme.color.onAnchor : theme.color.inkMuted,
-        backgroundColor: selected ? theme.color.onAnchor : 'transparent',
+        borderColor: selected ? theme.palette.primaryInk : theme.color.inkMuted,
+        backgroundColor: selected ? theme.palette.primaryInk : 'transparent',
       },
-      textColour: selected ? theme.color.onAnchor : theme.color.ink,
-      subColour: selected ? theme.color.mutedOnAnchor : theme.color.inkMuted,
+      textColour: selected ? theme.palette.primaryInk : theme.color.ink,
+      subColour: selected ? theme.palette.primaryInk : theme.color.inkMuted,
     };
   });
   return (
@@ -89,6 +89,9 @@ export function GoalTypeOptions({
           accessibilityLabel={`${row.opt.label}. ${row.opt.description}${row.selected ? ' Selected.' : ''}`}
           style={row.rowStyle}
         >
+          {/* The shared selected style: the gradient owns the white label and dot. */}
+          <View data-gradient={row.selected ? [...theme.palette.primaryGradient] : undefined} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: theme.space(3), minWidth: 0 }}>
+          {row.selected ? <SelectedGradient t={theme} radius={theme.radius.md} /> : null}
           <View style={row.dotStyle} />
           <View style={{ flex: 1, gap: theme.space(0.5), minWidth: 0 }}>
             <Text role="label" theme={theme} style={{ color: row.textColour }}>
@@ -97,6 +100,7 @@ export function GoalTypeOptions({
             <Text role="micro" theme={theme} style={{ color: row.subColour }}>
               {row.opt.description}
             </Text>
+          </View>
           </View>
         </Pressable>
       ))}

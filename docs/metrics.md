@@ -413,6 +413,24 @@ unlabeled  = Σ duration of sittings with no label
 switches/h = the same switching rate as above
 ```
 
+**Gate (alpha.9, aligned with the Sessions meter).** The split is shown only when the
+decisive label count reaches 5 (`MIN_LABELS`), and that count is the same one the
+Sessions meter and the Insights unlock use: `countExplicitLabels` (section 5, rule gate
+included). Concretely:
+
+- Your own per-sitting labels always count toward the 5.
+- Rule labels count toward the 5 only when the rule gate passes (at least 3 apps,
+  one decisive label per app per local day). Below that gate they are not counted here.
+- Time in `deepMs` / `habitMs` includes a sitting only when its label is one that
+  counts under the same rules. A rule-labelled sitting is in the split only when the rule
+  gate has passed.
+- Sittings of the shared-exclusion packages (the same list as the meter) are never
+  labelled here; their time sits in `unlabeled`.
+- `labelShare` is the meter's decisive count divided by the sittings in the window.
+
+Before alpha.9, this split counted rule labels per sitting and ignored the rule gate,
+so the split could appear while the meter still showed fewer than 5. Now both agree.
+
 Requires ≥ 5 decisive labels; otherwise `null` and the screen shows the empty
 state. Caveats: the split is self-report, a long sitting counts once, and nothing
 in the product frames habit as a failure or sends a nudge about it.
