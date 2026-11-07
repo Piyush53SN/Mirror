@@ -11,8 +11,7 @@
  */
 import * as React from 'react';
 import { View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Callout, Card, LineChart, PressScale, SegmentedControl, SelectedGradient, Text, useTheme, type LinePoint, type MirrorTheme } from '@mirror/ui';
+import { Callout, Card, LineChart, PressScale, SegmentedControl, SelectedGradient, Text, useTheme, type LinePoint } from '@mirror/ui';
 import { formatDuration, useMirrorApp } from '../context/MirrorAppContext';
 import {
   addDays,

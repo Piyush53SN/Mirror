@@ -1945,3 +1945,7 @@ Version: no bump in this pass. `0.3.0` / `versionCode 5` is still untagged. If P
 - Round B Stage 1: Appearance (Auto / Light / Dark) in Settings. Charts in `@mirror/ui` (ring, donut, line, line sparkline), plain Views with TalkBack text alternatives. Home: dark attention tile (inverted palette, AA tested), a 7-day foreground line, a "Where time went" donut, budget rings with a dashed "Add budget" tile. Tab fade 160 ms. All motion off under reduce-motion.
 - Gap list and status: `docs/design/redesign-stage1-gaps.md`. No analytics, scoring, storage, or permission changes. `docs/SPEC.md` unchanged.
 - Test changes: `budgets-ui` 48dp helper accepts `width: '100%'` (full-width control); `config.test` appearance assertion (`automatic` / `Automatic`) and versionCode 9; `release-stage1` version pin 9.
+
+## Process rule (from alpha.9 CI fix)
+
+- A round is not finished until `npm run verify` has exited 0 on the final tree, and `make release-stage1` has exited 0 as well. Report both exit codes. Do not report "tests pass" from a partial run.

@@ -1,38 +1,15 @@
 /**
- * Home chart cards: the 7-day foreground line, the "Where time went" donut and the 24-hour
- * sitting strip. Each chart has a text alternative and a non-gesture way to reach every value.
+ * Home chart cards: the "Where time went" donut and the 24-hour sitting strip. The 7-day line
+ * lives in WeekRangeChart.tsx. Each chart has a text alternative and a non-gesture way to reach every value.
  * Presentation only. Numbers come from homeCharts.ts and the existing context.
  * Colour separates categories only; it never says good or bad.
  */
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
-import {
-  Card,
-  Divider,
-  Donut,
-  LineChart,
-  Pill,
-  PressScale,
-  SegmentedControl,
-  Text,
-  useTheme,
-  type LinePoint,
-  type MirrorTheme,
-} from '@mirror/ui';
+import { Card, Divider, Donut, Pill, PressScale, Text, useTheme, type MirrorTheme } from '@mirror/ui';
 import { DayTimeline, TIMELINE_GUTTER } from './DayTimeline';
 import { formatDuration, useMirrorApp, type DailyTotal } from '../context/MirrorAppContext';
-import type { WeeklyReportResult } from '@mirror/core-analytics';
-import {
-  buildDonutSlices,
-  buildHourBuckets,
-  buildWeekPoints,
-  clockLabel,
-  hourBounds,
-  hourFromX,
-  hourLabel,
-  weekdayShort,
-  WEEK_MIN_RECORDED_DAYS,
-} from '../homeCharts';
+import { buildDonutSlices, buildHourBuckets, hourBounds, hourFromX, hourLabel } from '../homeCharts';
 
 /* ----------------------------------------------------------- shared bits --- */
 

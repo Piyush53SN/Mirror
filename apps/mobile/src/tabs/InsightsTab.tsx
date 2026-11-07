@@ -150,6 +150,14 @@ export function InsightsTab(): React.ReactElement {
     >
       <DayPickerStrip />
 
+      {lastSyncedAt ? (
+        <View testID="insights-synced">
+          <Text role="micro" tone="muted" theme={theme}>
+            {`Synced ${lastSyncedAt}`}
+          </Text>
+        </View>
+      ) : null}
+
       {!isEmptyDay ? (
         <View style={{ flexDirection: 'row', gap: theme.space(1.5), flexWrap: 'wrap' }}>
           {FILTER_OPTIONS.map((opt) => (
